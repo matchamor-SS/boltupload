@@ -1,0 +1,23 @@
+/* Sign-in screen + small additions. Uses the app's own color tokens so every palette and dark mode applies. */
+html.ss-locked body > :not(#ss-auth):not(script):not(.notice-bg) { display: none !important; }
+#ss-auth[hidden] { display: none !important; }
+.ss-auth-wrap { min-height: calc(100vh - 80px); display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 420px); gap: 48px; align-items: center; max-width: 980px; margin: 0 auto; padding: 48px 20px 24px; box-sizing: border-box; }
+.ss-auth-intro h1 { font-family: var(--display, 'Bricolage Grotesque', sans-serif); font-size: clamp(40px, 6vw, 64px); line-height: 1; margin: 10px 0 12px; color: var(--ink); }
+.ss-lead { font-size: 20px; margin: 0 0 18px; color: var(--ink); }
+.ss-points { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 16px; color: var(--ink); }
+.ss-auth-card { display: flex; flex-direction: column; gap: 12px; }
+.ss-auth-card h3 { margin: 0; }
+.ss-form { display: flex; flex-direction: column; gap: 10px; }
+.ss-form input { width: 100%; box-sizing: border-box; }
+.ss-agree { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; }
+.ss-or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+.ss-or::before, .ss-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.ss-switch { margin: 0; text-align: center; }
+.ss-bad { color: var(--bad, #b3261e) !important; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
+/* Google's folder picker must sit above the app's sheets */
+.picker-dialog-bg { z-index: 20000 !important; }
+.picker-dialog { z-index: 20001 !important; }
+.ss-consent { z-index: 300 !important; }
+html.ss-demo body::before { content: "Demo mode: sample data only. Nothing is saved or sent."; display: block; text-align: center; font-size: 13px; padding: 6px 12px; background: var(--soft); color: var(--ink); }
+@media (max-width: 760px) { .ss-auth-wrap { grid-template-columns: 1fr; gap: 24px; padding-top: 28px; } }
