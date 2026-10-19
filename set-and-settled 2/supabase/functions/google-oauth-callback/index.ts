@@ -31,3 +31,5 @@ Deno.serve(async req => {
     return back('ok', st.tier);
   } catch (_e) { return back('error'); }
 });
+
+// deploy marker

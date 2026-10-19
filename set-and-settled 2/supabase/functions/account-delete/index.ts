@@ -19,3 +19,5 @@ handler(async req => {
   if (error) throw new HttpError(500, 'delete_failed');
   return json({ ok: true });
 });
+
+// deploy marker
