@@ -42,8 +42,15 @@ function driveQuery(q: string): string {
 
 async function signatureHtml(ownerId: string) {
   const { data } = await admin.from('app_docs').select('data').eq('owner_id', ownerId).eq('col', 'settings').eq('id', 'signature').maybeSingle();
-  const t = data && data.data && typeof data.data.text === 'string' ? data.data.text.trim() : '';
-  return t ? `<div style="margin-top:16px;color:#444">${esc(t).replace(/\n/g, '<br>')}</div>` : '';
+  const d = data && data.data || {};
+  const text = typeof d.text === 'string' ? d.text.trim() : '';
+  const links: { label?: string; url: string }[] = Array.isArray(d.links) ? d.links.filter((l: any) => l && l.url) : [];
+  const logoId = typeof d.logoId === 'string' ? d.logoId : '';
+  const logoUrl = logoId ? `${Deno.env.get('SUPABASE_URL')}/storage/v1/object/public/user-assets/${logoId.split('/').map(encodeURIComponent).join('/')}` : '';
+  const lines = text ? `<div style="margin-top:16px;color:#444">${esc(text).replace(/\n/g, '<br>')}</div>` : '';
+  const linkHtml = links.length ? `<div style="margin-top:4px;color:#444">${links.map(l => `<a href="${esc(l.url)}" style="color:#15c">${esc(l.label || l.url)}</a>`).join(' · ')}</div>` : '';
+  const logoHtml = logoUrl ? `<div style="margin-top:16px"><img src="${esc(logoUrl)}" alt="" style="max-height:48px;max-width:200px"></div>` : '';
+  return logoHtml + lines + linkHtml;
 }
 
 const TOOLS: Record<string, (u: User, i: Input) => Promise<unknown>> = {

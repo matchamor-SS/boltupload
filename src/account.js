@@ -31,15 +31,48 @@ async function renderGoogle(el) {
 
 async function renderSignature(el) {
   const db = await window.claude.use('db');
+  const assets = await window.claude.use('assets');
+  let sigData = { text: '', logoId: '', links: [] };
+  db.doc('settings/signature').onSnapshot(s => { if (s.exists && s.data()) sigData = { text: s.data().text || '', logoId: s.data().logoId || '', links: Array.isArray(s.data().links) ? s.data().links : [] }; }, () => {});
+  function sigPreview() {
+    const lines = (sigData.text || '').split('\n').map(l => esc(l)).join('<br>');
+    const links = (sigData.links || []).filter(l => l.url).map(l => `<a href="${esc(l.url)}" style="color:#15c">${esc(l.label || l.url)}</a>`).join(' · ');
+    const logo = sigData.logoId ? `<img src="${esc(window.__blob ? window.__blob(sigData.logoId) : sigData.logoId)}" alt="" style="max-height:48px;max-width:200px;margin-bottom:4px"><br>` : '';
+    return `<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)">${logo}${lines}${links ? '<br>' + links : ''}</div>`;
+  }
+  function renderLinks() {
+    const lc = el.querySelector('#ss-siglinks'); if (!lc) return;
+    lc.innerHTML = (sigData.links || []).map((l, i) => `<div class="row" style="cursor:default;gap:8px;align-items:center"><input type="text" data-li-label="${i}" value="${esc(l.label || '')}" placeholder="Label" style="flex:1;min-width:80px"><input type="url" data-li-url="${i}" value="${esc(l.url || '')}" placeholder="https://" style="flex:2;min-width:100px"><button class="btn small danger" data-li-del="${i}" aria-label="Remove">×</button></div>`).join('');
+    lc.querySelectorAll('[data-li-label]').forEach(inp => inp.oninput = () => { sigData.links[+inp.dataset.liLabel].label = inp.value; });
+    lc.querySelectorAll('[data-li-url]').forEach(inp => inp.oninput = () => { sigData.links[+inp.dataset.liUrl].url = inp.value; });
+    lc.querySelectorAll('[data-li-del]').forEach(btn => btn.onclick = () => { sigData.links.splice(+btn.dataset.liDel, 1); renderLinks(); });
+  }
   el.innerHTML = `<div class="head"><h3>Email signature</h3></div>
     <p class="note" style="margin:6px 0 8px">Added to the end of every email the app sends for you, including invoices.</p>
-    <div class="f"><label for="ss-sig">Signature</label><textarea id="ss-sig" style="min-height:110px" placeholder="Your name&#10;Your DJ name · website&#10;Phone"></textarea></div>
+    <div class="f"><label for="ss-sig">Signature text</label><textarea id="ss-sig" style="min-height:80px" placeholder="Your name&#10;Your DJ name · website&#10;Phone"></textarea></div>
+    <div class="f"><label>Hyperlinks</label><div id="ss-siglinks" style="display:flex;flex-direction:column;gap:6px"></div><button class="btn small" id="ss-sigaddlink" style="margin-top:4px;align-self:flex-start">+ Add link</button></div>
+    <div class="f"><label>Logo image</label><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button class="btn small" id="ss-siglogo">Upload logo</button>${sigData.logoId ? '<button class="btn small danger" id="ss-siglogodel">Remove logo</button>' : ''}<span class="note">Small image shown above your signature text.</span></div></div>
+    <div id="ss-sigprev"></div>
     <div class="actions" style="justify-content:flex-start"><button class="btn save" id="ss-sigsave">Save signature</button></div>`;
   const ta = el.querySelector('#ss-sig');
-  db.doc('settings/signature').onSnapshot(s => { if (document.activeElement !== ta) ta.value = (s.exists && s.data().text) || ''; }, () => {});
-  el.querySelector('#ss-sigsave').onclick = async () => {
-    try { await db.doc('settings/signature').set({ text: ta.value.slice(0, 4000) }); toast('Signature saved'); } catch (_) { toast("Couldn't save. Try again."); }
+  db.doc('settings/signature').onSnapshot(s => { if (document.activeElement !== ta) { ta.value = (s.exists && s.data().text) || ''; sigData = { text: (s.exists && s.data().text) || '', logoId: (s.exists && s.data().logoId) || '', links: (s.exists && Array.isArray(s.data().links)) ? s.data().links : [] }; renderLinks(); el.querySelector('#ss-sigprev').innerHTML = sigPreview(); } }, () => {});
+  ta.oninput = () => { sigData.text = ta.value; el.querySelector('#ss-sigprev').innerHTML = sigPreview(); };
+  el.querySelector('#ss-sigaddlink').onclick = () => { sigData.links = [...(sigData.links || []), { label: '', url: '' }]; renderLinks(); };
+  renderLinks();
+  const logoBtn = el.querySelector('#ss-siglogo');
+  if (logoBtn) logoBtn.onclick = () => {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.style.display = 'none'; document.body.appendChild(inp);
+    inp.onchange = async () => { const f = inp.files && inp.files[0]; inp.remove(); if (!f || !assets) return toast("Couldn't upload. Try again.");
+      try { const r = await assets.upload(f); sigData.logoId = r.id; el.querySelector('#ss-sigprev').innerHTML = sigPreview(); const del = el.querySelector('#ss-siglogodel'); if (!del) { const db2 = logoBtn.parentElement; const dbtn = document.createElement('button'); dbtn.className = 'btn small danger'; dbtn.id = 'ss-siglogodel'; dbtn.textContent = 'Remove logo'; dbtn.onclick = () => { sigData.logoId = ''; el.querySelector('#ss-sigprev').innerHTML = sigPreview(); dbtn.remove(); }; db2.insertBefore(dbtn, db2.querySelector('.note')); } }
+      catch (_) { toast("Couldn't upload the logo. Try again."); } };
+    inp.click();
   };
+  const logoDel = el.querySelector('#ss-siglogodel');
+  if (logoDel) logoDel.onclick = () => { sigData.logoId = ''; el.querySelector('#ss-sigprev').innerHTML = sigPreview(); logoDel.remove(); };
+  el.querySelector('#ss-sigsave').onclick = async () => {
+    try { const clean = (sigData.links || []).filter(l => l.url).map(l => ({ label: (l.label || '').slice(0, 100), url: l.url.slice(0, 500) })); await db.doc('settings/signature').set({ text: ta.value.slice(0, 4000), logoId: sigData.logoId || '', links: clean }); toast('Signature saved'); } catch (_) { toast("Couldn't save. Try again."); }
+  };
+  el.querySelector('#ss-sigprev').innerHTML = sigPreview();
 }
 
 async function renderAccount(el) {

@@ -570,12 +570,41 @@ function shrink(file){return new Promise((res,rej)=>{const url=URL.createObjectU
   img.onload=()=>{const m=Math.min(1,512/Math.max(img.width,img.height)),c=document.createElement("canvas");c.width=Math.round(img.width*m);c.height=Math.round(img.height*m);
     c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);c.toBlob(b=>b?res(b):rej(new Error("encode")),"image/jpeg",.88)};
   img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("read"))};img.src=url})}
+function cropPhoto(file){return new Promise((res,rej)=>{const url=URL.createObjectURL(file),img=new Image();
+  img.onload=()=>{URL.revokeObjectURL(url);
+    const bg=document.createElement("div');bg.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.8);display:grid;place-items:center;padding:20px';
+    const box=document.createElement('div');box.style.cssText='background:var(--surface,#fff);border-radius:14px;padding:16px;max-width:420px;width:100%';
+    const h=document.createElement('h3');h.textContent='Crop your photo';h.style.cssText='margin:0 0 8px;font-size:16px';
+    const note=document.createElement('p');note.className='note';note.style.cssText='margin:0 0 10px';note.textContent='Drag to position, then Save.';
+    const cv=document.createElement('canvas');const sz=Math.min(320,Math.min(img.width,img.height));cv.width=sz;cv.height=sz;cv.style.cssText='width:100%;max-width:320px;border-radius:50%;cursor:grab;touch-action:none;display:block;margin:0 auto';
+    const cx=cv.getContext('2d');let scale=Math.max(sz/img.width,sz/img.height);let ox=0,oy=0,dragging=false,dsx=0,dsy=0;
+    const draw=()=>{cx.clearRect(0,0,sz,sz);cx.fillStyle='#888';cx.fillRect(0,0,sz,sz);cx.drawImage(img,ox,oy,img.width*scale,img.height*scale)};
+    const clamp=()=>{const dw=img.width*scale,dh=img.height*scale;ox=Math.min(0,Math.max(sz-dw,ox));oy=Math.min(0,Math.max(sz-dh,oy))};
+    scale=Math.max(sz/img.width,sz/img.height);ox=(sz-img.width*scale)/2;oy=(sz-img.height*scale)/2;clamp();draw();
+    cv.addEventListener('pointerdown',e=>{dragging=true;dsx=e.clientX-ox;dsy=e.clientY-oy;cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing'});
+    cv.addEventListener('pointermove',e=>{if(!dragging)return;ox=e.clientX-dsx;oy=e.clientY-dsy;clamp();draw()});
+    cv.addEventListener('pointerup',e=>{dragging=false;cv.style.cursor='grab'});
+    const zoomWrap=document.createElement('div');zoomWrap.style.cssText='display:flex;align-items:center;gap:8px;margin:10px 0';
+    const zoomL=document.createElement('span');zoomL.textContent='Zoom';zoomL.style.cssText='font-size:13px;color:var(--muted,#666)';
+    const zoom=document.createElement('input');zoom.type='range';zoom.min='1';zoom.max='4';zoom.step='0.1';zoom.value=scale/(sz/img.width);zoom.style.cssText='flex:1';
+    const zoomV=document.createElement('span');zoomV.style.cssText='font-size:12px;color:var(--muted,#666);min-width:30px';
+    const baseScale=sz/img.width;
+    zoom.oninput=()=>{const ns=baseScale*parseFloat(zoom.value);const cdx=ox+img.width*scale/2,cdy=oy+img.height*scale/2;scale=ns;ox=cdx-img.width*scale/2;oy=cdy-img.height*scale/2;clamp();draw();zoomV.textContent=parseFloat(zoom.value).toFixed(1)+'×'};
+    zoomV.textContent=parseFloat(zoom.value).toFixed(1)+'×';zoomWrap.appendChild(zoomL);zoomWrap.appendChild(zoom);zoomWrap.appendChild(zoomV);
+    const acts=document.createElement('div');acts.style.cssText='display:flex;gap:8px;justify-content:flex-end;margin-top:10px';
+    const cancel=document.createElement('button');cancel.className='btn';cancel.textContent='Cancel';
+    const save=document.createElement('button');save.className='btn primary';save.textContent='Save';
+    cancel.onclick=()=>{bg.remove();rej(new Error('cancel'))};
+    save.onclick=()=>{bg.remove();cv.toBlob(b=>b?res(b):rej(new Error('encode')),'image/jpeg',.88)};
+    acts.appendChild(cancel);acts.appendChild(save);
+    box.appendChild(h);box.appendChild(note);box.appendChild(cv);box.appendChild(zoomWrap);box.appendChild(acts);bg.appendChild(box);document.body.appendChild(bg)};
+  img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error('read'))};img.src=url})}
 $("#photoInput").onchange=async e=>{const f=e.target.files&&e.target.files[0];e.target.value="";if(!f)return;
   const assets=await claude.use("assets");if(!assets){toast("Photo uploads aren't available right now");return}
-  toast("Uploading photo…");
-  try{const blob=await shrink(f);const r=await assets.upload(blob);const old=S.profile.avatarId;
+  try{toast("Crop your photo…");const blob=await cropPhoto(f);toast("Uploading photo…");
+    const r=await assets.upload(blob);const old=S.profile.avatarId;
     if(await save("settings","profile",{...S.profile,avatarId:r.id})){toast("Photo updated");if(old&&old!==r.id){try{await assets.delete(old)}catch(_){}}}}
-  catch(err){toast(err&&err.message==="read"?"That file isn't an image we can read":"Couldn't upload the photo. Try again.")}};
+  catch(err){if(err&&err.message==="cancel")return;toast(err&&err.message==="read"?"That file isn't an image we can read":"Couldn't upload the photo. Try again.")}};
 $("#photoDel").onclick=async()=>{const id=S.profile.avatarId;if(!id)return;const p={...S.profile};delete p.avatarId;
   if(await save("settings","profile",p)){toast("Photo removed");try{const a=await claude.use("assets");a&&await a.delete(id)}catch(_){}}};
 /* light / dark */
