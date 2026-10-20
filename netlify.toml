@@ -1,8 +1,4 @@
-# Netlify build config. The app lives in the "set-and-settled 2/" subfolder, so base/publish
-# are relative to this root file. Security headers + caching are defined here so Netlify reads
-# them from the repo root (it ignores the netlify.toml inside the subfolder).
 [build]
-  base = "set-and-settled 2"
   command = "npm run build"
   publish = "dist"
 
