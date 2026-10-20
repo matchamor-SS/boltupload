@@ -121,15 +121,28 @@ async function mfaForm(resolve) {
 /** Resolves with a signed-in session (asking for sign-in, a new password or a 2-step code as needed). */
 export function requireSession() {
   return new Promise(async resolve => {
+    let done = false;
     let recovering = /type=recovery/.test(location.hash) || /type=recovery/.test(location.search);
-    sb.auth.onAuthStateChange(ev => { if (ev === 'PASSWORD_RECOVERY') { recovering = true; root().hidden = false; newPasswordForm(resolve); } });
-    const { data } = await sb.auth.getSession();
-    if (recovering) { root().hidden = false; return newPasswordForm(resolve); }
-    if (data.session) {
+    const finish = async () => {
+      if (done) return; done = true;
+      const { data } = await sb.auth.getSession();
+      if (!data.session) { root().hidden = false; return signInForm(resolve); }
       const { data: aal } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
       if (aal && aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') { root().hidden = false; return mfaForm(resolve); }
-      return resolve(data.session);
-    }
+      resolve(data.session);
+    };
+    sb.auth.onAuthStateChange(ev => {
+      if (ev === 'PASSWORD_RECOVERY') { recovering = true; root().hidden = false; newPasswordForm(resolve); return; }
+      if (ev === 'SIGNED_IN') finish();
+    });
+    const { data } = await sb.auth.getSession();
+    if (recovering) { root().hidden = false; return newPasswordForm(resolve); }
+    if (data.session) { done = true; const { data: aal } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (aal && aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') { root().hidden = false; return mfaForm(resolve); }
+      return resolve(data.session); }
+    // Returning from Google OAuth: a code is in the URL and the session is being
+    // established asynchronously. Wait for the SIGNED_IN event instead of showing login.
+    if (new URLSearchParams(location.search).get('code')) return;
     root().hidden = false; signInForm(resolve);
   });
 }
