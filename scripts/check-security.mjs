@@ -14,7 +14,7 @@ const banned = [
 ];
 let bad = 0;
 for (const f of files) {
-  const s = readFileSync(f, 'utf8'), server = /^supabase[\/]/.test(f);
+  const s = readFileSync(f, 'utf8'), server = /(^|[\/])supabase[\/]/.test(f);
   for (const [re, why] of banned) {
     if (server && /service role|server secret/.test(why)) continue;
     if (re.test(s)) { console.error(`BLOCKED (${why}) in ${f}`); bad++; }
