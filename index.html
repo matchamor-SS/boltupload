@@ -55,6 +55,7 @@ h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance;letter-spacing:-.
 .brand{display:flex;align-items:baseline;gap:8px}
 .brand h1{font-size:clamp(17px,4.8vw,22px);font-weight:800;white-space:nowrap}
 @media (max-width:440px){.topr{gap:6px}.topr .iconbtn{width:34px;height:34px}#quickAdd{padding:6px 10px}}
+@media (max-width:520px){.brand{gap:6px}.brand h1{font-size:clamp(15px,4.5vw,20px)}.brand span#yearLbl{display:none}}
 .brand span{font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
 .shell{display:flex;min-height:calc(100% - 60px)}
 .rail{display:none}
@@ -150,6 +151,71 @@ a{color:var(--accent)}
 .duepill.soon{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 55%,transparent)}
 .duepill.late{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 55%,transparent)}
 @media (max-width:430px){.tabs button{font-size:9.5px;letter-spacing:-.01em}.tabs button svg{width:20px;height:20px}}
+/* ===== Mobile tight spacing fixes ===== */
+@media (max-width:600px){
+  /* tighter top bar so avatar+title+buttons never crowd */
+  .top{padding-block:10px;gap:8px}
+  .topr .iconbtn{width:34px;height:34px}
+  #quickAdd{padding:6px 10px;font-size:13px}
+  /* section headings shrink and wrap cleanly */
+  section[data-view]>.head h2{font-size:23px}
+  .head{gap:8px}
+  /* cards lose a little padding */
+  .card{padding:14px}
+  .grid{gap:10px}
+  /* calendar day cells compact */
+  .day{min-height:58px;padding:3px;gap:1px}
+  .day .n{font-size:11px}
+  .day .ev{font-size:9.5px;padding:1px 3px}
+  .cal{gap:3px}
+  /* invoice line items get more room for the amount columns */
+  .inv-line{grid-template-columns:1fr 52px 70px 64px 22px;gap:4px}
+  .inv-line input,.inv-line select{padding:6px 5px;font-size:13px}
+  /* stat tiles don't crowd */
+  .stats{gap:10px}
+  .stat b{font-size:22px}
+  /* hero count and heading scale down */
+  .hero h3{font-size:23px}
+  .hero .count{font-size:36px}
+  /* sheet fills more of the screen on phones */
+  .sheet{max-height:94%;border-radius:16px 16px 0 0;padding:16px}
+  .sheet h3{font-size:19px}
+  .frow{grid-template-columns:1fr}
+  /* form rows in sheets stack instead of cramping side-by-side */
+  .f input,.f select,.f textarea{padding:8px 10px}
+  /* kv lists use narrower label column */
+  .kv{grid-template-columns:92px 1fr;gap:6px 10px}
+  /* dropdowns in filter rows shrink to fit */
+  .period select,.period input{padding:5px 10px;font-size:13px}
+  /* contact/booking rows tighten */
+  .row{gap:10px;padding:11px 4px}
+  .date{width:42px}
+  .date b{font-size:17px}
+  /* chart bars */
+  .chart{height:110px;gap:4px}
+  .months{font-size:9px;gap:4px}
+  /* promo card padding tightens */
+  .rpt{padding:12px}
+  .rpt td,.rpt th{padding:5px 3px;font-size:13px}
+  /* settings appearance row wraps */
+  .seg{flex-wrap:wrap}
+  .cl-row .offsel{max-width:40%;font-size:11px}
+}
+@media (max-width:380px){
+  .tabs button{font-size:9px;letter-spacing:-.02em;gap:3px;padding:8px 1px 10px}
+  .tabs button svg{width:18px;height:18px}
+  #quickAdd{display:none}
+  .top{padding-block:9px}
+  .brand h1{font-size:15px}
+  .day{min-height:50px}
+  .inv-line{grid-template-columns:1fr 46px 60px 56px 20px}
+  .stat b{font-size:20px}
+  .hero h3{font-size:20px}
+  .hero .count{font-size:32px}
+  .card{padding:12px}
+  .actions{gap:6px}
+  .btn{padding:7px 12px;font-size:13px}
+}
 .scrollist{max-height:min(420px,55vh);overflow:auto;overscroll-behavior:contain;margin:0 -4px;padding:0 4px}
 .trow{gap:10px}
 .trow .tcb{width:18px;height:18px;accent-color:var(--accent);flex:none}
