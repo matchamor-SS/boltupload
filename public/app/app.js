@@ -572,7 +572,7 @@ function shrink(file){return new Promise((res,rej)=>{const url=URL.createObjectU
   img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("read"))};img.src=url})}
 function cropPhoto(file){return new Promise((res,rej)=>{const url=URL.createObjectURL(file),img=new Image();
   img.onload=()=>{URL.revokeObjectURL(url);
-    const bg=document.createElement("div');bg.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.8);display:grid;place-items:center;padding:20px';
+    const bg=document.createElement('div');bg.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.8);display:grid;place-items:center;padding:20px';
     const box=document.createElement('div');box.style.cssText='background:var(--surface,#fff);border-radius:14px;padding:16px;max-width:420px;width:100%';
     const h=document.createElement('h3');h.textContent='Crop your photo';h.style.cssText='margin:0 0 8px;font-size:16px';
     const note=document.createElement('p');note.className='note';note.style.cssText='margin:0 0 10px';note.textContent='Drag to position, then Save.';
