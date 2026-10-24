@@ -97,3 +97,56 @@ html.ss-locked, html.ss-locked body { margin: 0; padding: 0; background: #11160F
 @media (prefers-reduced-motion: reduce) {
   #ss-auth *, #ss-auth::before, #ss-auth::after, #ss-auth .ss-auth-wrap::before, #ss-auth .ss-auth-wrap::after, #ss-auth .legalfoot::before { animation: none !important; transition: none !important; }
 }
+
+/* ===== Phone & tablet layout fix ===== */
+/* 1. Nothing may ever push the page wider than the screen (that's what makes phones zoom out). */
+html, body { max-width: 100%; overflow-x: clip; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+html body main, html body section[data-view], html body .card { min-width: 0; }
+html body main img, html body main video, html body main svg { max-width: 100%; }
+html body main .card { overflow-wrap: break-word; }
+
+/* 2. Phones AND tablets (under 1024px wide): floating tab bar at the bottom */
+@media (max-width: 1023px) {
+  html body .shell { display: block; }
+  html body .tabs {
+    position: fixed; z-index: 6; top: auto; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    width: auto; height: auto; display: flex; flex-direction: row; align-items: stretch; gap: 0; padding: 4px;
+    border: 1px solid color-mix(in srgb, var(--line) 60%, transparent); border-radius: 20px;
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5);
+    box-shadow: 0 8px 30px -10px rgba(0, 0, 0, .25);
+  }
+  html body .tabs button {
+    flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; align-items: center; gap: 3px;
+    padding: 6px 2px 8px; font-size: 9.5px; border-radius: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  html body .tabs button svg { width: 22px; height: 22px; flex: none; }
+  html body .tabs button::after { top: 3px; left: 50%; width: 22px; height: 3px; transform: translateX(-50%) scaleX(0); }
+  html body .tabs button[aria-current="true"]::after { transform: translateX(-50%) scaleX(1); }
+  html body main { max-width: 760px; padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 380px) {
+  html body .tabs button { font-size: 8.5px; }
+  html body .tabs button svg { width: 20px; height: 20px; }
+}
+
+/* 3. Laptops and desktops (1024px and wider): side menu with full labels */
+@media (min-width: 1024px) {
+  html body .shell { display: flex; }
+  html body .tabs {
+    position: sticky; z-index: 6; top: 61px; left: auto; right: auto; bottom: auto;
+    width: 200px; height: calc(100vh - 61px); flex: none; display: flex; flex-direction: column; align-items: stretch; gap: 2px;
+    padding: 16px 10px; border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent;
+    -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none;
+  }
+  html body .tabs button {
+    flex: 0 0 auto; flex-direction: row; justify-content: flex-start; align-items: center; gap: 10px;
+    padding: 10px 12px; font-size: 14px; border-radius: 12px; white-space: nowrap;
+  }
+  html body .tabs button::after { top: 50%; left: 2px; width: 3px; height: 20px; transform: translateY(-50%) scaleY(0); }
+  html body .tabs button[aria-current="true"]::after { transform: translateY(-50%) scaleY(1); }
+}
+
+/* 4. Tidy the first-steps list on Home */
+html body .welcome li > .linkbtn { display: inline; text-align: left; padding: 0; }
