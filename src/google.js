@@ -107,7 +107,7 @@ const loadPicker = () => gapiP || (gapiP = new Promise((res, rej) => {
 let pickerCfg = null;
 async function getPickerConfig() {
   if (pickerCfg) return pickerCfg;
-  const { data, error } = await sb.functions.invoke('picker-config', { body: {} });
+  const { data, error } = await sb.functions.invoke('picker-config');
   if (error || !data || !data.apiKey || !data.appId) return null;
   pickerCfg = data;
   return pickerCfg;
