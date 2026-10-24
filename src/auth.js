@@ -57,7 +57,8 @@ function signInForm(resolve, mode = 'in') {
     if (up) {
       const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + '/' } });
       busy(btn, false, 'Create account');
-      if (error) return msg(error.message.includes('registered') ? 'That email already has an account. Sign in instead.' : "Couldn't create the account. Try again.", true);
+      // One neutral answer either way, so this form can't be used to find out which emails have accounts.
+      if (error) return msg("Couldn't create the account. If you already have one, sign in or use \u201cForgot password?\u201d.", true);
       if (data.session) return afterSignIn(resolve);
       return msg('Check your email and tap the link to confirm your account.');
     }

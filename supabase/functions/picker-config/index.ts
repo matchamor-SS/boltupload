@@ -1,31 +1,14 @@
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
-};
+// Hands the browser the Google Picker's public identifiers (API key + App ID).
+// Signed-in callers only: the token is verified before anything is returned.
+import { userFrom } from '../_shared/auth.ts';
+import { handler, HttpError, json } from '../_shared/http.ts';
 
-Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
-  }
-  try {
-    const apiKey = Deno.env.get("VITE_GOOGLE_API_KEY");
-    const appId = Deno.env.get("VITE_GOOGLE_APP_ID");
-    if (!apiKey || !appId) {
-      return new Response(
-        JSON.stringify({ error: "picker_not_configured" }),
-        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-    return new Response(
-      JSON.stringify({ apiKey, appId }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  } catch (e) {
-    console.error("picker-config error:", (e as Error).message);
-    return new Response(
-      JSON.stringify({ error: "server_error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  }
+handler(async req => {
+  await userFrom(req);
+  const apiKey = Deno.env.get('VITE_GOOGLE_API_KEY');
+  const appId = Deno.env.get('VITE_GOOGLE_APP_ID');
+  if (!apiKey || !appId) throw new HttpError(503, 'picker_not_configured');
+  return json({ apiKey, appId });
 });
+
+// deploy marker

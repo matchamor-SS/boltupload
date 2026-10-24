@@ -7,7 +7,7 @@
     },
     "google": {
       "hasChanged": false,
-      "hash": "8d6869e8b209b3320448788a04aa00daa9dd3f888c4268d87bc2f88b0eeb633299fe2a4acbf40fd6410a536922f96732f9ec82d0e40fadfdf2a620416a119f3a"
+      "hash": "a5cdaff1bcf53de13f179590b9da769596b17f183998a55dedded9c78bc4246999fe2a4acbf40fd6410a536922f96732f9ec82d0e40fadfdf2a620416a119f3a"
     },
     "google-disconnect": {
       "hasChanged": false,
@@ -23,7 +23,7 @@
     },
     "picker-config": {
       "hasChanged": false,
-      "hash": "ca302ae8332a134530f4dd4d53e6a9541bbec87166ae0cbc6cf411a3da71d7e099fe2a4acbf40fd6410a536922f96732f9ec82d0e40fadfdf2a620416a119f3a"
+      "hash": "3806694eee1ccbe580cf5cf64a7bb4fae7c0763e99b87422cdbf6ac6c3385ab299fe2a4acbf40fd6410a536922f96732f9ec82d0e40fadfdf2a620416a119f3a"
     }
   }
 }

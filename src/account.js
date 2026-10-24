@@ -9,6 +9,8 @@ import { downloads } from './runtime.js';
 import { esc } from './auth.js';
 
 const toast = t => window.toast && window.toast(t);
+/* Signature links end up in other people's inboxes, so only ordinary web and email addresses are kept. */
+const safeUrl = u => (typeof u === 'string' && /^(https?:|mailto:)/i.test(u.trim()) ? u.trim() : '');
 
 function card(id, html) { const d = document.createElement('div'); d.className = 'card'; d.id = id; d.innerHTML = html; return d; }
 
@@ -36,7 +38,7 @@ async function renderSignature(el) {
   db.doc('settings/signature').onSnapshot(s => { if (s.exists && s.data()) sigData = { text: s.data().text || '', logoId: s.data().logoId || '', links: Array.isArray(s.data().links) ? s.data().links : [] }; }, () => {});
   function sigPreview() {
     const lines = (sigData.text || '').split('\n').map(l => esc(l)).join('<br>');
-    const links = (sigData.links || []).filter(l => l.url).map(l => `<a href="${esc(l.url)}" style="color:#15c">${esc(l.label || l.url)}</a>`).join(' · ');
+    const links = (sigData.links || []).filter(l => safeUrl(l && l.url)).map(l => `<a href="${esc(safeUrl(l.url))}" style="color:#15c">${esc(l.label || safeUrl(l.url))}</a>`).join(' · ');
     const logo = sigData.logoId ? `<img src="${esc(window.__blob ? window.__blob(sigData.logoId) : sigData.logoId)}" alt="" style="max-height:48px;max-width:200px;margin-bottom:4px"><br>` : '';
     return `<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)">${logo}${lines}${links ? '<br>' + links : ''}</div>`;
   }
@@ -70,7 +72,7 @@ async function renderSignature(el) {
   const logoDel = el.querySelector('#ss-siglogodel');
   if (logoDel) logoDel.onclick = () => { sigData.logoId = ''; el.querySelector('#ss-sigprev').innerHTML = sigPreview(); logoDel.remove(); };
   el.querySelector('#ss-sigsave').onclick = async () => {
-    try { const clean = (sigData.links || []).filter(l => l.url).map(l => ({ label: (l.label || '').slice(0, 100), url: l.url.slice(0, 500) })); await db.doc('settings/signature').set({ text: ta.value.slice(0, 4000), logoId: sigData.logoId || '', links: clean }); toast('Signature saved'); } catch (_) { toast("Couldn't save. Try again."); }
+    try { const clean = (sigData.links || []).filter(l => safeUrl(l && l.url)).map(l => ({ label: (l.label || '').slice(0, 100), url: safeUrl(l.url).slice(0, 500) })); await db.doc('settings/signature').set({ text: ta.value.slice(0, 4000), logoId: sigData.logoId || '', links: clean }); toast('Signature saved'); } catch (_) { toast("Couldn't save. Try again."); }
   };
   el.querySelector('#ss-sigprev').innerHTML = sigPreview();
 }

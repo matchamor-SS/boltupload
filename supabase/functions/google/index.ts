@@ -44,7 +44,8 @@ async function signatureHtml(ownerId: string) {
   const { data } = await admin.from('app_docs').select('data').eq('owner_id', ownerId).eq('col', 'settings').eq('id', 'signature').maybeSingle();
   const d = data && data.data || {};
   const text = typeof d.text === 'string' ? d.text.trim() : '';
-  const links: { label?: string; url: string }[] = Array.isArray(d.links) ? d.links.filter((l: any) => l && l.url) : [];
+  const safeUrl = (u: unknown) => (typeof u === 'string' && /^(https?:|mailto:)/i.test(u.trim()) ? u.trim() : '');
+  const links: { label?: string; url: string }[] = Array.isArray(d.links) ? d.links.map((l: any) => (l && safeUrl(l.url) ? { label: l.label, url: safeUrl(l.url) } : null)).filter(Boolean) : [];
   const logoId = typeof d.logoId === 'string' ? d.logoId : '';
   const logoUrl = logoId ? `${Deno.env.get('SUPABASE_URL')}/storage/v1/object/public/user-assets/${logoId.split('/').map(encodeURIComponent).join('/')}` : '';
   const lines = text ? `<div style="margin-top:16px;color:#444">${esc(text).replace(/\n/g, '<br>')}</div>` : '';
