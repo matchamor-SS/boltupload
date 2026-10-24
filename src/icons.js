@@ -82,12 +82,11 @@ const ICONS = {
     <rect x="12.5" y="10" width="3" height="1.5" rx=".7" fill="${HL}"/>
   `),
 
-  // Settings: classic gear — clean, in style
+  // Settings: classic gear — clean, no extra decorations
   settings: svg(`
     <circle cx="14" cy="14" r="3.5" fill="${BODY}"/>
     <circle cx="14" cy="14" r="3.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
-    <path d="M14 4 L14 7 M14 21 L14 24 M4 14 L7 14 M21 14 L24 14 M7 7 L9 9 M19 19 L21 21 M21 7 L19 9 M9 19 L7 21" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-    <circle cx="14" cy="4" r="1.2" fill="${HL}"/>
+    <path d="M14 4.5 L14 7 M14 21 L14 23.5 M4.5 14 L7 14 M21 14 L23.5 14 M7.5 7.5 L9.3 9.3 M18.7 18.7 L20.5 20.5 M20.5 7.5 L18.7 9.3 M9.3 18.7 L7.5 20.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
   `),
 };
 
@@ -104,9 +103,7 @@ export function installIcons() {
   });
   const setBtn = document.getElementById('setBtn');
   if (setBtn) {
-    const label = setBtn.lastChild;
-    setBtn.innerHTML = ICONS.settings;
-    if (label) setBtn.appendChild(label);
+    // Settings button already has the correct gear SVG in index.html — don't overwrite
   }
 }
 

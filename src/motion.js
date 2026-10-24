@@ -142,7 +142,7 @@ function attachPress() {
     el.addEventListener('pointerdown', () => {
       if (noMotion()) return;
       el.animate(
-        [{ transform: 'scale(1)' }, { transform: 'scale(0.97)' }, { transform: 'scale(1)' }],
+        [{ transform: 'scale(1)' }, { transform: 'scale(0.98)' }, { transform: 'scale(1)' }],
         { duration: 120, easing: 'ease-out' }
       );
     });
