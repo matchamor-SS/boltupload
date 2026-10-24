@@ -1859,11 +1859,7 @@ function linkForm(l={}){const isNew=!l.id;
     root.querySelector("[data-save]").onclick=async()=>{const v=formVals(root);if(!v.label||!v.url){toast("Add a label and a link");return}
       if(await save("links",l.id,{...strip(l),...v})){close();toast("Saved")}}});
 }
-const FILLINS=[["Contact & show",[["contact_first","Contact's first name"],["venue","Venue name"],["promoter","Promoter name"],["media_name","Media person's name"],["show","Show name"]]],
-  ["Date & place",[["date","Show date"],["set_time","Set time"],["city","City"],["address","Address"],["availability","My open dates (from Availability)"]]],
-  ["Money & links",[["fee","Fee"],["ticket_link","Ticket link"],["media_folder","Media upload folder"]]],
-  ["About you",[["pay_handles","Payment usernames"],["my_name","Your name"],["dj_name","DJ name"],["website","Website"],["epk","EPK link"],["instagram","Instagram"],["phone","Phone"]]],
-  ["From your Kit",[["bio_short","Short bio"],["bio_long","Long bio"],["links","All your links"],["files","Promo file share links"],["promo_folder","Promo content folder"],["rider","Tech rider"],["hospitality","Hospitality rider"],["press_kit","Full press kit"]]]];
+const FILLINS=SS.templates.FILLINS;
 const fillSelect=id=>`<select id="${id}"><option value="">Choose one to add where your cursor is…</option>${FILLINS.map(([g,items])=>`<optgroup label="${g}">${items.map(([k,l])=>`<option value="${k}">${l}  ·  {{${k}}}</option>`).join("")}</optgroup>`).join("")}</select>`;
 function wireFill(root,subj,body,sel,note,after){let target=body;
   [subj,body].forEach(el=>el.addEventListener("focus",()=>{target=el;if(note)note.textContent=el===subj?"Goes into the subject at your cursor.":"Goes into the body at your cursor."}));
@@ -1937,14 +1933,9 @@ function templateForm(t={}){const isNew=!t.id;
     root.querySelector("[data-save]").onclick=async()=>{const v=formVals(root);if(!v.name){toast("Name the template");return}
       if(await save("templates",t.id,{...strip(t),...v})){close();toast("Saved")}}});
 }
-function fill(str,b,to){const v=b?contact(b.venueId):null,p=S.profile;
-  const pr=b?contact(b.promoterId):null,md=b?contact(b.mediaId):null;
-  const K=S.kit||{};
-  const map={availability:availText(),bio_short:K.bioShort||"",bio_long:K.bioLong||"",rider:K.rider||"",hospitality:K.hospitality||"",promo_folder:(K.promoFolder&&K.promoFolder.url)||"",links:linksText(),files:filesText(),press_kit:pressKitText(),promoter:(pr&&(pr.name||pr.org))||"",media_name:(md&&md.name)||"",contact_first:(to&&to.name||"").split(" ")[0]||"there",venue:(v&&(v.org||v.name))||"",date:b&&b.date?fmtD(b.date):"",city:b&&b.city||"",address:bAddr(b),fee:b&&b.fee?money(b.fee):"",set_time:b&&b.setTime||"",show:b&&(b.title||"")||"",ticket_link:b&&b.ticketUrl||"",media_folder:b&&b.driveUrl||"",
-    pay_handles:handlesText(),my_name:p.myName||"",dj_name:p.djName||"",website:p.website||"",epk:p.epk||"",instagram:p.instagram||"",phone:p.phone||""};
-  return String(str||"").replace(/\{\{(\w+)\}\}/g,(m,k)=>k in map?map[k]:m)}
-const defRecipient=(t,b)=>{if(!b)return"";if(t.audience==="media")return b.mediaId;if(b.contactPersonId&&contact(b.contactPersonId))return b.contactPersonId;const p=contact(b.promoterId);
-  if(p)return isColl(p)&&!p.email&&p.mainContactId?p.mainContactId:p.id;return((contact(b.venueId)||{}).bookingContactId)||b.venueId};
+const tplCtx=()=>({contacts:S.contacts||[],profile:S.profile||{},kit:{...(S.kit||{}),promoFolderUrl:(S.kit&&S.kit.promoFolder&&S.kit.promoFolder.url)||""},links:sortedLinks(),promoFiles:(S.kitFiles||[]).filter(f=>f.shareUrl),openDates:openNights(),payHandles:PH()});
+const fill=(str,b,to)=>SS.templates.fill(str,tplCtx(),b,to);
+const defRecipient=(t,b)=>SS.templates.defaultRecipient(t,tplCtx(),b);
 function useTemplate(tid,bid){const t=S.templates.find(x=>x.id===tid);if(!t)return;
   let b=bid?S.bookings.find(x=>x.id===bid):null;
   const draw=()=>{const toId=$("#u-to")?.value;const to=contact(toId)||contact(defRecipient(t,b));

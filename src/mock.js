@@ -1,10 +1,12 @@
 /* Demo mode (VITE_SS_MOCK=1): the full app with in-memory storage and a pretend Google.
  * Nothing is saved after you close the tab and nothing is sent anywhere. Used for previews and automated tests. */
+import STARTER from './templates.starter.json';
+
 const clone = v => (v == null ? v : JSON.parse(JSON.stringify(v)));
 const merge = (a, b) => { for (const k in b) { if (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && a[k] && typeof a[k] === 'object' && !Array.isArray(a[k])) merge(a[k], b[k]); else a[k] = b[k]; } return a; };
 
 export function makeMock() {
-  const store = {}, L = [], D = [];
+  const store = { templates: Object.fromEntries(STARTER.map(({ id, ...t }) => [id, t])) }, L = [], D = [];
   const fire = c => {
     const docs = Object.entries(store[c] || {}).map(([id, d]) => ({ id, exists: true, data: () => clone(d) }));
     L.filter(l => l.c === c).forEach(l => l.f({ docs, size: docs.length, empty: !docs.length }));

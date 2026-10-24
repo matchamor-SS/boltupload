@@ -6,6 +6,10 @@
  * update() deep-merges nested objects on the server (public.app_docs_merge), same as the original runtime.
  * Before anything is stored, the database also scrubs bank and card numbers (trigger app_docs_scrub). */
 import { sb, err } from './supabase.js';
+import { loadTemplates, toRow, fromRow } from './templateStore.ts';
+
+// Collections that live in their own table instead of app_docs.
+const TPL = 'templates';
 
 const cache = new Map();          // col -> Map(id -> data)
 const colListeners = new Map();   // col -> Set(cb)
@@ -34,6 +38,12 @@ function emit(col) {
 }
 function load(col) {
   if (!loading.has(col)) loading.set(col, (async () => {
+    if (col === TPL) {
+      const { data, error } = await loadTemplates(uid);
+      if (error) { loading.delete(col); throw pgErr(error); }
+      cache.set(col, new Map(data.map(r => [r.id, fromRow(r)])));
+      return;
+    }
     const { data, error } = await sb.from('app_docs').select('id,data').eq('col', col);
     if (error) { loading.delete(col); throw pgErr(error); }
     cache.set(col, new Map(data.map(r => [r.id, r.data])));
@@ -50,22 +60,40 @@ function realtime() {
       if (p.eventType === 'DELETE') cache.get(row.col).delete(row.id); else cache.get(row.col).set(row.id, row.data);
       emit(row.col);
     })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'email_templates', filter: `owner_id=eq.${uid}` }, p => {
+      if (!cache.has(TPL)) return;
+      if (p.eventType === 'DELETE') { if (p.old && p.old.id) cache.get(TPL).delete(p.old.id); } else cache.get(TPL).set(p.new.id, fromRow(p.new));
+      emit(TPL);
+    })
     .subscribe();
 }
 function put(col, id, data) { if (!cache.has(col)) cache.set(col, new Map()); if (data === undefined) cache.get(col).delete(id); else cache.get(col).set(id, data); emit(col); }
 
 async function setDoc(col, id, data) {
+  if (col === TPL) {
+    const { data: row, error } = await sb.from('email_templates').upsert({ owner_id: uid, id, ...toRow({ name: '', stage: '', audience: 'venue', subject: '', body: '', ...data }) }, { onConflict: 'owner_id,id' }).select('id,name,stage,audience,subject,body').single();
+    if (error) throw pgErr(error);
+    return put(col, id, fromRow(row));
+  }
   const { data: row, error } = await sb.from('app_docs').upsert({ owner_id: uid, col, id, data: clone(data) ?? {} }, { onConflict: 'owner_id,col,id' }).select('data').single();
   if (error) throw pgErr(error);
   put(col, id, row.data);
 }
 async function updateDoc(col, id, patch) {
+  if (col === TPL) {
+    const { data: row, error } = await sb.from('email_templates').update(toRow(patch || {})).match({ owner_id: uid, id }).select('id,name,stage,audience,subject,body').maybeSingle();
+    if (error) throw pgErr(error);
+    if (!row) throw err('not_found');
+    return put(col, id, fromRow(row));
+  }
   const { data, error } = await sb.rpc('app_docs_merge', { p_col: col, p_id: id, p_patch: clone(patch) ?? {} });
   if (error) throw pgErr(error);
   put(col, id, data);
 }
 async function deleteDoc(col, id) {
-  const { error } = await sb.from('app_docs').delete().match({ owner_id: uid, col, id });
+  const { error } = col === TPL
+    ? await sb.from('email_templates').delete().match({ owner_id: uid, id })
+    : await sb.from('app_docs').delete().match({ owner_id: uid, col, id });
   if (error) throw pgErr(error);
   put(col, id, undefined);
 }
@@ -105,5 +133,7 @@ export function makeDb(userId) {
 export async function exportAll() {
   const { data, error } = await sb.from('app_docs').select('col,id,data,updated_at').order('col');
   if (error) throw pgErr(error);
-  return data;
+  const { data: tpls, error: e2 } = await sb.from('email_templates').select('id,name,stage,audience,subject,body,updated_at').order('name');
+  if (e2) throw pgErr(e2);
+  return [...data, ...tpls.map(({ updated_at, ...t }) => ({ col: TPL, id: t.id, data: fromRow(t), updated_at }))];
 }
