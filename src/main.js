@@ -29,6 +29,7 @@ async function start() {
   await loadScript('/vendor/jspdf.umd.min.js');
   await loadScript('/app/app.js');
   mountAccount({ demo: MOCK });
+  window.addEventListener('ss-google-connected', refreshGoogleCard);
 
   // Back from Google's consent screen
   const p = new URLSearchParams(location.search), g = p.get('google');

@@ -3,7 +3,7 @@
  *   Email signature     added to every email the app sends (Gmail's API can't add your Gmail signature)
  *   Account & security  two-step verification, download my data, sign out, delete account */
 import { sb } from './supabase.js';
-import { googleStatus, startConnect, disconnectGoogle, TIER_INFO, consentPrompt } from './google.js';
+import { googleStatus, disconnectGoogle, TIER_INFO, consentPrompt } from './google.js';
 import { exportAll } from './db.js';
 import { downloads } from './runtime.js';
 import { esc } from './auth.js';

@@ -30,12 +30,39 @@ async function codeOf(error) {
   try { const j = await error.context.json(); return j.error || 'unavailable'; } catch (_) { return error && error.name === 'FunctionsFetchError' ? 'offline' : 'unavailable'; }
 }
 
-export async function startConnect(tier) {
+const POPUP = 'width=520,height=700,menubar=no,toolbar=no';
+/** Opens Google's consent screen in a popup so this page (and the sign-in) stay put. `win` must be opened during the click. */
+async function startConnect(tier, win) {
   const { data, error } = await sb.functions.invoke('google-oauth-start', { body: { tier } });
-  if (error || !data || !data.url) { console.error('google-oauth-start failed', error || data); throw err('unavailable'); }
-  // Google refuses to show its sign-in page inside a frame (e.g. Bolt's preview), so use a new tab there.
-  if (window.top !== window.self) { if (!window.open(data.url, '_blank', 'noopener')) location.assign(data.url); return; }
+  if (error || !data || !data.url) { if (win) win.close(); console.error('google-oauth-start failed', error || data); throw err('unavailable'); }
+  if (win && !win.closed) { win.location.href = data.url; return watchFor(tier); }
+  sessionStorage.setItem('ss-google-return', '1');
   location.assign(data.url);
+  return new Promise(() => {});
+}
+
+/* The popup can't talk back to this page reliably (Google cuts the link between windows), so ask the server. */
+function watchFor(tier) {
+  return new Promise(resolve => {
+    const until = Date.now() + 10 * 60_000;
+    let busy = false, timer;
+    const check = async () => {
+      if (busy) return; busy = true;
+      const st = await googleStatus(true); busy = false;
+      if (st.tiers && st.tiers[tier]) { stop(); window.toast && window.toast(`${TIER_INFO[tier].name} connected`); window.dispatchEvent(new CustomEvent('ss-google-connected', { detail: { tier } })); resolve(true); }
+      else if (Date.now() > until) { stop(); resolve(false); }
+    };
+    const stop = () => { clearInterval(timer); window.removeEventListener('focus', check); };
+    timer = setInterval(check, 2500); window.addEventListener('focus', check);
+  });
+}
+
+/** Asks to connect a feature only if it isn't connected yet. "Not now" is remembered until the browser tab closes. */
+export async function ensureGoogle(tier) {
+  if (sessionStorage.getItem('ss-skip-' + tier)) return false;
+  const st = await googleStatus();
+  if (st.tiers && st.tiers[tier]) return true;
+  return consentPrompt(tier);
 }
 export async function disconnectGoogle() {
   const { error } = await sb.functions.invoke('google-disconnect', { body: {} });
@@ -44,11 +71,13 @@ export async function disconnectGoogle() {
 }
 
 /* In-context explanation shown right before Google's consent screen (Google asks apps to explain why they need access). */
-let asking = 0;
+let asking = 0, pending = Promise.resolve(false);
 export function consentPrompt(tier, reconnect) {
-  if (Date.now() - asking < 4000 || document.querySelector('.ss-consent')) return;
+  if (Date.now() - asking < 4000 || document.querySelector('.ss-consent')) return pending;
+  const t = TIER_INFO[tier]; if (!t) return Promise.resolve(false);
   asking = Date.now();
-  const t = TIER_INFO[tier]; if (!t) return;
+  let settle;
+  pending = new Promise(r => { settle = r; });
   const bg = document.createElement('div'); bg.className = 'notice-bg cs-bg ss-consent';
   bg.innerHTML = `<div class="notice" role="alertdialog" aria-modal="true" aria-labelledby="ssc-t"><button class="x nx" data-no aria-label="Close">×</button>
     <h4 id="ssc-t">${reconnect ? 'Reconnect' : 'Connect'} ${t.name}</h4>
@@ -58,9 +87,17 @@ export function consentPrompt(tier, reconnect) {
   document.body.appendChild(bg);
   const done = () => bg.remove();
   bg.addEventListener('click', async e => {
-    if (e.target === bg || e.target.closest('[data-no]')) return done();
-    if (e.target.closest('[data-yes]')) { e.target.closest('[data-yes]').textContent = 'Opening Google…'; try { await startConnect(tier); done(); } catch (_) { done(); window.toast && window.toast("Couldn't reach Google. Try again."); } }
+    if (e.target === bg && bg.querySelector('[data-yes]').disabled) return;
+    if (e.target === bg || e.target.closest('[data-no]')) { sessionStorage.setItem('ss-skip-' + tier, '1'); done(); return settle(false); }
+    const yes = e.target.closest('[data-yes]');
+    if (!yes || yes.disabled) return;
+    const win = window.open('', 'ss-google', POPUP);
+    yes.disabled = true; yes.textContent = 'Waiting for Google…';
+    bg.querySelector('[data-no]').textContent = 'Cancel';
+    try { const ok = await startConnect(tier, win); done(); settle(ok); }
+    catch (_) { done(); settle(false); window.toast && window.toast("Couldn't reach Google. Try again."); }
   });
+  return pending;
 }
 
 /* Same caching the app relied on before: read calls with {cache:{staleTime}} are reused for that long (and shared while in flight). */
@@ -86,8 +123,10 @@ async function rawCall(server, tool, input = {}) {
   const { data, error } = await sb.functions.invoke('google', { body: { server, tool, input } });
   if (!error) return { payload: data };
   const code = await codeOf(error);
-  if (code === 'google_not_connected' || code === 'missing_scope') { if (ASKS.has(tool)) consentPrompt(tier); throw err('server_not_connected'); }
-  if (code === 'google_reconnect') { if (ASKS.has(tool)) consentPrompt(tier, true); throw err('needs_reauth'); }
+  // Calendar events are written on save; if the person already said "Not now" this session, don't ask again.
+  const ask = ASKS.has(tool) && !(/_event$/.test(tool) && sessionStorage.getItem('ss-skip-' + tier));
+  if (code === 'google_not_connected' || code === 'missing_scope') throw Object.assign(err('server_not_connected'), { connecting: ask ? consentPrompt(tier) : null });
+  if (code === 'google_reconnect') throw Object.assign(err('needs_reauth'), { connecting: ask ? consentPrompt(tier, true) : null });
   if (code === 'rate_limited' || code === 'daily_limit') throw Object.assign(err('rate_limited'), { retryable: true, retryAfterMs: 2000 });
   if (code === 'offline' || code === 'unavailable' || code === 'server_error') throw Object.assign(err('unavailable'), { retryable: true });
   throw err('tool_error', code);
@@ -120,7 +159,11 @@ export async function pickFolder(title) {
   const { apiKey, appId } = cfg;
   let token;
   try { token = (await rawCall('Google Drive', 'picker_token', {})).payload.token; }
-  catch (e) { if (e.code !== 'server_not_connected' && e.code !== 'needs_reauth') window.toast && window.toast("Couldn't reach Google Drive. Try again."); return null; }
+  catch (e) {
+    if (!e.connecting) { window.toast && window.toast("Couldn't reach Google Drive. Try again."); return null; }
+    if (!(await e.connecting)) return null;
+    try { token = (await rawCall('Google Drive', 'picker_token', {})).payload.token; } catch (_) { window.toast && window.toast("Couldn't reach Google Drive. Try again."); return null; }
+  }
   try { await loadPicker(); } catch (_) { window.toast && window.toast("Couldn't load Google's folder picker. Check your connection."); return null; }
   const G = window.google.picker;
   return new Promise(resolve => {

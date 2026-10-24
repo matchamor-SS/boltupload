@@ -6,7 +6,7 @@
  * Anything else resolves to null, exactly like an unavailable capability. */
 import { sb, blobUrl, err } from './supabase.js';
 import { makeDb } from './db.js';
-import { mcp, pickFolder } from './google.js';
+import { mcp, pickFolder, ensureGoogle } from './google.js';
 
 const MAX_UPLOAD = 10 * 1024 * 1024;
 const OK_TYPES = /^(image\/(png|jpe?g|gif|webp|avif)|video\/(mp4|quicktime|webm)|application\/pdf)$/i;
@@ -48,5 +48,5 @@ export function installRuntime(user, override) {
   const caps = override || { db: makeDb(user.id), mcp, assets: makeAssets(user.id), downloads };
   window.claude = Object.freeze({ use: async name => caps[name] || null });
   window.__blob = blobUrl;
-  window.SS = Object.freeze({ pickFolder: override && override.pickFolder ? override.pickFolder : pickFolder, user: { id: user.id, email: user.email } });
+  window.SS = Object.freeze({ pickFolder: override && override.pickFolder ? override.pickFolder : pickFolder, ensureGoogle: override ? async () => true : ensureGoogle, user: { id: user.id, email: user.email } });
 }

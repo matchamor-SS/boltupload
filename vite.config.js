@@ -14,6 +14,7 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         privacy: resolve(__dirname, 'privacy-policy/index.html'),
         terms: resolve(__dirname, 'terms-of-service/index.html'),
+        googleDone: resolve(__dirname, 'google-done/index.html'),
       },
     },
   },

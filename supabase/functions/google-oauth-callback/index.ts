@@ -3,7 +3,7 @@
 import { admin, audit } from '../_shared/auth.ts';
 import { encrypt } from '../_shared/crypto.ts';
 import { isAllowedOrigin } from '../_shared/http.ts';
-const redirect = (base: string, status: string, tier = '') => Response.redirect(`${base.replace(/\/+$/, '')}/?google=${status}${tier ? `&tier=${tier}` : ''}`, 302);
+const redirect = (base: string, status: string, tier = '') => Response.redirect(`${base.replace(/\/+$/, '')}/google-done/?google=${status}${tier ? `&tier=${tier}` : ''}`, 302);
 Deno.serve(async req => {
   let home = Deno.env.get('APP_URL') ?? '';
   const back = (status: string, tier = '') => redirect(home, status, tier);

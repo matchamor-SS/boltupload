@@ -1554,7 +1554,7 @@ $("#stNo").onclick=()=>{$("#stConfirm").hidden=true};
 $("#stYes").onclick=async()=>{const stuck=S.bookings.filter(b=>!KINDS.includes(b.status));if(stuck.length){$("#stConfirm").hidden=true;toast(`Move ${stuck.length} booking${stuck.length>1?"s":""} out of the stages you added first`);return}
   const prev=pipeline();if(await save("settings","pipeline",{stages:[]})&&await save("settings","stageNames",{})){S.pipeline={stages:[]};S.stageNames={};PLD=null;$("#stConfirm").hidden=true;applyStageNames();$("#stNames").innerHTML="";render();toast("Stages reset to defaults",()=>savePipeline(prev,"Stages restored"))}};
 function bookingForm(b={}){
-  const isNew=!b.id;
+  const isNew=!b.id;if(isNew&&window.SS&&SS.ensureGoogle)SS.ensureGoogle("calendar");
   sheet(`<h3>${isNew?"New booking":"Edit booking"}</h3>
   <div class="f"><label for="b-title">Show / event name</label><input id="b-title" data-k="title" value="${esc(b.title)}" placeholder="e.g. Friday Night Social at The Lounge"></div>
   <div class="frow"><div class="f"><label for="b-status">Status</label><select id="b-status" data-k="status">${opt(STATUSES,b.status||(STATUSES[0]||[])[0])}</select></div>
@@ -2041,3 +2041,4 @@ render();
 })();
 (async()=>{G.mcp=await claude.use("mcp");if(!G.mcp){G.state="none";renderSync();return}
   setTimeout(()=>{if(G.state==="loading"&&!G.at)gSync()},1500)})();
+window.addEventListener("ss-google-connected",e=>{if(e.detail&&e.detail.tier==="calendar")gSync(true)});
