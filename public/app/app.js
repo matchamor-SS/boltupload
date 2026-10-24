@@ -1975,13 +1975,14 @@ function profileForm(){const p=S.profile;
 async function copy(t){try{await navigator.clipboard.writeText(t);toast("Copied")}catch(e){toast("Copy blocked — select the text instead")}}
 
 /* ---------- global clicks ---------- */
-document.addEventListener("click",e=>{const el=e.target.closest("[data-new],[data-open-booking],[data-open-contact],[data-open-expense],[data-open-link],[data-open-template],[data-bf],[data-cf],[data-copy],[data-edit-profile],[data-filter-go],[data-day],[data-goto],[data-open-task],[data-open-income],[data-tx],[data-open-block]");if(!el)return;
+document.addEventListener("click",e=>{const el=e.target.closest("[data-new],[data-open-booking],[data-open-contact],[data-reach],[data-open-expense],[data-open-link],[data-open-template],[data-bf],[data-cf],[data-copy],[data-edit-profile],[data-filter-go],[data-day],[data-goto],[data-open-task],[data-open-income],[data-tx],[data-open-block]");if(!el)return;
   const d=el.dataset;
   if(d.new){({booking:bookingForm,contact:contactForm,expense:expenseForm,income:incomeForm,link:linkForm,template:templateForm})[d.new]();}
   else if(d.openIncome){incomeForm(S.income.find(c=>c.id===d.openIncome))}
   else if(d.tx){const tile=el.classList.contains('stat-tile');txFilter=(tile&&txFilter===d.tx)?'all':d.tx;renderMoney();if(tile)$('#txCard').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'})}
   else if(d.openBooking){bookingView(d.openBooking)}
   else if(d.openContact){contactForm(S.contacts.find(c=>c.id===d.openContact))}
+  else if(d.reach){reachSheet(d.reach)}
   else if(d.openExpense){expenseForm(S.expenses.find(c=>c.id===d.openExpense))}
   else if(d.openLink){linkForm(S.links.find(c=>c.id===d.openLink))}
   else if(d.openTemplate){useTemplate(d.openTemplate)}
