@@ -1032,7 +1032,8 @@ function curMode(){const r=document.documentElement,a=r.getAttribute("data-app-t
 function applyMode(){const r=document.documentElement,m=curMode();if(r.getAttribute("data-mode")!==m)r.setAttribute("data-mode",m)}
 function applyPalette(k){if(!PALETTES.some(p=>p[0]===k))k="sage";const r=document.documentElement;if(!k||k==="sage")r.removeAttribute("data-palette");else r.setAttribute("data-palette",k);applyMode();renderPalPick()}
 function renderPalPick(){const el=document.getElementById("palPick");if(!el)return;const cur=document.documentElement.getAttribute("data-palette")||"sage";
-  el.innerHTML=PALETTES.map(([k,n,c])=>`<button type="button" data-pal="${k}" aria-pressed="${k===cur}"><span class="sw" aria-hidden="true">${c.map(x=>`<i style="background:${x};width:${Math.max(6,Math.round(42/c.length))}px"></i>`).join("")}</span>${n}</button>`).join("")}
+  el.innerHTML=PALETTES.map(([k,n,c])=>{const sw=c.filter(x=>!/^#f{6}$/i.test(x));
+    return `<button type="button" data-pal="${k}" aria-pressed="${k===cur}"><span class="sw" aria-hidden="true">${sw.map(x=>`<i style="background:${x};flex:1"></i>`).join("")}</span>${n}</button>`}).join("")}
 new MutationObserver(applyMode).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme","data-app-theme"]});
 try{matchMedia("(prefers-color-scheme: dark)").addEventListener("change",applyMode)}catch(e){}
 try{applyPalette(localStorage.getItem("palette")||"sage")}catch(e){applyPalette("sage")}
