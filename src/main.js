@@ -1,11 +1,14 @@
 /* Boot order: theme -> sign-in -> runtime (window.claude) -> PDF library -> the app (public/app/app.js, unchanged
  * app code) -> Settings cards. The app script is loaded only after sign-in so it never runs without its data. */
 import './shell.css';
+import './theme.css';
 import { sb, MOCK, CONFIGURED } from './supabase.js';
 import { installRuntime, downloads } from './runtime.js';
 import { requireSession, setupNeeded } from './auth.js';
 import { mountAccount, refreshGoogleCard } from './account.js';
 import { forgetStatus } from './google.js';
+import { installIcons } from './icons.js';
+import { initMotion, setupReduceMotionToggle } from './motion.js';
 
 const loadScript = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.body.appendChild(s); });
 
@@ -26,9 +29,12 @@ async function start() {
   }
   document.getElementById('ss-auth').hidden = true;
   document.documentElement.classList.remove('ss-locked');
+  installIcons();
   await loadScript('/vendor/jspdf.umd.min.js');
   await loadScript('/app/app.js');
   mountAccount({ demo: MOCK });
+  initMotion();
+  setupReduceMotionToggle();
   window.addEventListener('ss-google-connected', refreshGoogleCard);
 
   // Back from Google's consent screen

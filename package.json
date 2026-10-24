@@ -11,6 +11,8 @@
     "check:security": "node scripts/check-security.mjs"
   },
   "dependencies": {
+    "@fontsource/bodoni-moda": "^5.3.0",
+    "@fontsource/inter-tight": "^5.3.0",
     "@supabase/supabase-js": "2.45.4"
   },
   "devDependencies": {

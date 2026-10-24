@@ -1,0 +1,548 @@
+/* ===== Luxury editorial theme for Set & Settled =====
+   Visual-only overrides. No id/class/data-* attributes are renamed.
+   Loaded after shell.css so overrides win by source order. */
+
+/* --- Font imports (bundled, no CDN) --- */
+@import '@fontsource/bodoni-moda/500.css';
+@import '@fontsource/bodoni-moda/600.css';
+@import '@fontsource/bodoni-moda/700.css';
+@import '@fontsource/inter-tight/400.css';
+@import '@fontsource/inter-tight/500.css';
+@import '@fontsource/inter-tight/600.css';
+
+/* --- Font tokens --- */
+:root {
+  --display: 'Bodoni Moda', 'Bricolage Grotesque', ui-serif, Georgia, serif;
+  --body: 'Inter Tight', 'Figtree', ui-sans-serif, system-ui, sans-serif;
+  --mono: 'DM Mono', ui-monospace, Menlo, monospace;
+}
+
+/* --- Body typography --- */
+body {
+  font-family: var(--body);
+  font-weight: 400;
+  letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Film grain overlay (subtle, light mode only) --- */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+html[data-mode='dark'] body::before { opacity: 0; }
+#ss-auth ~ * { position: relative; z-index: 1; }
+
+/* --- Typography overrides: display + labels --- */
+h1, h2, h3 {
+  font-family: var(--display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+.eyebrow {
+  font-family: var(--body);
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+.f label {
+  font-family: var(--body);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+}
+.brand h1 {
+  font-family: var(--display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.num, .pill, .pm, .tgrp, .duepill {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.stat b, .hero .count, .date b {
+  font-family: var(--display);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Editorial page titles: index number + name --- */
+section[data-view] > .head h2 {
+  font-size: clamp(32px, 7vw, 56px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.025em;
+  position: relative;
+}
+@media (min-width: 768px) {
+  section[data-view] > .head h2 {
+    font-size: clamp(48px, 6vw, 72px);
+  }
+}
+
+/* --- Header band: full-width --hero/--grad behind page title --- */
+section[data-view] > .head {
+  position: relative;
+  padding: 0;
+  margin-bottom: 4px;
+}
+@media (max-width: 767px) {
+  section[data-view] > .head::before {
+    content: '';
+    position: absolute;
+    inset: -20px -20px 0;
+    height: 140px;
+    background: var(--hero);
+    z-index: -1;
+    border-radius: 0 0 24px 24px;
+    overflow: hidden;
+  }
+}
+@media (min-width: 768px) {
+  section[data-view] > .head::before {
+    content: '';
+    position: absolute;
+    inset: -24px -40px 0;
+    height: 200px;
+    background: var(--hero);
+    z-index: -1;
+    border-radius: 0 0 28px 28px;
+    overflow: hidden;
+  }
+}
+section[data-view] > .head h2 {
+  color: var(--hero-ink);
+}
+section[data-view] > .head .eyebrow,
+section[data-view] > .head .note {
+  color: color-mix(in srgb, var(--hero-ink) 75%, transparent);
+}
+section[data-view] > .head .btn {
+  background: color-mix(in srgb, var(--hero-ink) 15%, transparent);
+  border-color: color-mix(in srgb, var(--hero-ink) 30%, transparent);
+  color: var(--hero-ink);
+}
+section[data-view] > .head .btn.primary {
+  background: color-mix(in srgb, var(--hero-ink) 20%, transparent);
+  border-color: color-mix(in srgb, var(--hero-ink) 35%, transparent);
+}
+
+/* --- Content width --- */
+main {
+  max-width: 1200px;
+}
+
+/* --- Cards: flat, hairline border, 14px corners --- */
+.card {
+  border-radius: 14px;
+  box-shadow: none;
+  border: 1px solid var(--line);
+}
+.hero {
+  border-radius: 18px;
+  box-shadow: 0 8px 30px -16px var(--glow, color-mix(in srgb, var(--accent) 35%, transparent));
+}
+
+/* --- Skeleton shimmer loading --- */
+.skeleton {
+  background: linear-gradient(90deg, var(--soft) 25%, color-mix(in srgb, var(--soft) 50%, var(--surface)) 50%, var(--soft) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+  border-radius: 8px;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* --- ::selection --- */
+::selection {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* === PALETTE DEFINITIONS === */
+/* Each palette gets: --accent-2, --grad, --glow (added to existing tokens) */
+
+/* sage (default) */
+html:root:not([data-palette])[data-mode='light'] {
+  --accent-2: #B4683F;
+  --grad: linear-gradient(135deg, #55782B 0%, #E1ECD2 50%, #B4683F 100%);
+  --glow: color-mix(in srgb, #55782B 35%, transparent);
+}
+html:root:not([data-palette])[data-mode='dark'] {
+  --accent-2: #E7A57E;
+  --grad: linear-gradient(135deg, #A6CC68 0%, #3A5A2A 50%, #E7A57E 100%);
+  --glow: color-mix(in srgb, #A6CC68 35%, transparent);
+}
+
+/* lavender */
+html:root[data-palette='lavender'][data-mode='light'] {
+  --accent-2: #B85A82; --grad: linear-gradient(135deg, #6F5BA7 0%, #E6DCF6 50%, #B85A82 100%); --glow: color-mix(in srgb, #6F5BA7 35%, transparent);
+}
+html:root[data-palette='lavender'][data-mode='dark'] {
+  --accent-2: #EBA3C2; --grad: linear-gradient(135deg, #BBA9EC 0%, #4A3D75 50%, #EBA3C2 100%); --glow: color-mix(in srgb, #BBA9EC 35%, transparent);
+}
+
+/* sky */
+html:root[data-palette='sky'][data-mode='light'] {
+  --accent-2: #B07428; --grad: linear-gradient(135deg, #3F72A0 0%, #D8E7F5 50%, #B07428 100%); --glow: color-mix(in srgb, #3F72A0 35%, transparent);
+}
+html:root[data-palette='sky'][data-mode='dark'] {
+  --accent-2: #F0C27E; --grad: linear-gradient(135deg, #93BDE3 0%, #2E5274 50%, #F0C27E 100%); --glow: color-mix(in srgb, #93BDE3 35%, transparent);
+}
+
+/* blush */
+html:root[data-palette='blush'][data-mode='light'] {
+  --accent-2: #4F8770; --grad: linear-gradient(135deg, #A35767 0%, #F4DCE0 50%, #4F8770 100%); --glow: color-mix(in srgb, #A35767 35%, transparent);
+}
+html:root[data-palette='blush'][data-mode='dark'] {
+  --accent-2: #9CCDB8; --grad: linear-gradient(135deg, #E8A6B4 0%, #6E3A46 50%, #9CCDB8 100%); --glow: color-mix(in srgb, #E8A6B4 35%, transparent);
+}
+
+/* apricot */
+html:root[data-palette='apricot'][data-mode='light'] {
+  --accent-2: #4A78A0; --grad: linear-gradient(135deg, #A15C30 0%, #F5DFC8 50%, #4A78A0 100%); --glow: color-mix(in srgb, #A15C30 35%, transparent);
+}
+html:root[data-palette='apricot'][data-mode='dark'] {
+  --accent-2: #9DC2E3; --grad: linear-gradient(135deg, #EDB48C 0%, #6B4127 50%, #9DC2E3 100%); --glow: color-mix(in srgb, #EDB48C 35%, transparent);
+}
+
+/* pride — Rainbow */
+html:root[data-palette='pride'][data-mode='light'] {
+  --accent-2: #004CFF; --grad: linear-gradient(135deg, #E40303 0%, #FF8C00 18%, #FFED00 36%, #008026 54%, #004CFF 72%, #732982 100%);
+  --glow: color-mix(in srgb, #5B4A8B 35%, transparent);
+}
+html:root[data-palette='pride'][data-mode='dark'] {
+  --accent-2: #7BADE2; --grad: linear-gradient(135deg, #E40303 0%, #FF8C00 18%, #FFED00 36%, #008026 54%, #004CFF 72%, #732982 100%);
+  --glow: color-mix(in srgb, #C3B2EC 35%, transparent);
+}
+
+/* trans — Cotton Candy */
+html:root[data-palette='trans'][data-mode='light'] {
+  --accent-2: #F5A9B8; --grad: linear-gradient(135deg, #5BCEFA 0%, #F5A9B8 30%, #FFFFFF 50%, #F5A9B8 70%, #5BCEFA 100%);
+  --glow: color-mix(in srgb, #357599 35%, transparent);
+}
+html:root[data-palette='trans'][data-mode='dark'] {
+  --accent-2: #F5A9B8; --grad: linear-gradient(135deg, #5BCEFA 0%, #F5A9B8 30%, #FFFFFF 50%, #F5A9B8 70%, #5BCEFA 100%);
+  --glow: color-mix(in srgb, #8CCDF0 35%, transparent);
+}
+
+/* gay — Lagoon */
+html:root[data-palette='gay'][data-mode='light'] {
+  --accent-2: #5049CC; --grad: linear-gradient(135deg, #078D70 0%, #26CEAA 20%, #98E8C1 40%, #FFFFFF 50%, #7BADE2 65%, #5049CC 85%, #3D1A78 100%);
+  --glow: color-mix(in srgb, #1F7765 35%, transparent);
+}
+html:root[data-palette='gay'][data-mode='dark'] {
+  --accent-2: #A9A4EE; --grad: linear-gradient(135deg, #078D70 0%, #26CEAA 20%, #98E8C1 40%, #FFFFFF 50%, #7BADE2 65%, #5049CC 85%, #3D1A78 100%);
+  --glow: color-mix(in srgb, #8EDCC6 35%, transparent);
+}
+
+/* lesbian — Sunset */
+html:root[data-palette='lesbian'][data-mode='light'] {
+  --accent-2: #D162A4; --grad: linear-gradient(135deg, #D52D00 0%, #EF7627 18%, #FF9A56 36%, #FFFFFF 50%, #D162A4 68%, #B55690 84%, #A30262 100%);
+  --glow: color-mix(in srgb, #A9462A 35%, transparent);
+}
+html:root[data-palette='lesbian'][data-mode='dark'] {
+  --accent-2: #E6A0C8; --grad: linear-gradient(135deg, #D52D00 0%, #EF7627 18%, #FF9A56 36%, #FFFFFF 50%, #D162A4 68%, #B55690 84%, #A30262 100%);
+  --glow: color-mix(in srgb, #F2A07A 35%, transparent);
+}
+
+/* bi — Twilight */
+html:root[data-palette='bi'][data-mode='light'] {
+  --accent-2: #0038A8; --grad: linear-gradient(135deg, #D60270 0%, #9B4F96 50%, #0038A8 100%);
+  --glow: color-mix(in srgb, #8A3A74 35%, transparent);
+}
+html:root[data-palette='bi'][data-mode='dark'] {
+  --accent-2: #9FB4EC; --grad: linear-gradient(135deg, #D60270 0%, #9B4F96 50%, #0038A8 100%);
+  --glow: color-mix(in srgb, #E7A3CF 35%, transparent);
+}
+
+/* --- Use --grad on hero band and active tab pill --- */
+section[data-view] > .head::before {
+  background: var(--grad, var(--hero));
+}
+.tabs button[aria-current='true'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+html:root[data-palette='pride'] .tabs button[aria-current='true'],
+html:root[data-palette='trans'] .tabs button[aria-current='true'],
+html:root[data-palette='gay'] .tabs button[aria-current='true'],
+html:root[data-palette='lesbian'] .tabs button[aria-current='true'],
+html:root[data-palette='bi'] .tabs button[aria-current='true'] {
+  background: var(--grad);
+  color: #fff;
+}
+
+/* --- Primary buttons: gradient sweep on hover --- */
+.btn.primary {
+  position: relative;
+  overflow: hidden;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.btn.primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--grad, linear-gradient(90deg, var(--accent), var(--accent-2, var(--accent))));
+  transform: translateX(-100%);
+  transition: transform 0.4s cubic-bezier(.22,1,.36,1);
+  z-index: 0;
+}
+.btn.primary > * { position: relative; z-index: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .btn.primary:hover::before { transform: translateX(0); }
+}
+
+/* --- Focus rings: 2px accent, 2px offset --- */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --- Checkbox / calendar today / booked days use accent --- */
+input[type='checkbox'] { accent-color: var(--accent); }
+.day.today { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.cal-g button.td { box-shadow: inset 0 0 0 1px var(--accent); }
+.cal-g button.sel { background: var(--accent); color: var(--accent-ink); }
+.bar i:not(.ghost) { background: var(--accent); }
+.bar i.ghost { background: color-mix(in srgb, var(--accent-2, var(--accent)) 55%, transparent); }
+.chart .in { background: var(--accent); }
+.chart .out { background: var(--accent-2, var(--hot)); }
+
+/* --- Sign-in: full-bleed --grad background --- */
+html.ss-locked body { background: var(--grad, linear-gradient(135deg, var(--accent) 0%, var(--accent-2, var(--accent)) 100%)) fixed; }
+html.ss-locked .ss-auth-wrap { max-width: 1100px; }
+html.ss-locked .ss-auth-intro h1 {
+  font-family: var(--display);
+  font-size: clamp(44px, 7vw, 80px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 0.95;
+  color: #fff;
+}
+html.ss-locked .ss-auth-intro .eyebrow { color: rgba(255,255,255,0.8); }
+html.ss-locked .ss-auth-intro .ss-lead,
+html.ss-locked .ss-auth-intro .ss-points { color: rgba(255,255,255,0.9); }
+html.ss-locked .ss-auth-card {
+  background: var(--surface);
+  border-radius: 20px;
+  padding: 32px;
+  box-shadow: 0 40px 80px -30px rgba(0,0,0,0.4);
+}
+html.ss-locked .legalfoot a { color: rgba(255,255,255,0.85); }
+
+/* --- Floating bottom tab bar (phones <768px) --- */
+@media (max-width: 767px) {
+  .tabs {
+    left: 12px; right: 12px; bottom: 12px;
+    border-radius: 20px;
+    background: color-mix(in srgb, var(--surface) 85%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5);
+    backdrop-filter: blur(20px) saturate(1.5);
+    box-shadow: 0 8px 30px -10px rgba(0,0,0,0.25);
+    border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+    padding: 4px;
+  }
+  .tabs button {
+    border-radius: 14px;
+    padding: 8px 4px 10px;
+    min-width: 0;
+  }
+  .tabs button svg { width: 24px; height: 24px; }
+  .tabs button[aria-current='true'] {
+    border-radius: 14px;
+  }
+  main { padding-bottom: 110px; }
+}
+
+/* --- Left icon rail (tablet 768-1199px) --- */
+@media (min-width: 768px) and (max-width: 1199px) {
+  .tabs {
+    width: 64px;
+    align-items: center;
+  }
+  .tabs button { justify-content: center; }
+  .tabs button span,
+  .tabs button:not([aria-current='true']) { font-size: 0; }
+  .tabs button[aria-current='true'] { font-size: 0; }
+}
+
+/* --- Left rail with icons + labels (desktop 1200px+) --- */
+@media (min-width: 1200px) {
+  .tabs { width: 200px; }
+  main { max-width: 1000px; }
+}
+
+/* --- Palette swatch buttons: large preview chip with gradient --- */
+.pal button {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  border-radius: 14px;
+  padding: 10px;
+}
+.pal .swatch {
+  width: 100%;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--swatch-grad, var(--accent));
+  position: relative;
+}
+.pal button[aria-pressed='true'] .swatch::after {
+  content: '✓';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.4);
+}
+
+/* --- Busy/disabled shimmer --- */
+.btn[disabled], .btn[aria-busy='true'], .btn[data-busy] {
+  position: relative;
+  overflow: hidden;
+}
+.btn[disabled]::after, .btn[aria-busy='true']::after, .btn[data-busy]::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite linear;
+}
+
+/* --- Toast: spring in, with progress bar --- */
+.toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+  z-index: 50;
+  background: var(--ink);
+  color: var(--bg);
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 16px 40px -14px rgba(0,0,0,0.5);
+  overflow: hidden;
+}
+.toast:not([hidden]) {
+  animation: toastSpring 0.5s cubic-bezier(.34,1.45,.64,1);
+}
+@keyframes toastSpring {
+  from { transform: translate(-50%, 20px) scale(0.95); opacity: 0; }
+  to { transform: translate(-50%, 0) scale(1); opacity: 1; }
+}
+.toast::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent);
+  transform-origin: left;
+  animation: toastBar 4s linear forwards;
+}
+@keyframes toastBar {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+/* --- Empty states: Bodoni line + one sentence + one pill button --- */
+.empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--muted);
+}
+.empty::before {
+  content: '';
+  display: block;
+  width: 40px;
+  height: 1px;
+  background: var(--line);
+  margin: 0 auto 16px;
+}
+
+/* --- Sheet: bottom sheet on phones, centered panel on desktop --- */
+@media (max-width: 767px) {
+  .sheet-bg { align-items: flex-end; }
+  .sheet {
+    max-height: 94vh;
+    border-radius: 20px 20px 0 0;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  }
+  .sheet::before {
+    content: '';
+    display: block;
+    width: 36px;
+    height: 4px;
+    border-radius: 4px;
+    background: var(--line);
+    margin: 0 auto 12px;
+  }
+}
+@media (min-width: 768px) {
+  .sheet-bg { align-items: center; }
+  .sheet {
+    border-radius: 18px;
+    max-width: 640px;
+  }
+}
+
+/* --- Sheet title: Bodoni --- */
+.sheet h3, .notice h4 {
+  font-family: var(--display);
+  font-weight: 600;
+}
+
+/* --- Reduce motion: all motion becomes simple fades --- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.15s !important;
+    transition-duration: 0.15s !important;
+  }
+  .btn.primary::before { display: none; }
+  .toast::after { display: none; }
+}
+html[data-reduce-motion='true'] *,
+html[data-reduce-motion='true'] *::before,
+html[data-reduce-motion='true'] *::after {
+  animation-duration: 0.15s !important;
+  transition-duration: 0.15s !important;
+}
+html[data-reduce-motion='true'] .btn.primary::before { display: none; }
+html[data-reduce-motion='true'] .toast::after { display: none; }
+
+/* --- Legal pages --- */
+.legal h2 { font-family: var(--display); font-weight: 600; }
+
+/* --- Tables: stacked cards under 640px --- */
+@media (max-width: 639px) {
+  .rpt table { display: block; }
+  .rpt thead { display: none; }
+  .rpt tr { display: block; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .rpt td { display: block; border: 0; padding: 2px 0; }
+  .rpt td::before { content: attr(data-label) ': '; color: var(--muted); font-size: 11px; text-transform: uppercase; }
+}
+
+/* --- Privacy/Terms pages --- */
+.legal { max-width: 720px; margin: 0 auto; padding: 40px 20px; }
+.legal h1 { font-family: var(--display); font-size: clamp(36px, 5vw, 56px); font-weight: 600; letter-spacing: -0.025em; }
