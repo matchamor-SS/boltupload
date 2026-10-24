@@ -11,3 +11,5 @@ verify_jwt = true
 verify_jwt = true
 [functions.google-oauth-callback]
 verify_jwt = false   # Google redirects the browser here; protected by the single-use, 10-minute `state` row instead
+[functions.picker-config]
+verify_jwt = true

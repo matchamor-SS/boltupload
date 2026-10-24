@@ -1,0 +1,29 @@
+{
+  "projectId": "72169520",
+  "functions": {
+    "account-delete": {
+      "hasChanged": false,
+      "hash": "0398a51344a21b3ae2bc7f7ba0d6db6639c5cb9ec6843496e16694c427a98021d3e5e7085384d31c7827ef7b46c1b5170beb10f648e47738210b9f99cd0e9a77"
+    },
+    "google": {
+      "hasChanged": false,
+      "hash": "8d6869e8b209b3320448788a04aa00daa9dd3f888c4268d87bc2f88b0eeb6332d3e5e7085384d31c7827ef7b46c1b5170beb10f648e47738210b9f99cd0e9a77"
+    },
+    "google-disconnect": {
+      "hasChanged": false,
+      "hash": "7a9e280dd148a4f3689629f1e39308b01e65d44628a9c0e05e2d2e43ce2f04c4d3e5e7085384d31c7827ef7b46c1b5170beb10f648e47738210b9f99cd0e9a77"
+    },
+    "google-oauth-callback": {
+      "hasChanged": false,
+      "hash": "22b7be2b808b4fb826622b4778d9036311a9dfbdd2ea53485dec96d720c3f617d3e5e7085384d31c7827ef7b46c1b5170beb10f648e47738210b9f99cd0e9a77"
+    },
+    "google-oauth-start": {
+      "hasChanged": false,
+      "hash": "1500b7d1e562be33b987bedbfd14698fcc016749344a5ef2de304c5db3757d21d3e5e7085384d31c7827ef7b46c1b5170beb10f648e47738210b9f99cd0e9a77"
+    },
+    "picker-config": {
+      "hasChanged": false,
+      "hash": "868424b75f71c1ce26ccc40eadf9fa754b129cc1f4e1450d15e885a4aae7481ed3e5e7085384d31c7827ef7b46c1b5170beb10f648e47738210b9f99cd0e9a77"
+    }
+  }
+}

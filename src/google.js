@@ -104,9 +104,18 @@ const loadPicker = () => gapiP || (gapiP = new Promise((res, rej) => {
   const s = document.createElement('script'); s.src = 'https://apis.google.com/js/api.js'; s.async = true;
   s.onload = () => window.gapi.load('picker', { callback: res, onerror: rej }); s.onerror = rej; document.head.appendChild(s);
 }));
+let pickerCfg = null;
+async function getPickerConfig() {
+  if (pickerCfg) return pickerCfg;
+  const { data, error } = await sb.functions.invoke('picker-config', { body: {} });
+  if (error || !data || !data.apiKey || !data.appId) return null;
+  pickerCfg = data;
+  return pickerCfg;
+}
 export async function pickFolder(title) {
-  const apiKey = import.meta.env.VITE_GOOGLE_API_KEY, appId = import.meta.env.VITE_GOOGLE_APP_ID;
-  if (!apiKey || !appId) { window.toast && window.toast('Folder picking needs VITE_GOOGLE_API_KEY and VITE_GOOGLE_APP_ID. See README.'); return null; }
+  const cfg = await getPickerConfig();
+  if (!cfg) { window.toast && window.toast('Google Picker is not configured yet. Add VITE_GOOGLE_API_KEY and VITE_GOOGLE_APP_ID in Secrets.'); return null; }
+  const { apiKey, appId } = cfg;
   let token;
   try { token = (await rawCall('Google Drive', 'picker_token', {})).payload.token; }
   catch (e) { if (e.code !== 'server_not_connected' && e.code !== 'needs_reauth') window.toast && window.toast("Couldn't reach Google Drive. Try again."); return null; }
