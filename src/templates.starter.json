@@ -1,0 +1,82 @@
+[
+  {
+    "id": "stage-lead",
+    "name": "Lead · First outreach",
+    "stage": "lead",
+    "audience": "venue",
+    "subject": "{{dj_name}} for {{venue}} – [month] dates",
+    "body": "Hi {{contact_first}},\n\nI'm {{my_name}}, and I DJ as {{dj_name}}. [One line on why you fit: a night they host, an artist they've booked, or the crowd you'd bring.]\n\n{{bio_short}}\n\nI'd love to play {{venue}}. These dates are open, and I'm flexible on the slot:\n{{availability}}\n\nMix / EPK: {{epk}}\nInstagram: {{instagram}}\n\nWould any of these work? I'm easy to work with and will promote the night on my channels.\n\nThanks,\n{{my_name}}\n{{dj_name}} · {{phone}}"
+  },
+  {
+    "id": "stage-pitched",
+    "name": "Pitched · Follow-up (no reply)",
+    "stage": "pitched",
+    "audience": "venue",
+    "subject": "Re: {{dj_name}} for {{venue}}",
+    "body": "Hi {{contact_first}},\n\nBumping this back up in case it got buried. I'd still love to bring {{dj_name}} to {{venue}}.\n\n[One new thing since your first email: a recent show, a new mix or a release.]\n\nDates I'm holding open:\n{{availability}}\n\nMix / EPK: {{epk}}\n\nIf you're not the right person for bookings, could you point me to who is?\n\nThanks so much,\n{{my_name}}\n{{dj_name}} · {{phone}}"
+  },
+  {
+    "id": "stage-confirmed",
+    "name": "Confirmed · Booking confirmation",
+    "stage": "confirmed",
+    "audience": "venue",
+    "subject": "Confirmed: {{dj_name}} at {{venue}}, {{date}}",
+    "body": "Hi {{contact_first}},\n\nThank you for having me! Here's what I have so we're on the same page:\n\nEvent: {{show}}\nDate: {{date}}\nVenue: {{venue}}, {{address}}\nSet time: {{set_time}}\nFee: {{fee}}\n\nCould you confirm or fill in:\n1. Contract or written agreement\n2. Payment: any deposit, plus how and when the balance is paid\n3. Load-in and soundcheck time, and parking\n4. Gear on site (my tech rider is below)\n5. Guest list spots\n6. Your day-of contact number\n\nTech rider:\n{{rider}}\n\nFor promo, here are my links and photos:\n{{links}}\n{{files}}\n\nTickets: {{ticket_link}}\n\nI'll share the event on my socials as soon as the flyer is ready.\n\nThanks,\n{{my_name}}\n{{dj_name}} · {{phone}}"
+  },
+  {
+    "id": "stage-played",
+    "name": "Played · Thank you & follow-up",
+    "stage": "played",
+    "audience": "venue",
+    "subject": "Thank you for {{date}} at {{venue}}",
+    "body": "Hi {{contact_first}},\n\nThank you again for having me at {{venue}}. [One specific highlight: the crowd, a moment, or the team.]\n\nPhotos and video will land here as they come in: {{media_folder}}\nFeel free to use them, and please tag {{instagram}} if you post.\n\nAs agreed, the fee was {{fee}}. [Invoice attached, or how to pay: Zelle, Venmo or ACH details.]\n\nI'd love to come back. Here are some open dates:\n{{availability}}\n\nAny feedback on the night is always welcome.\n\nThanks,\n{{my_name}}\n{{dj_name}} · {{phone}}"
+  },
+  {
+    "id": "stage-paid",
+    "name": "Paid · Payment received",
+    "stage": "paid",
+    "audience": "venue",
+    "subject": "Payment received, thank you!",
+    "body": "Hi {{contact_first}},\n\nJust confirming I received {{fee}} for {{show}} on {{date}}. Thank you for the smooth payment.\n\nIt was a pleasure working with you and the {{venue}} team. Keep me in mind for future nights; I'll keep you posted on new mixes and open dates.\n\nThanks,\n{{my_name}}\n{{dj_name}} · {{phone}}"
+  },
+  {
+    "id": "stage-lost",
+    "name": "Lost · Keep the door open",
+    "stage": "lost",
+    "audience": "venue",
+    "subject": "Thanks for considering {{dj_name}}",
+    "body": "Hi {{contact_first}},\n\nThanks for letting me know, and for taking the time to consider me. I completely understand.\n\nI'd love to stay on your radar for future nights at {{venue}}. Here's my EPK for your files: {{epk}}\n\nI'll check back in a few months with new mixes and dates.\n\nAll the best,\n{{my_name}}\n{{dj_name}} · {{phone}}"
+  },
+  {
+    "id": "venue-pitch",
+    "name": "Venue pitch",
+    "stage": "",
+    "audience": "venue",
+    "subject": "{{dj_name}} for {{venue}}",
+    "body": "Hi {{contact_first}},\n\nI'm {{my_name}}, and I DJ as {{dj_name}}. {{bio_short}}\n\nI'd love to bring a night to {{venue}}. I'm flexible on format, whether that's a full residency slot, an opener, or a themed party.\n\nEPK and mixes: {{epk}}\nInstagram: {{instagram}}\n\nWould you be open to a quick call or a date to try it out?\n\nThanks,\n{{my_name}}\n{{dj_name}} · {{phone}}"
+  },
+  {
+    "id": "confirm",
+    "name": "Booking confirmation",
+    "stage": "",
+    "audience": "venue",
+    "subject": "Confirming {{dj_name}} at {{venue}} — {{date}}",
+    "body": "Hi {{contact_first}},\n\nThanks again for having me. Confirming the details so we're on the same page:\n\nDate: {{date}}\nSet time: {{set_time}}\nFee: {{fee}}\n\nCould you send over the contract and any load-in or tech details? I'll share promo assets this week.\n\nThanks,\n{{my_name}}\n{{dj_name}} · {{phone}}"
+  },
+  {
+    "id": "followup",
+    "name": "Post-show follow-up",
+    "stage": "",
+    "audience": "venue",
+    "subject": "Thank you from {{dj_name}}",
+    "body": "Hi {{contact_first}},\n\nThank you for having me at {{venue}} on {{date}}. I had a great time with that crowd.\n\nI'd love to come back. Let me know what dates you have open in the next couple of months.\n\nThanks,\n{{my_name}}\n{{dj_name}} · {{phone}}"
+  },
+  {
+    "id": "media",
+    "name": "Book media person",
+    "stage": "",
+    "audience": "media",
+    "subject": "Shoot request: {{show}} on {{date}}",
+    "body": "Hi {{contact_first}},\n\nI've got a show coming up and would love to have you shoot it.\n\nEvent: {{show}}\nVenue: {{venue}}, {{city}}\nDate: {{date}}\nSet time: {{set_time}}\n\nWhen you're done, please upload everything here: {{media_folder}}\n\nLet me know if you're available.\n\nThanks,\n{{my_name}}"
+  }
+]
