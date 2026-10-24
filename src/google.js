@@ -107,17 +107,14 @@ const loadPicker = () => gapiP || (gapiP = new Promise((res, rej) => {
 let pickerCfg = null;
 async function getPickerConfig() {
   if (pickerCfg) return pickerCfg;
-  try {
-    const { data, error } = await sb.functions.invoke('picker-config');
-    if (error) { console.error('picker-config invoke error:', error); return null; }
-    if (!data || !data.apiKey || !data.appId) { console.error('picker-config unexpected response:', data); return null; }
-    pickerCfg = data;
-    return pickerCfg;
-  } catch (e) { console.error('picker-config fetch failed:', e); return null; }
+  const { data, error } = await sb.functions.invoke('picker-config');
+  if (error || !data || !data.apiKey || !data.appId) { console.error('picker-config failed', error || data); return null; }
+  pickerCfg = data;
+  return pickerCfg;
 }
 export async function pickFolder(title) {
   const cfg = await getPickerConfig();
-  if (!cfg) { window.toast && window.toast('Google Picker is not configured yet. Add VITE_GOOGLE_API_KEY and VITE_GOOGLE_APP_ID in Secrets.'); return null; }
+  if (!cfg) { window.toast && window.toast("Couldn't open Google's folder picker. Check your connection and try again."); return null; }
   const { apiKey, appId } = cfg;
   let token;
   try { token = (await rawCall('Google Drive', 'picker_token', {})).payload.token; }

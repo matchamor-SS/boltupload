@@ -2,13 +2,18 @@
 // then sends the browser back to the app. The refresh token never reaches the browser.
 import { admin, audit } from '../_shared/auth.ts';
 import { encrypt } from '../_shared/crypto.ts';
-const back = (status: string, tier = '') => Response.redirect(`${Deno.env.get('APP_URL')}/?google=${status}${tier ? `&tier=${tier}` : ''}`, 302);
+import { isAllowedOrigin } from '../_shared/http.ts';
+const redirect = (base: string, status: string, tier = '') => Response.redirect(`${base.replace(/\/+$/, '')}/?google=${status}${tier ? `&tier=${tier}` : ''}`, 302);
 Deno.serve(async req => {
+  let home = Deno.env.get('APP_URL') ?? '';
+  const back = (status: string, tier = '') => redirect(home, status, tier);
   try {
     const u = new URL(req.url), code = u.searchParams.get('code'), state = u.searchParams.get('state');
-    if (u.searchParams.get('error') || !code || !state) return back('denied');
+    if (!state) return back('denied');
     const { data: st } = await admin.from('oauth_states').select('*').eq('state', state).maybeSingle();
     await admin.from('oauth_states').delete().eq('state', state);                     // single use
+    if (st && isAllowedOrigin(st.return_to)) home = st.return_to;
+    if (u.searchParams.get('error') || !code) return back('denied');
     if (!st || Date.now() - new Date(st.created_at).getTime() > 10 * 60_000) return back('expired');
     const r = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
