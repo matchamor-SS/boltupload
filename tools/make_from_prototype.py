@@ -69,7 +69,7 @@ index = f'''<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>{APP.replace('&', '&amp;')}</title>
-<meta name="description" content="Bookings, availability, email, invoices and money for DJs and performers who book themselves.">
+<meta name="description" content="Bookings, availability, email, invoices and money for performers who book themselves.">
 <meta name="theme-color" content="#55782B">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 {chr(10).join(fonts)}
