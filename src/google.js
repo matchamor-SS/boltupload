@@ -32,7 +32,9 @@ async function codeOf(error) {
 
 export async function startConnect(tier) {
   const { data, error } = await sb.functions.invoke('google-oauth-start', { body: { tier } });
-  if (error || !data || !data.url) throw err('unavailable');
+  if (error || !data || !data.url) { console.error('google-oauth-start failed', error || data); throw err('unavailable'); }
+  // Google refuses to show its sign-in page inside a frame (e.g. Bolt's preview), so use a new tab there.
+  if (window.top !== window.self) { if (!window.open(data.url, '_blank', 'noopener')) location.assign(data.url); return; }
   location.assign(data.url);
 }
 export async function disconnectGoogle() {
@@ -57,7 +59,7 @@ export function consentPrompt(tier, reconnect) {
   const done = () => bg.remove();
   bg.addEventListener('click', async e => {
     if (e.target === bg || e.target.closest('[data-no]')) return done();
-    if (e.target.closest('[data-yes]')) { e.target.closest('[data-yes]').textContent = 'Opening Google…'; try { await startConnect(tier); } catch (_) { done(); window.toast && window.toast("Couldn't reach Google. Try again."); } }
+    if (e.target.closest('[data-yes]')) { e.target.closest('[data-yes]').textContent = 'Opening Google…'; try { await startConnect(tier); done(); } catch (_) { done(); window.toast && window.toast("Couldn't reach Google. Try again."); } }
   });
 }
 
