@@ -1473,8 +1473,8 @@ async function gmailSend(o){const mcp=await gmailReady();if(!mcp)throw {code:"qu
   const to=[].concat(o.to||[]).map(x=>String(x).trim()).filter(Boolean),cc=[].concat(o.cc||[]).map(x=>String(x).trim()).filter(Boolean);
   const r=await mcp.callTool(GM,"send_message",{to,...(cc.length?{cc}:{}),subject:o.subject||"",body:o.body||"",includeSignature:true,...(o.attachments?{attachments:o.attachments}:{})});
   const p=r.payload||{};
-  // metadata only: never the subject, message or attachment
-  if(db){try{await db.collection("sentLog").add({at:new Date().toISOString(),bookingId:o.bookingId||"",contactId:o.contactId||"",kind:o.kind||"email",n:to.length+cc.length,messageId:p.id||"",threadId:p.threadId||"",attachment:!!(o.attachments&&o.attachments.length)})}catch(e){}}
+  // metadata only (the template name, never the subject, message or attachment)
+  if(db){try{await db.collection("sentLog").add({at:new Date().toISOString(),bookingId:o.bookingId||"",contactId:o.contactId||"",kind:o.kind||"email",label:String(o.label||"").slice(0,120),n:to.length+cc.length,messageId:p.id||"",threadId:p.threadId||"",attachment:!!(o.attachments&&o.attachments.length)})}catch(e){}}
   return p}
 function confirmSend(o){return new Promise(res=>{document.querySelector(".cs-bg")?.remove();
   const to=[].concat(o.to||[]).filter(Boolean),cc=[].concat(o.cc||[]).filter(Boolean);
@@ -1498,7 +1498,7 @@ function sentFor(f){const ce=f.contactId?String((contact(f.contactId)||{}).email
   return (S.sentLog||[]).filter(x=>(!f.bookingId||x.bookingId===f.bookingId)&&(!f.contactId||x.contactId===f.contactId)).sort((a,b)=>String(b.at).localeCompare(String(a.at)))}
 const sentRow=x=>{const bk=x.bookingId&&S.bookings.find(b=>b.id===x.bookingId),c=x.contactId&&contact(x.contactId);
   const who=c?cName(c):(x.n>1?x.n+" recipients":"1 recipient");
-  return `<div class="mrw"><a class="mailrow" href="${esc(gmLink(x))}" target="_blank" rel="noopener"><span class="t">${x.kind==="invoice"?"Invoice":"Email"} to ${esc(who)}${x.attachment?" · 📎":""}</span><span class="sub">${esc(mailDate(x.at))}${bk?`<span class="tag">${esc(showName(bk))}</span>`:""}</span></a></div>`};
+  return `<div class="mrw"><a class="mailrow" href="${esc(gmLink(x))}" target="_blank" rel="noopener"><span class="t">${x.label?esc(x.label):x.kind==="invoice"?"Invoice":"Email"}${x.attachment?" · 📎":""}</span><span class="sub">To ${esc(who)} · ${esc(mailDate(x.at))}${bk?`<span class="tag">${esc(showName(bk))}</span>`:""}</span></a></div>`};
 function sentSheet(f){navSheet("sent:"+(f.bookingId||"")+(f.contactId||""),()=>sentSheet(f));const b=f.bookingId&&S.bookings.find(x=>x.id===f.bookingId),c=f.contactId&&contact(f.contactId);const xs=sentFor(f);
   sheet(`<div class="head"><div><span class="eyebrow">Sent emails</span><h3 style="margin-top:4px">${esc(c?cName(c):b?showName(b):"All")}</h3></div></div>
   <p class="note" style="margin:0">Emails sent from the app. Tap one to open it in Gmail, where you'll also see replies.</p>
@@ -1908,7 +1908,7 @@ function composeSheet(pre={}){
     if(!rcpt.length){toast("Add who it's going to");em.focus();return}const bad=[...rcpt,...cc].find(x=>!isMail(x));if(bad){toast(bad+" isn't a valid email address");return}
     if(!m.subj.trim()){toast("Add a subject");subj.focus();return}if(!m.body.trim()){toast("Write a message first");body.focus();return}
     if(!(await confirmSend({to:rcpt,cc,subject:m.subj,body:m.body})))return;btn.disabled=true;btn.textContent="Sending…";
-    try{const p=await gmailSend({to:rcpt,cc,subject:m.subj,body:m.body,bookingId:bk.value,contactId:to.value||""});composeEnd();sentNotice(p,rcpt)}
+    try{const p=await gmailSend({to:rcpt,cc,subject:m.subj,body:m.body,bookingId:bk.value,contactId:to.value||"",label:pre.title||""});composeEnd();sentNotice(p,rcpt)}
     catch(err){if(btn.isConnected){btn.disabled=false;btn.textContent="Send…"}sendErr(err)}};
   const dis=$r("[data-discard]");dis.onclick=()=>{if(!subj.value.trim()&&!body.value.trim()){composeEnd();return}
     if(dis.dataset.armed){composeEnd();toast("Draft discarded")}else{dis.dataset.armed=1;dis.textContent="Tap again to discard";setTimeout(()=>{if(dis.isConnected){delete dis.dataset.armed;dis.textContent="Discard"}},3000)}};
@@ -1946,7 +1946,7 @@ function useTemplate(tid,bid){const t=S.templates.find(x=>x.id===tid);if(!t)retu
     <div class="actions"><button class="btn" data-cp>Copy text</button><button class="btn" data-tweak>Edit before sending</button><a class="btn" target="_blank" rel="noopener" href="https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}">Open in Gmail</a><button class="btn primary" data-usend>Send…</button></div>`;
     $("#u-out [data-usend]").onclick=async e=>{const btn=e.currentTarget;if(!isMail(String(email).toLowerCase())){toast(to?"No email saved for "+cName(to)+". Tap Edit before sending to type one.":"Pick who it's going to");return}
       if(!(await confirmSend({to:[email],subject:subj,body})))return;btn.disabled=true;btn.textContent="Sending…";
-      try{const p=await gmailSend({to:[email],subject:subj,body,bookingId:b&&b.id||"",contactId:to&&to.id||""});close();sentNotice(p,[email])}catch(err){if(btn.isConnected){btn.disabled=false;btn.textContent="Send…"}sendErr(err)}};
+      try{const p=await gmailSend({to:[email],subject:subj,body,bookingId:b&&b.id||"",contactId:to&&to.id||"",label:t.name});close();sentNotice(p,[email])}catch(err){if(btn.isConnected){btn.disabled=false;btn.textContent="Send…"}sendErr(err)}};
     $("#u-out [data-cp]").onclick=()=>copy(`Subject: ${subj}\n\n${body}`);
     $("#u-out [data-tweak]").onclick=()=>{close();composeSheet({title:t.name,to:to&&to.id||"",email:email,booking:b&&b.id||"",subject:subj,body,aud:t.audience==="media"?"media":""})}};
   const defTo=defRecipient(t,b);
