@@ -82,16 +82,12 @@ const ICONS = {
     <rect x="12.5" y="10" width="3" height="1.5" rx=".7" fill="${HL}"/>
   `),
 
-  // Settings: mixer with 3 faders — faders slide
+  // Settings: classic gear — clean, in style
   settings: svg(`
-    <rect x="5" y="4" width="18" height="20" rx="3" fill="${BODY}"/>
-    <path d="M10 7 L10 21 M14 7 L14 21 M18 7 L18 21" stroke="currentColor" stroke-width="1.5" opacity=".4"/>
-    <rect x="8.5" y="9" width="3" height="4" rx="1" fill="currentColor"/>
-    <rect x="12.5" y="14" width="3" height="4" rx="1" fill="currentColor"/>
-    <rect x="16.5" y="11" width="3" height="4" rx="1" fill="currentColor"/>
-    <circle cx="10" cy="7" r="1.3" fill="${HL}"/>
-    <circle cx="14" cy="7" r="1.3" fill="${HL}"/>
-    <circle cx="18" cy="7" r="1.3" fill="${HL}"/>
+    <circle cx="14" cy="14" r="3.5" fill="${BODY}"/>
+    <circle cx="14" cy="14" r="3.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+    <path d="M14 4 L14 7 M14 21 L14 24 M4 14 L7 14 M21 14 L24 14 M7 7 L9 9 M19 19 L21 21 M21 7 L19 9 M9 19 L7 21" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <circle cx="14" cy="4" r="1.2" fill="${HL}"/>
   `),
 };
 

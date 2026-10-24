@@ -56,6 +56,7 @@ async function renderSignature(el) {
     <div class="f"><label>Logo image</label><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button class="btn small" id="ss-siglogo">Upload logo</button>${sigData.logoId ? '<button class="btn small danger" id="ss-siglogodel">Remove logo</button>' : ''}<span class="note">Small image shown above your signature text.</span></div></div>
     <div id="ss-sigprev"></div>
     <div class="actions" style="justify-content:flex-start"><button class="btn save" id="ss-sigsave">Save signature</button></div>`;
+  el.querySelector('#ss-sigprev').insertAdjacentHTML('beforebegin', '<div class="eyebrow" style="margin-top:14px;margin-bottom:4px">Signature preview</div>');
   const ta = el.querySelector('#ss-sig');
   db.doc('settings/signature').onSnapshot(s => { if (document.activeElement !== ta) { ta.value = (s.exists && s.data().text) || ''; sigData = { text: (s.exists && s.data().text) || '', logoId: (s.exists && s.data().logoId) || '', links: (s.exists && Array.isArray(s.data().links)) ? s.data().links : [] }; renderLinks(); el.querySelector('#ss-sigprev').innerHTML = sigPreview(); } }, () => {});
   ta.oninput = () => { sigData.text = ta.value; el.querySelector('#ss-sigprev').innerHTML = sigPreview(); };

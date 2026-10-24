@@ -78,9 +78,9 @@ h1, h2, h3 {
   font-variant-numeric: tabular-nums;
 }
 
-/* --- Editorial page titles: index number + name --- */
+/* --- Editorial page titles: large Bodoni, but not so large they overflow --- */
 section[data-view] > .head h2 {
-  font-size: clamp(32px, 7vw, 56px);
+  font-size: clamp(26px, 5vw, 40px);
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.025em;
@@ -88,38 +88,45 @@ section[data-view] > .head h2 {
 }
 @media (min-width: 768px) {
   section[data-view] > .head h2 {
-    font-size: clamp(48px, 6vw, 72px);
+    font-size: clamp(36px, 4.5vw, 52px);
   }
 }
 
-/* --- Header band: full-width --hero/--grad behind page title --- */
+/* --- Header band: sits below the top bar, not behind it --- */
 section[data-view] > .head {
   position: relative;
-  padding: 0;
+  padding: 16px 0 12px;
   margin-bottom: 4px;
+  border-radius: 0 0 20px 20px;
 }
 @media (max-width: 767px) {
+  section[data-view] > .head {
+    margin-left: -16px;
+    margin-right: -16px;
+    padding: 14px 16px 14px;
+  }
   section[data-view] > .head::before {
     content: '';
     position: absolute;
-    inset: -20px -20px 0;
-    height: 140px;
+    inset: 0;
     background: var(--hero);
     z-index: -1;
-    border-radius: 0 0 24px 24px;
-    overflow: hidden;
+    border-radius: 0 0 20px 20px;
   }
 }
 @media (min-width: 768px) {
+  section[data-view] > .head {
+    margin-left: -24px;
+    margin-right: -24px;
+    padding: 20px 24px 18px;
+  }
   section[data-view] > .head::before {
     content: '';
     position: absolute;
-    inset: -24px -40px 0;
-    height: 200px;
+    inset: 0;
     background: var(--hero);
     z-index: -1;
-    border-radius: 0 0 28px 28px;
-    overflow: hidden;
+    border-radius: 0 0 24px 24px;
   }
 }
 section[data-view] > .head h2 {
@@ -270,21 +277,30 @@ html:root[data-palette='bi'][data-mode='dark'] {
   --glow: color-mix(in srgb, #E7A3CF 35%, transparent);
 }
 
-/* --- Use --grad on hero band and active tab pill --- */
-section[data-view] > .head::before {
-  background: var(--grad, var(--hero));
-}
+/* --- Active tab: subtle tint background, not a solid fill that hides text --- */
 .tabs button[aria-current='true'] {
-  background: var(--accent);
-  color: var(--accent-ink);
+  color: var(--accent);
+}
+/* On phones the floating bar already has a light bg; just tint the active tab */
+@media (max-width: 767px) {
+  .tabs button[aria-current='true'] {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+  }
+}
+@media (min-width: 768px) {
+  .tabs button[aria-current='true'] {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+  }
 }
 html:root[data-palette='pride'] .tabs button[aria-current='true'],
 html:root[data-palette='trans'] .tabs button[aria-current='true'],
 html:root[data-palette='gay'] .tabs button[aria-current='true'],
 html:root[data-palette='lesbian'] .tabs button[aria-current='true'],
 html:root[data-palette='bi'] .tabs button[aria-current='true'] {
-  background: var(--grad);
-  color: #fff;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
 }
 
 /* --- Primary buttons: gradient sweep on hover --- */
@@ -351,7 +367,7 @@ html.ss-locked .legalfoot a { color: rgba(255,255,255,0.85); }
   .tabs {
     left: 12px; right: 12px; bottom: 12px;
     border-radius: 20px;
-    background: color-mix(in srgb, var(--surface) 85%, transparent);
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
     -webkit-backdrop-filter: blur(20px) saturate(1.5);
     backdrop-filter: blur(20px) saturate(1.5);
     box-shadow: 0 8px 30px -10px rgba(0,0,0,0.25);
@@ -360,26 +376,26 @@ html.ss-locked .legalfoot a { color: rgba(255,255,255,0.85); }
   }
   .tabs button {
     border-radius: 14px;
-    padding: 8px 4px 10px;
+    padding: 6px 2px 8px;
     min-width: 0;
+    font-size: 9.5px;
   }
-  .tabs button svg { width: 24px; height: 24px; }
-  .tabs button[aria-current='true'] {
-    border-radius: 14px;
-  }
-  main { padding-bottom: 110px; }
+  .tabs button svg { width: 22px; height: 22px; }
+  main { padding-bottom: 100px; }
+}
+@media (max-width: 380px) {
+  .tabs button { font-size: 8.5px; }
+  .tabs button svg { width: 20px; height: 20px; }
 }
 
 /* --- Left icon rail (tablet 768-1199px) --- */
 @media (min-width: 768px) and (max-width: 1199px) {
   .tabs {
-    width: 64px;
+    width: 72px;
     align-items: center;
   }
-  .tabs button { justify-content: center; }
-  .tabs button span,
-  .tabs button:not([aria-current='true']) { font-size: 0; }
-  .tabs button[aria-current='true'] { font-size: 0; }
+  .tabs button { justify-content: center; gap: 4px; }
+  .tabs button span { font-size: 9px; letter-spacing: 0; }
 }
 
 /* --- Left rail with icons + labels (desktop 1200px+) --- */
@@ -388,20 +404,27 @@ html.ss-locked .legalfoot a { color: rgba(255,255,255,0.85); }
   main { max-width: 1000px; }
 }
 
-/* --- Palette swatch buttons: large preview chip with gradient --- */
+/* --- Palette swatch buttons: uniform sizing --- */
 .pal button {
   flex-direction: column;
   align-items: stretch;
   gap: 6px;
   border-radius: 14px;
   padding: 10px;
+  min-width: 90px;
 }
 .pal .swatch {
   width: 100%;
-  height: 40px;
+  height: 36px;
   border-radius: 10px;
   background: var(--swatch-grad, var(--accent));
   position: relative;
+  display: flex;
+  overflow: hidden;
+}
+.pal .swatch i {
+  flex: 1;
+  height: 100%;
 }
 .pal button[aria-pressed='true'] .swatch::after {
   content: '✓';
@@ -534,13 +557,47 @@ html[data-reduce-motion='true'] .toast::after { display: none; }
 /* --- Legal pages --- */
 .legal h2 { font-family: var(--display); font-weight: 600; }
 
-/* --- Tables: stacked cards under 640px --- */
-@media (max-width: 639px) {
-  .rpt table { display: block; }
-  .rpt thead { display: none; }
-  .rpt tr { display: block; padding: 10px 0; border-bottom: 1px solid var(--line); }
-  .rpt td { display: block; border: 0; padding: 2px 0; }
-  .rpt td::before { content: attr(data-label) ': '; color: var(--muted); font-size: 11px; text-transform: uppercase; }
+/* --- Mobile formatting fixes --- */
+@media (max-width: 767px) {
+  section[data-view] { gap: 12px; }
+  .card { padding: 14px; }
+  .grid { gap: 10px; }
+  .head { gap: 8px; }
+  .frow { grid-template-columns: 1fr; }
+  .actions { gap: 6px; }
+  .btn { padding: 7px 12px; font-size: 13px; }
+  .btn.small { padding: 5px 10px; font-size: 12px; }
+  .sheet { padding: 16px; }
+  .sheet h3 { font-size: 18px; }
+  .kv { grid-template-columns: 90px 1fr; }
+  .stats { gap: 8px; }
+  .stat b { font-size: 20px; }
+  .chart { height: 100px; }
+  .cal { gap: 3px; }
+  .day { min-height: 54px; padding: 3px; }
+  .day .n { font-size: 11px; }
+  .day .ev { font-size: 9px; padding: 1px 3px; }
+  .inv-line { grid-template-columns: 1fr 48px 60px 56px 22px; gap: 4px; }
+  .inv-line input, .inv-line select { padding: 6px 5px; font-size: 12px; }
+  .rpt { padding: 10px; }
+  .rpt td, .rpt th { padding: 5px 3px; font-size: 12px; }
+  .period select, .period input { padding: 5px 10px; font-size: 12px; }
+  .row { gap: 8px; padding: 10px 4px; }
+  .date { width: 40px; }
+  .date b { font-size: 16px; }
+  .top { padding-block: 8px; gap: 8px; }
+  .topr { gap: 6px; }
+  .topr .iconbtn { width: 32px; height: 32px; }
+  #quickAdd { padding: 5px 10px; font-size: 12px; }
+  .brand h1 { font-size: 15px; }
+  .brand span#yearLbl { display: none; }
+}
+@media (max-width: 380px) {
+  .card { padding: 12px; }
+  .stat b { font-size: 18px; }
+  .day { min-height: 48px; }
+  .btn { padding: 6px 10px; font-size: 12px; }
+  #quickAdd { display: none; }
 }
 
 /* --- Privacy/Terms pages --- */

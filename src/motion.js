@@ -65,41 +65,20 @@ function pageTransition(section) {
   const dir = idx >= prevTabIndex ? 1 : -1;
   prevTabIndex = idx >= 0 ? idx : prevTabIndex;
 
-  // Header band scale
-  const band = section.querySelector(':scope > .head::before');
-  section.style.setProperty('--band-scale', '0.96');
-  requestAnimationFrame(() => {
-    section.animate([
-      { transform: `translateX(${dir * 24}px)`, opacity: 0 },
-      { transform: 'translateX(0)', opacity: 1 }
-    ], { duration: 480, easing: EASE, fill: 'forwards' });
-    section.style.setProperty('--band-scale', '1');
-  });
+  // Simple fade for the section
+  section.animate(
+    [{ opacity: 0, transform: `translateX(${dir * 12}px)` }, { opacity: 1, transform: 'none' }],
+    { duration: 280, easing: EASE, fill: 'none' }
+  );
 
-  // Title word-by-word reveal
-  const h2 = section.querySelector(':scope > .head h2');
-  if (h2) {
-    const text = h2.textContent;
-    const words = text.split(' ');
-    h2.innerHTML = words.map(w => `<span style="display:inline-block;overflow:hidden;vertical-align:top"><span style="display:inline-block;transform:translateY(100%)">${w}</span></span>`).join(' ');
-    const spans = h2.querySelectorAll('span > span');
-    spans.forEach((s, i) => {
-      s.animate(
-        [{ transform: 'translateY(100%)' }, { transform: 'translateY(0)' }],
-        { duration: 420, delay: i * 60, easing: EASE, fill: 'forwards' }
-      );
-    });
-    setTimeout(() => { h2.textContent = text; }, words.length * 60 + 500);
-  }
-
-  // Content stagger: cards and rows
+  // Content stagger: cards and rows (gentle)
   const items = section.querySelectorAll('.card, .row, .mailrow, .stat-tile, .day');
-  const count = Math.min(items.length, 12);
+  const count = Math.min(items.length, 8);
   items.forEach((el, i) => {
     if (i >= count) return;
     el.animate(
-      [{ opacity: 0, transform: `translateY(${dir * 8}px)` }, { opacity: 1, transform: 'none' }],
-      { duration: 320, delay: 100 + i * 30, easing: EASE, fill: 'forwards' }
+      [{ opacity: 0, transform: `translateY(${dir * 6}px)` }, { opacity: 1, transform: 'none' }],
+      { duration: 240, delay: 60 + i * 25, easing: EASE, fill: 'none' }
     );
   });
 }
@@ -359,9 +338,14 @@ export function initMotion() {
     if (!ticking) { requestAnimationFrame(() => { onScroll(); ticking = false; }); ticking = true; }
   }, { passive: true });
 
-  // Re-attach when DOM changes (new sheets, new lists)
+  // Re-attach when new content is added, but throttled to avoid freeze
+  let domTimer = null;
   const domObs = new MutationObserver(() => {
-    attachRipples(); attachPress(); attachHaptics();
+    if (domTimer) return;
+    domTimer = setTimeout(() => {
+      attachRipples(); attachPress(); attachHaptics();
+      domTimer = null;
+    }, 300);
   });
   domObs.observe(document.body, { childList: true, subtree: true });
 
