@@ -10,7 +10,7 @@ const root = () => document.getElementById('ss-auth');
 function frame(inner) {
   root().innerHTML = `<main class="ss-auth-wrap">
     <section class="ss-auth-intro">
-      <div class="eyebrow">For DJs and performers who book themselves</div>
+      <div class="eyebrow">For performers who book themselves</div>
       <h1>${APP}</h1>
       <p class="ss-lead">From first pitch to final payout, all in one place.</p>
       <ul class="ss-points">
