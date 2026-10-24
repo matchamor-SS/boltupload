@@ -206,7 +206,7 @@ function svgWave(){let p="";for(let i=0;i<40;i++){const h=8+Math.abs(Math.sin(i*
 /* ---------- views ---------- */
 const TAB_NAMES={home:"Home",bookings:"Bookings",calendar:"Calendar",tasks:"Tasks",contacts:"People",money:"Financials",comms:"Comms",kit:"Kit",settings:"Settings"};let TAB_STACK=[];
 function goTab(t){if(t!==tab){TAB_STACK.push({tab,y:window.scrollY});if(TAB_STACK.length>20)TAB_STACK.shift()}setTab(t,true)}
-function goBack(){const p=TAB_STACK.pop();if(!p)return;close();setTab(p.tab,true);requestAnimationFrame(()=>window.scrollTo(0,p.y||0))}
+function goBack(){const p=TAB_STACK.pop();if(!p)return;closeAll();setTab(p.tab,true);requestAnimationFrame(()=>window.scrollTo(0,p.y||0))}
 function renderBackBar(){const bb=document.getElementById("backBar");if(!bb)return;const p=TAB_STACK[TAB_STACK.length-1];bb.hidden=!p;if(p)bb.querySelector("span").textContent="Back to "+(TAB_NAMES[p.tab]||"previous")}
 function setTab(t,keep){if(!keep)TAB_STACK=[];const changed=tab!==t;tab=t;if(changed)requestAnimationFrame(()=>{const v=document.querySelector(`section[data-view="${t}"]`);if(v){v.classList.remove("enter");void v.offsetWidth;v.classList.add("enter");setTimeout(()=>v.classList.remove("enter"),700)}});if(t==="comms")setTimeout(renderMailPick,0);if(t==="kit")setTimeout(renderPromoLists,0);{const sb=document.getElementById("setBtn");sb&&sb.setAttribute("aria-pressed",t==="settings")}document.querySelectorAll("[data-view]").forEach(s=>s.hidden=s.dataset.view!==t);
   document.querySelectorAll("#tabs button").forEach(b=>b.setAttribute("aria-current",b.dataset.tab===t));
@@ -1066,7 +1066,9 @@ function sheet(html,onMount){const root=$("#sheetRoot"),wasOpen=!!root.innerHTML
   root.innerHTML=`<div class="sheet-bg"><div class="sheet" role="dialog" aria-modal="true">${backBtn}${html}</div></div>`;
   const sb=root.querySelector("[data-shback]");if(sb)sb.onclick=sheetBack;
   const bg=root.firstChild;bg.addEventListener("click",e=>{if(e.target===bg)close()});onMount&&onMount(root.querySelector(".sheet"));const f=root.querySelector("input,select,textarea,button");f&&f.focus()}
-function close(){$("#sheetRoot").innerHTML="";SH_CUR=null;SH_STACK=[]}
+/* Finishing or dismissing a window returns to the window it was opened from (skipping any whose item no longer exists). */
+function close(){const root=$("#sheetRoot");let p;while((p=SH_STACK.pop())){const before=root.firstChild;SH_BACKING=true;try{p.reopen()}finally{SH_BACKING=false;SH_NEXT=null}if(root.firstChild!==before)return}closeAll()}
+function closeAll(){$("#sheetRoot").innerHTML="";SH_CUR=null;SH_STACK=[]}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")close()});
 const opt=(list,v)=>list.map(([k,l])=>`<option value="${esc(k)}" ${k===v?"selected":""}>${esc(l)}</option>`).join("");
 const contactOpts=(type,v,none="None",addNew)=>`<option value="">${none}</option>`+(addNew?`<option value="__new__">＋ ${addNew}</option>`:"")+S.contacts.filter(c=>!type||c.type===type||c.id===v).map(c=>`<option value="${c.id}" ${c.id===v?"selected":""}>${esc(cName(c))}</option>`).join("");
