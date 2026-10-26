@@ -18,9 +18,10 @@ const daysBetween = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a
 const niceDate = s => new Date(s + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 const hourLabel = h => (h % 12 || 12) + (h < 12 ? ' am' : ' pm');
 const time12 = t => { const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}:${pad(m)} ${h < 12 ? 'am' : 'pm'}`; };
-const say = t => (window.toast ? window.toast(t) : alert(t));
+const say = t => { if (window.toast) window.toast(t); };
 const tz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Los_Angeles'; } catch { return 'America/Los_Angeles'; } };
 async function fnErr(error) { try { const j = await error.context.json(); return j.error || 'unavailable'; } catch { return 'unavailable'; } }
+const OFFLINE = "Couldn't reach the Set & Settled server. Check your connection and try again in a minute.";
 async function perf(op, extra = {}) {
   const { data, error } = await sb.functions.invoke('performer', { body: { op, ...extra } });
   if (error) throw Object.assign(new Error('fn'), { code: await fnErr(error) });
@@ -34,6 +35,25 @@ else appExtras();
 /* ============================================================== in the app */
 function appExtras() {
   const st = { prefs: null, link: null, status: null, server: null, db: null, lastQ: '' };
+  /* Messages show inside the card they belong to (never outside the window). */
+  const MSG = {};
+  function note(where, text, bad) {
+    const at = Date.now(); MSG[where] = { text, bad, at }; render(); renderKit();
+    setTimeout(() => { if (MSG[where] && MSG[where].at === at) { MSG[where] = null; render(); renderKit(); } }, bad ? 9000 : 5000);
+  }
+  const msgHTML = where => MSG[where] ? `<p class="ssx-msg${MSG[where].bad ? ' bad' : ''}" role="${MSG[where].bad ? 'alert' : 'status'}">${esc(MSG[where].text)}</p>` : '';
+  const linkBox = (link, id) => `<div class="ssx-linkbox"><input id="${id}" class="ssx-linkurl" readonly value="${esc(link)}" aria-label="Your booking link"><button type="button" class="btn primary small ssx-copybtn" data-ssx-copy="${id}">Copy</button></div>`;
+  async function copyLink(id, where) {
+    const el = document.getElementById(id); if (!el) return;
+    let ok = false;
+    try { await navigator.clipboard.writeText(el.value); ok = true; } catch (_) { try { el.focus(); el.select(); el.setSelectionRange(0, 9999); ok = document.execCommand('copy'); } catch (_) {} }
+    note(where, ok ? 'Link copied. Paste it anywhere.' : 'Press and hold the link to copy it.', !ok);
+  }
+  function wireLink(root, link, L, where) {
+    root.querySelectorAll('[data-ssx-copy]').forEach(b => b.onclick = e => { e.stopPropagation(); copyLink(b.dataset.ssxCopy, where); });
+    root.querySelectorAll('.ssx-linkurl').forEach(i => i.onclick = () => { i.select(); i.setSelectionRange(0, 9999); });
+    root.querySelectorAll('[data-ssx-share]').forEach(b => b.onclick = e => { e.stopPropagation(); navigator.share({ title: `Book ${L.name || 'me'}`, url: link }).catch(() => {}); });
+  }
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
     navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.type === 'ss-goto') goto(new URL(e.data.url, location.origin).searchParams); });
@@ -45,10 +65,12 @@ function appExtras() {
     st.db = await window.claude.use('db');
     if (!st.db) return;
     st.db.doc('settings/notify').onSnapshot(s => { st.prefs = s.exists ? s.data() : {}; render(); queueSoon(); }, () => {});
-    st.db.doc('settings/bookinglink').onSnapshot(s => { st.link = s.exists ? s.data() : {}; render(); }, () => {});
+    st.db.doc('settings/bookinglink').onSnapshot(s => { st.link = s.exists ? s.data() : {}; render(); renderKit(); }, () => {});
     st.db.doc('notify/status').onSnapshot(s => { st.status = s.exists ? s.data() : null; render(); }, () => {});
     perf('status').then(d => { st.server = d; render(); }).catch(() => { st.server = { error: true }; render(); });
-    mount();
+    mount(); renderKit();
+    const kitSec = document.querySelector('section[data-view="kit"]');
+    if (kitSec) new MutationObserver(() => { if (!document.getElementById('ssx-kit')) renderKit(); }).observe(kitSec, { childList: true });
     new MutationObserver(() => { if (!document.getElementById('ss-extras')) mount(); }).observe(document.querySelector('section[data-view="settings"]'), { childList: true });
     setInterval(queueSoon, 60000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) queueSoon(); });
@@ -108,10 +130,10 @@ function appExtras() {
     const sec = document.querySelector('section[data-view="settings"]'); if (!sec || document.getElementById('ss-extras')) return;
     const box = document.createElement('div'); box.id = 'ss-extras'; sec.appendChild(box); render();
   }
-  const savePrefs = patch => st.db && st.db.doc('settings/notify').set({ ...defPrefs(), ...(st.prefs || {}), ...patch, tz: tz() }).catch(() => say("Couldn't save. Try again."));
+  const savePrefs = patch => st.db && st.db.doc('settings/notify').set({ ...defPrefs(), ...(st.prefs || {}), ...patch, tz: tz() }).catch(() => note('notify', "Couldn't save your reminder settings. " + OFFLINE, true));
   const defPrefs = () => ({ on: false, push: true, email: false, digest: 'daily', digestHour: 8, alertHour: 9, hideDetails: false });
   let lt = null;
-  const saveLink = (patch, now) => { st.link = { ...defLink(), ...(st.link || {}), ...patch, tz: tz() }; clearTimeout(lt); const go = () => st.db.doc('settings/bookinglink').set(st.link).catch(() => say("Couldn't save. Try again.")); now ? go() : (lt = setTimeout(go, 700)); };
+  const saveLink = (patch, now) => { st.link = { ...defLink(), ...(st.link || {}), ...patch, tz: tz() }; clearTimeout(lt); const go = () => st.db.doc('settings/bookinglink').set(st.link).catch(() => note('link', "Couldn't save your booking link settings. " + OFFLINE, true)); now ? go() : (lt = setTimeout(go, 700)); };
   const defLink = () => { let p = {}; try { p = S.profile || {}; } catch (_) {} return { on: false, slug: '', name: p.djName || p.myName || '', headline: '', days: [4, 5, 6], notice: 7, ahead: 180, lengths: [60, 90, 120], earliest: '18:00', latest: '23:30', blocked: [] }; };
 
   const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -167,28 +189,31 @@ function appExtras() {
         ${upcoming.length ? `<div class="ssx-next"><div class="eyebrow">Next reminders</div>${upcoming.map(i => `<div class="ssx-li"><span>${esc(niceDate(i.at))}</span>${esc(i.body)}</div>`).join('')}</div>` : '<p class="note">No reminders coming up. They come from the due dates on your booking checklists.</p>'}
         ${st.status && st.status.email === 'needs_gmail' && p.email ? '<p class="note ssx-warn">Your last digest couldn\'t be sent: Gmail isn\'t connected.</p>' : ''}
       </div>
+      ${msgHTML('notify')}
     </div>
     <div class="card ssx" id="ssx-link">
       <div class="ssx-head"><div><h3>Booking link</h3><p class="note">A page promoters and coordinators can use to pick an open date and time and send you a request. Requests show up as Leads in Bookings.</p></div>
         <label class="ssx-switch"><input type="checkbox" id="ssx-lon" ${L.on ? 'checked' : ''} aria-label="Booking link on or off"><span></span></label></div>
+      ${L.on ? '' : msgHTML('link')}
       <div class="ssx-body" ${L.on ? '' : 'hidden'}>
         <div class="f"><label for="ssx-slug">Your link</label>
           <div class="ssx-slug"><span>${esc(location.host)}/?book=</span><input id="ssx-slug" value="${esc(L.slug)}" placeholder="your-name" maxlength="40" autocapitalize="none" autocomplete="off" spellcheck="false"><button class="btn small" id="ssx-claim">Save</button></div>
           <span class="note">Letters, numbers and dashes.</span></div>
-        ${link ? `<div class="ssx-row ssx-share"><button class="btn primary small" id="ssx-copy">Copy link</button>${navigator.share ? '<button class="btn small" id="ssx-sharebtn">Share</button>' : ''}<a class="btn small" href="${esc(link)}" target="_blank" rel="noopener">Preview</a></div>` : ''}
+        ${msgHTML('link')}
+        ${link ? `<div class="f"><label>Share this link</label>${linkBox(link, 'ssx-linkurl')}<div class="ssx-row ssx-share">${navigator.share ? '<button type="button" class="btn small" data-ssx-share>Share…</button>' : ''}<a class="btn small" href="${esc(link)}" target="_blank" rel="noopener">Preview</a></div><span class="note">It's also in your <b>Kit</b>, ready to copy.</span></div>` : ''}
         <div class="f"><label for="ssx-name">Performer name on the page</label><input id="ssx-name" maxlength="80" value="${esc(L.name)}"></div>
         <div class="f"><label for="ssx-hl">A short note for people booking you</label><textarea id="ssx-hl" maxlength="400" rows="3" placeholder="Latin indie dance and baile funk. Tell me about your night!">${esc(L.headline)}</textarea></div>
-        <div class="f"><label>Days you take bookings</label><div class="ssx-chips" id="ssx-days">${D.map((d, i) => `<button type="button" class="ssx-chip" data-day="${i}" aria-pressed="${L.days.includes(i)}">${d}</button>`).join('')}</div></div>
+        <div class="f"><label>Days you take bookings</label><div class="ssx-chips" id="ssx-days">${D.map((d, i) => `<button type="button" class="ssx-chip" data-ssx-day="${i}" aria-pressed="${L.days.includes(i)}">${d}</button>`).join('')}</div></div>
         <div class="ssx-grid2">
           <div class="f"><label for="ssx-notice">Minimum notice</label><select id="ssx-notice">${[1, 3, 7, 14, 21, 30, 60].map(n => `<option value="${n}">${n} day${n > 1 ? 's' : ''}</option>`).join('')}</select></div>
           <div class="f"><label for="ssx-ahead">Book up to</label><select id="ssx-ahead">${[[30, '1 month'], [90, '3 months'], [180, '6 months'], [365, '1 year']].map(([n, t]) => `<option value="${n}">${t} ahead</option>`).join('')}</select></div>
           <div class="f"><label for="ssx-early">Earliest start</label><select id="ssx-early">${tOpts(L.earliest)}</select></div>
           <div class="f"><label for="ssx-late">Latest start</label><select id="ssx-late">${tOpts(L.latest)}</select></div>
         </div>
-        <div class="f"><label>Set lengths you offer</label><div class="ssx-chips" id="ssx-lens">${[30, 45, 60, 90, 120, 180, 240].map(n => `<button type="button" class="ssx-chip" data-len="${n}" aria-pressed="${L.lengths.includes(n)}">${n < 60 ? n + ' min' : n / 60 + ' hr'}</button>`).join('')}</div></div>
+        <div class="f"><label>Set lengths you offer</label><div class="ssx-chips" id="ssx-lens">${[30, 45, 60, 90, 120, 180, 240].map(n => `<button type="button" class="ssx-chip" data-ssx-len="${n}" aria-pressed="${L.lengths.includes(n)}">${n < 60 ? n + ' min' : n / 60 + ' hr'}</button>`).join('')}</div></div>
         <div class="f"><label for="ssx-block">Dates you're not available</label>
           <div class="ssx-row"><input type="date" id="ssx-block" min="${todayStr()}"><button class="btn small" id="ssx-addblock">Block date</button></div>
-          <div class="ssx-chips">${(L.blocked || []).filter(d => d >= todayStr()).sort().map(d => `<button type="button" class="ssx-chip on" data-unblock="${esc(d)}" aria-label="Unblock ${esc(niceDate(d))}">${esc(niceDate(d))} ×</button>`).join('')}</div>
+          <div class="ssx-chips">${(L.blocked || []).filter(d => d >= todayStr()).sort().map(d => `<button type="button" class="ssx-chip on" data-ssx-unblock="${esc(d)}" aria-label="Unblock ${esc(niceDate(d))}">${esc(niceDate(d))} ×</button>`).join('')}</div>
           <span class="note">Dates with a Confirmed, Played or Paid show are already closed.</span></div>
       </div>
     </div>`;
@@ -206,7 +231,7 @@ function appExtras() {
     $('#ssx-dg').onchange = e => savePrefs({ digest: e.target.value === 'weekly' ? 'weekly' : 'daily' });
     const on = $('#ssx-devon'); if (on) on.onclick = () => deviceEnable(on);
     const off = $('#ssx-devoff'); if (off) off.onclick = deviceDisable;
-    const test = $('#ssx-test'); if (test) test.onclick = async () => { test.disabled = true; try { const r = await perf('test'); say(r.pushed ? 'Test alert sent' : "Couldn't reach your devices. Turn alerts off and on again."); } catch (_) { say("Couldn't send a test. Try again."); } test.disabled = false; };
+    const test = $('#ssx-test'); if (test) test.onclick = async () => { test.disabled = true; try { const r = await perf('test'); note('notify', r.pushed ? 'Test alert sent. Check this device.' : "Couldn't reach your devices. Turn alerts off and on again.", !r.pushed); } catch (_) { note('notify', "Couldn't send a test. " + OFFLINE, true); } test.disabled = false; };
 
     $('#ssx-lon').onchange = e => saveLink({ on: e.target.checked }, true);
     $('#ssx-claim').onclick = claimSlug;
@@ -217,47 +242,63 @@ function appExtras() {
     $('#ssx-ahead').onchange = e => saveLink({ ahead: Number(e.target.value) }, true);
     $('#ssx-early').onchange = e => saveLink({ earliest: e.target.value }, true);
     $('#ssx-late').onchange = e => saveLink({ latest: e.target.value }, true);
-    box.querySelectorAll('[data-day]').forEach(b => b.onclick = () => { const d = Number(b.dataset.day), s = new Set(L.days); s.has(d) ? s.delete(d) : s.add(d); if (!s.size) return say('Pick at least one day'); saveLink({ days: [...s].sort() }, true); });
-    box.querySelectorAll('[data-len]').forEach(b => b.onclick = () => { const n = Number(b.dataset.len), s = new Set(L.lengths); s.has(n) ? s.delete(n) : s.add(n); if (!s.size) return say('Pick at least one set length'); saveLink({ lengths: [...s].sort((a, b) => a - b) }, true); });
+    box.querySelectorAll('[data-ssx-day]').forEach(b => b.onclick = e => { e.stopPropagation(); const d = Number(b.dataset.ssxDay), s = new Set(L.days); s.has(d) ? s.delete(d) : s.add(d); if (!s.size) return note('link', 'Pick at least one day.', true); saveLink({ days: [...s].sort() }, true); });
+    box.querySelectorAll('[data-ssx-len]').forEach(b => b.onclick = e => { e.stopPropagation(); const n = Number(b.dataset.ssxLen), s = new Set(L.lengths); s.has(n) ? s.delete(n) : s.add(n); if (!s.size) return note('link', 'Pick at least one set length.', true); saveLink({ lengths: [...s].sort((a, b) => a - b) }, true); });
     $('#ssx-addblock').onclick = () => { const v = $('#ssx-block').value; if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return; saveLink({ blocked: [...new Set([...(L.blocked || []).filter(d => d >= todayStr()), v])].slice(-200) }, true); };
-    box.querySelectorAll('[data-unblock]').forEach(b => b.onclick = () => saveLink({ blocked: (L.blocked || []).filter(d => d !== b.dataset.unblock) }, true));
-    const copy = $('#ssx-copy'); if (copy) copy.onclick = async () => { try { await navigator.clipboard.writeText(link); say('Link copied'); } catch (_) { prompt('Copy your booking link:', link); } };
-    const sh = $('#ssx-sharebtn'); if (sh) sh.onclick = () => navigator.share({ title: `Book ${L.name || 'me'}`, url: link }).catch(() => {});
+    box.querySelectorAll('[data-ssx-unblock]').forEach(b => b.onclick = e => { e.stopPropagation(); saveLink({ blocked: (L.blocked || []).filter(d => d !== b.dataset.ssxUnblock) }, true); });
+    wireLink(box, link, L, 'link');
+  }
+
+  /* ---------- Booking link card in the Kit */
+  function renderKit() {
+    const sec = document.querySelector('section[data-view="kit"]'); if (!sec || !st.db) return;
+    let box = document.getElementById('ssx-kit');
+    if (!box) { box = document.createElement('div'); box.id = 'ssx-kit'; box.className = 'card ssx ssx-kitcard'; const head = sec.querySelector(':scope > .head'); head ? head.after(box) : sec.prepend(box); }
+    if (box.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;
+    const L = { ...defLink(), ...(st.link || {}) }, link = L.slug ? `${location.origin}/?book=${encodeURIComponent(L.slug)}` : '';
+    box.innerHTML = L.on && link
+      ? `<div class="ssx-head"><div><h3>Booking link</h3><p class="note">Send this to promoters and coordinators so they can request an open date.</p></div></div>
+         ${linkBox(link, 'ssx-kiturl')}
+         <div class="ssx-row">${navigator.share ? '<button type="button" class="btn small" data-ssx-share>Share…</button>' : ''}<a class="btn small" href="${esc(link)}" target="_blank" rel="noopener">Preview</a><button type="button" class="btn small" data-ssx-edit>Edit</button></div>${msgHTML('kit')}`
+      : `<div class="ssx-head"><div><h3>Booking link</h3><p class="note">Let promoters and coordinators pick an open date and send you a request. Requests show up as Leads.</p></div></div>
+         <div class="ssx-row"><button type="button" class="btn primary small" data-ssx-edit>Set up my booking link</button></div>`;
+    wireLink(box, link, L, 'kit');
+    const ed = box.querySelector('[data-ssx-edit]'); if (ed) ed.onclick = e => { e.stopPropagation(); window.goTab('settings'); setTimeout(() => { const c = document.getElementById('ssx-link'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 250); };
   }
 
   async function claimSlug() {
     const el = document.getElementById('ssx-slug'), btn = document.getElementById('ssx-claim');
     const slug = el.value.toLowerCase().trim().replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-    if (slug.length < 3) return say('Use at least 3 letters or numbers');
+    if (slug.length < 3) return note('link', 'Use at least 3 letters or numbers.', true);
     btn.disabled = true; btn.textContent = 'Saving…';
-    try { const r = await perf('claim', { slug }); saveLink({ slug: r.slug }, true); say('Your booking link is ready'); }
-    catch (e) { say(e.code === 'slug_taken' ? 'That link name is taken. Try another.' : e.code === 'bad_slug' ? 'Use letters, numbers and dashes only.' : "Couldn't save. Try again."); }
+    try { const r = await perf('claim', { slug }); saveLink({ slug: r.slug, on: true }, true); note('link', 'Your booking link is ready. Copy it below.'); }
+    catch (e) { note('link', e.code === 'slug_taken' ? 'That link name is taken. Try another.' : e.code === 'bad_slug' ? 'Use letters, numbers and dashes only.' : e.code === 'unauthorized' ? 'Please sign out and back in, then try again.' : "Couldn't save your link name. " + OFFLINE, true); }
     btn.disabled = false; btn.textContent = 'Save';
   }
 
   const b64ToBytes = s => { const p = '='.repeat((4 - s.length % 4) % 4), b = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, c => c.charCodeAt(0)); };
   const deviceLabel = () => { const u = navigator.userAgent; return /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) ? 'iPad' : /Android/.test(u) ? 'Android' : /Mac/.test(u) ? 'Mac' : /Windows/.test(u) ? 'Windows' : 'Browser'; };
   async function deviceEnable(btn) {
-    if (!pushOK()) return say(isIOS() ? 'Add Set & Settled to your Home Screen first, then open it from there.' : "This browser can't show alerts.");
+    if (!pushOK()) return note('notify', isIOS() ? 'Add Set & Settled to your Home Screen first, then open it from there.' : "This browser can't show alerts.", true);
     btn.disabled = true; btn.textContent = 'Turning on…';
     try {
       const perm = await Notification.requestPermission();
-      if (perm !== 'granted') { say('Alerts were not allowed. You can allow them in your browser or phone settings.'); return; }
+      if (perm !== 'granted') { note('notify', 'Alerts were not allowed. You can allow them in your browser or phone settings.', true); return; }
       const reg = await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready;
       const key = (st.server && st.server.vapidKey) || (await perf('status')).vapidKey;
-      if (!key) { say('Alerts are not set up on the server yet.'); return; }
+      if (!key) { note('notify', 'Alerts are not set up on the server yet.', true); return; }
       const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
       const j = sub.toJSON();
       await perf('subscribe', { endpoint: j.endpoint, keys: j.keys, label: deviceLabel() });
       if (!(st.prefs && st.prefs.on)) savePrefs({ on: true, push: true });
-      deviceOn = true; say('Alerts are on for this device');
+      deviceOn = true; note('notify', 'Alerts are on for this device.');
       perf('status').then(d => { st.server = d; render(); }).catch(() => {});
-    } catch (e) { say(e.code === 'too_many_devices' ? 'You have alerts on 10 devices already. Turn one off first.' : "Couldn't turn on alerts. Try again."); }
+    } catch (e) { note('notify', e.code === 'too_many_devices' ? 'You have alerts on 10 devices already. Turn one off first.' : "Couldn't turn on alerts. " + OFFLINE, true); }
     finally { render(); }
   }
   async function deviceDisable() {
     try { const reg = await navigator.serviceWorker.getRegistration('/'); const sub = reg && await reg.pushManager.getSubscription(); if (sub) { await perf('unsubscribe', { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); } } catch (_) {}
-    deviceOn = false; say('Alerts are off for this device'); render();
+    deviceOn = false; note('notify', 'Alerts are off for this device.');
   }
 }
 
@@ -290,8 +331,8 @@ async function bookingPage(rawSlug) {
     const minM = new Date(openFrom + 'T12:00:00'), maxM = new Date(openTo + 'T12:00:00');
     const canPrev = y > minM.getFullYear() || (y === minM.getFullYear() && mo > minM.getMonth()), canNext = y < maxM.getFullYear() || (y === maxM.getFullYear() && mo < maxM.getMonth());
     let cells = ''; for (let i = 0; i < first; i++) cells += '<span></span>';
-    for (let d = 1; d <= dim; d++) { const s = `${y}-${pad(mo + 1)}-${pad(d)}`, ok = isOpen(s); cells += `<button type="button" class="bk-day${s === S2.date ? ' sel' : ''}" data-date="${s}" ${ok ? '' : 'disabled'} aria-label="${niceDate(s)}${ok ? '' : ', not available'}" aria-pressed="${s === S2.date}">${d}</button>`; }
-    return `<div class="bk-cal"><div class="bk-calh"><button type="button" class="bk-nav" data-m="-1" ${canPrev ? '' : 'disabled'} aria-label="Previous month">‹</button><b>${S2.month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</b><button type="button" class="bk-nav" data-m="1" ${canNext ? '' : 'disabled'} aria-label="Next month">›</button></div>
+    for (let d = 1; d <= dim; d++) { const s = `${y}-${pad(mo + 1)}-${pad(d)}`, ok = isOpen(s); cells += `<button type="button" class="bk-day${s === S2.date ? ' sel' : ''}" data-bk-date="${s}" ${ok ? '' : 'disabled'} aria-label="${niceDate(s)}${ok ? '' : ', not available'}" aria-pressed="${s === S2.date}">${d}</button>`; }
+    return `<div class="bk-cal"><div class="bk-calh"><button type="button" class="bk-nav" data-bk-m="-1" ${canPrev ? '' : 'disabled'} aria-label="Previous month">‹</button><b>${S2.month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</b><button type="button" class="bk-nav" data-bk-m="1" ${canNext ? '' : 'disabled'} aria-label="Next month">›</button></div>
       <div class="bk-dow">${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(x => `<span>${x}</span>`).join('')}</div><div class="bk-grid">${cells}</div></div>`;
   }
   function draw() {
@@ -306,7 +347,7 @@ async function bookingPage(rawSlug) {
         <section class="bk-step"><h2><span>1</span>Pick a date</h2>${cal()}<p class="bk-muted bk-small">${S2.date ? `Selected: <b>${esc(niceDate(S2.date))}</b>` : 'Open dates are the ones you can tap.'}</p></section>
         <section class="bk-step"><h2><span>2</span>Set time</h2>
           <div class="bk-two"><label class="bk-f">Start time<select id="bk-start" required><option value="">Choose…</option>${times.map(t => `<option value="${t}"${t === S2.start ? ' selected' : ''}>${time12(t)}</option>`).join('')}</select></label>
-          <div class="bk-f"><span>Set length</span><div class="bk-chips">${P.lengths.map(n => `<button type="button" class="bk-chip" data-len="${n}" aria-pressed="${S2.length === n}">${lenLabel(n)}</button>`).join('')}</div></div></div></section>
+          <div class="bk-f"><span>Set length</span><div class="bk-chips">${P.lengths.map(n => `<button type="button" class="bk-chip" data-bk-len="${n}" aria-pressed="${S2.length === n}">${lenLabel(n)}</button>`).join('')}</div></div></div></section>
         <section class="bk-step"><h2><span>3</span>About your event</h2>
           <div class="bk-two">
             <label class="bk-f">Your name<input id="bk-name" autocomplete="name" maxlength="80" required></label>
@@ -328,9 +369,9 @@ async function bookingPage(rawSlug) {
         </section>
       </form>${foot()}</div>`;
     const keepVals = root.__vals || {}; for (const [k, v] of Object.entries(keepVals)) { const el = root.querySelector('#' + k); if (el) el.value = v; }
-    root.querySelectorAll('.bk-nav').forEach(b => b.onclick = () => { remember(); S2.month = new Date(S2.month.getFullYear(), S2.month.getMonth() + Number(b.dataset.m), 1); draw(); });
-    root.querySelectorAll('.bk-day').forEach(b => b.onclick = () => { remember(); S2.date = b.dataset.date; draw(); root.querySelector('#bk-start').focus(); });
-    root.querySelectorAll('.bk-chip').forEach(b => b.onclick = () => { remember(); S2.length = Number(b.dataset.len); draw(); });
+    root.querySelectorAll('.bk-nav').forEach(b => b.onclick = () => { remember(); S2.month = new Date(S2.month.getFullYear(), S2.month.getMonth() + Number(b.dataset.bkM), 1); draw(); });
+    root.querySelectorAll('.bk-day').forEach(b => b.onclick = () => { remember(); S2.date = b.dataset.bkDate; draw(); root.querySelector('#bk-start').focus(); });
+    root.querySelectorAll('.bk-chip').forEach(b => b.onclick = () => { remember(); S2.length = Number(b.dataset.bkLen); draw(); });
     root.querySelector('#bk-start').onchange = e => { S2.start = e.target.value; };
     root.querySelector('#bk-form').onsubmit = submit;
   }
