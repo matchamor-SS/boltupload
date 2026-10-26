@@ -1,4 +1,11 @@
-/* Set & Settled: Reminders + Booking link. */
+/* Set & Settled: Reminders + Booking link.
+ * 1. Reminders: performers choose phone/laptop alerts and/or an email digest. The app turns each performer's open
+ *    checklist tasks (and unpaid shows) into a small reminder list saved with their own data; the server sends what's due.
+ * 2. Booking link: a public page (?book=name) where a promoter or coordinator picks an open date and time and sends a
+ *    request. Requests arrive as Leads in Bookings with the person added to People.
+ * Security: everything the browser saves goes through the signed-in performer's own data (row-level security).
+ * Push keys, the cron secret and the service key live only on the server. Nothing here uses innerHTML with
+ * performer or booker text without escaping. */
 import { sb } from './supabase.js';
 import './extras.css';
 
@@ -11,6 +18,7 @@ const daysBetween = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a
 const niceDate = s => new Date(s + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 const hourLabel = h => (h % 12 || 12) + (h < 12 ? ' am' : ' pm');
 const time12 = t => { const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}:${pad(m)} ${h < 12 ? 'am' : 'pm'}`; };
+const say = t => { if (window.toast) window.toast(t); };
 const tz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Los_Angeles'; } catch { return 'America/Los_Angeles'; } };
 async function fnErr(error) { try { const j = await error.context.json(); return j.error || 'unavailable'; } catch { return 'unavailable'; } }
 const OFFLINE = "Couldn't reach the Set & Settled server. Check your connection and try again in a minute.";
@@ -26,11 +34,12 @@ else appExtras();
 
 /* ============================================================== in the app */
 function appExtras() {
-  const st = { prefs: null, link: null, status: null, server: null, db: null, lastQ: '' };
+  const st = { prefs: null, link: null, status: null, server: null, db: null, lastQ: '', goals: [] };
+  /* Messages show inside the card they belong to (never outside the window). */
   const MSG = {};
   function note(where, text, bad) {
-    const at = Date.now(); MSG[where] = { text, bad, at }; render(); renderKit();
-    setTimeout(() => { if (MSG[where] && MSG[where].at === at) { MSG[where] = null; render(); renderKit(); } }, bad ? 9000 : 5000);
+    const at = Date.now(); MSG[where] = { text, bad, at }; render(); renderKit(); renderGoals();
+    setTimeout(() => { if (MSG[where] && MSG[where].at === at) { MSG[where] = null; render(); renderKit(); renderGoals(); } }, bad ? 9000 : 5000);
   }
   const msgHTML = where => MSG[where] ? `<p class="ssx-msg${MSG[where].bad ? ' bad' : ''}" role="${MSG[where].bad ? 'alert' : 'status'}">${esc(MSG[where].text)}</p>` : '';
   const linkBox = (link, id) => `<div class="ssx-linkbox"><input id="${id}" class="ssx-linkurl" readonly value="${esc(link)}" aria-label="Your booking link"><button type="button" class="btn primary small ssx-copybtn" data-ssx-copy="${id}">Copy</button></div>`;
@@ -57,6 +66,10 @@ function appExtras() {
     if (!st.db) return;
     st.db.doc('settings/notify').onSnapshot(s => { st.prefs = s.exists ? s.data() : {}; render(); queueSoon(); }, () => {});
     st.db.doc('settings/bookinglink').onSnapshot(s => { st.link = s.exists ? s.data() : {}; render(); renderKit(); }, () => {});
+    st.db.collection('goals').onSnapshot(s => { st.goals = s.docs.map(d => ({ id: d.id, ...d.data() })); renderGoals(); renderHomeGoals(); }, () => {});
+    let lastB = null; setInterval(() => { try { if (S.bookings !== lastB) { lastB = S.bookings; renderGoals(); renderHomeGoals(); } } catch (_) {} }, 2000);
+    const homeSec = document.querySelector('section[data-view="home"]');
+    if (homeSec) new MutationObserver(() => { if (!document.getElementById('ssx-home-goals')) renderHomeGoals(); }).observe(homeSec, { childList: true });
     st.db.doc('notify/status').onSnapshot(s => { st.status = s.exists ? s.data() : null; render(); }, () => {});
     perf('status').then(d => { st.server = d; render(); }).catch(() => { st.server = { error: true }; render(); });
     mount(); renderKit(); setupNav(); syncTop(); setTimeout(syncTop, 500);
@@ -65,6 +78,7 @@ function appExtras() {
     setTimeout(organize, 800); setTimeout(organize, 2500);
     const kitSec = document.querySelector('section[data-view="kit"]');
     if (kitSec) new MutationObserver(() => { if (!document.getElementById('ssx-kit')) renderKit(); }).observe(kitSec, { childList: true });
+
     setInterval(queueSoon, 60000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) queueSoon(); });
     if (params.get('goto')) { goto(params); history.replaceState(null, '', location.pathname); }
@@ -78,31 +92,30 @@ function appExtras() {
     } catch (_) {}
   }
 
-  /* ---------- reminder list */
-  const TEXT = {
-    promo: (s, r) => `${s} is ${r}. Did you make a post about it yet?`,
-    media: (s, r) => `${s} is ${r}, but you said you needed a media person and haven't booked one yet.`,
-    contract: (s, r) => `${s} is ${r}. Is the contract signed?`,
-    deposit: s => `Has the deposit for ${s} come in yet?`,
-    loadin: (s, r) => `${s} is ${r}. Have you confirmed your set time and load-in?`,
-    music: (s, r) => `${s} is ${r}. Is your set prepped?`,
-    invoice: s => `Time to send the invoice for ${s}.`,
-  };
-  const rel = (from, to) => { const n = daysBetween(from, to); return n === 0 ? 'today' : n === 1 ? 'tomorrow' : n === 7 ? 'one week away' : n === 14 ? 'two weeks away' : n > 1 ? `${n} days away` : n === -1 ? 'yesterday' : `${-n} days ago`; };
+  /* ---------- reminder list (what the server may send, and when) */
+  /* Same wording the server uses: from TODAY's point of view, always with the show's real date. */
+  const prettyDate = d => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  function compose(i, today) {
+    const s = i.showDate ? `${i.show} (${prettyDate(i.showDate)})` : i.show, n = i.showDate ? daysBetween(today, i.showDate) : NaN;
+    const when = isNaN(n) ? 'coming up' : n === 0 ? 'today' : n === 1 ? 'tomorrow' : n > 1 ? `in ${n} days` : n === -1 ? 'was yesterday' : `was ${-n} days ago`;
+    if (i.kind === 'paid') return `${s} isn't marked Paid yet${!isNaN(n) && n < 0 ? `, ${-n} days after the show` : ''}. Did you get paid?`;
+    const T = { promo: `${s} is ${when}. Did you make a post about it yet?`, media: `${s} is ${when}, and you said you need a media person. Have you booked one?`, contract: `${s} is ${when}. Is the contract signed?`, deposit: `Has the deposit for ${s} come in yet?`, loadin: `${s} is ${when}. Have you confirmed your set time and load-in?`, music: `${s} is ${when}. Is your set prepped?`, invoice: `Time to send the invoice for ${s}.` };
+    return T[i.key] || `"${i.label}" for ${s} is due.`;
+  }
   function buildQueue() {
     const t0 = todayStr(), lo = addDays(t0, -14), hi = addDays(t0, 120), out = [];
     let tasks = []; try { tasks = allTasks(); } catch (_) { return null; }
     for (const t of tasks) {
       if (t.done || !t.due || !t.b || t.b.status === 'lost' || t.due < lo || t.due > hi) continue;
-      const show = (t.b.title || 'your show').slice(0, 80), r = t.b.date ? rel(t.due, t.b.date) : 'coming up';
-      const body = (TEXT[t.key] || ((s) => `"${t.label}" for ${s} is due today.`))(show, r);
-      out.push({ id: `${t.b.id}:${t.key}:${t.due}`.slice(0, 120), at: t.due, body, bookingId: t.b.id, key: t.key });
+      const it = { id: `${t.b.id}:${t.key}:${t.due}`.slice(0, 120), at: t.due, bookingId: t.b.id, key: t.key, label: String(t.label || '').slice(0, 80), show: (t.b.title || 'your show').slice(0, 80), showDate: t.b.date || '' };
+      out.push({ ...it, body: compose(it, it.at) });
     }
     try {
       for (const b of S.bookings || []) {
         if (!b.date || !['confirmed', 'played'].includes(b.status)) continue;
         const at = addDays(b.date, 30); if (at < lo || at > hi) continue;
-        out.push({ id: `${b.id}:paid:${at}`, at, body: `It's been a month since ${(b.title || 'your show').slice(0, 80)}, but you haven't checked Paid. Did you get paid yet?`, bookingId: b.id, kind: 'paid' });
+        const it = { id: `${b.id}:paid:${at}`, at, bookingId: b.id, kind: 'paid', show: (b.title || 'your show').slice(0, 80), showDate: b.date };
+        out.push({ ...it, body: compose(it, at) });
       }
     } catch (_) {}
     return out.sort((a, b) => a.at.localeCompare(b.at)).slice(0, 200);
@@ -121,8 +134,8 @@ function appExtras() {
   /* ---------- Settings cards */
   function mount() {
     const sec = document.querySelector('section[data-view="settings"]'); if (!sec || document.getElementById('ssx-host-notify')) return;
-    for (const id of ['ssx-host-link', 'ssx-host-notify']) { const h = document.createElement('div'); h.id = id; h.className = 'ssx-host'; sec.appendChild(h); }
-    render(); organize();
+    for (const id of ['ssx-host-link', 'ssx-host-notify', 'ssx-host-goals']) { const h = document.createElement('div'); h.id = id; h.className = 'ssx-host'; sec.appendChild(h); }
+    render(); renderGoals(); organize();
   }
   const savePrefs = patch => st.db && st.db.doc('settings/notify').set({ ...defPrefs(), ...(st.prefs || {}), ...patch, tz: tz() }).catch(() => note('notify', "Couldn't save your reminder settings. " + OFFLINE, true));
   const defPrefs = () => ({ on: false, push: true, email: false, digest: 'daily', digestHour: 8, alertHour: 9, hideDetails: false });
@@ -144,12 +157,13 @@ function appExtras() {
     const hN = document.getElementById('ssx-host-notify'), hL = document.getElementById('ssx-host-link'); if (!hN || !hL) return;
     const box = { contains: n => !!n && (hN.contains(n) || hL.contains(n)), querySelector: q => hN.querySelector(q) || hL.querySelector(q), querySelectorAll: q => [...hN.querySelectorAll(q), ...hL.querySelectorAll(q)] };
     const ae = document.activeElement;
+    // don't redraw under someone's fingers while they type; redraw when they leave the field
     if (ae && box.contains(ae) && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && /^(text|search|)$/.test(ae.type)))) { if (!ae.__ssx) { ae.__ssx = 1; ae.addEventListener('blur', () => setTimeout(() => { ae.__ssx = 0; render(); }, 600), { once: true }); } return; }
     const keep = ae && box.contains(ae) ? ae.id : null;
     const p = { ...defPrefs(), ...(st.prefs || {}) }, L = { ...defLink(), ...(st.link || {}) }, srv = st.server || {};
     const hours = Array.from({ length: 24 }, (_, h) => `<option value="${h}">${hourLabel(h)}</option>`).join('');
     let upcoming = []; try { upcoming = (buildQueue() || []).filter(i => i.at >= todayStr()).slice(0, 4); } catch (_) {}
-    const emailNote = !p.email ? '' : srv.gmail ? `Sent from your own Gmail to <b>${esc(srv.gmailEmail)}</b>.` : `<span class="ssx-warn">Connect Gmail in <b>Settings → Google</b> so digests can be sent from your own Gmail.</span>`;
+    const emailNote = !p.email ? '' : srv.gmail ? `Sent from your own Gmail to <b>${esc(srv.gmailEmail)}</b>.` : `<span class="ssx-warn">Connect Gmail in <b>Google account</b> above so digests can be sent from your own Gmail.</span>`;
     const devNote = !pushOK() ? (isIOS() && !standalone() ? 'On iPhone or iPad: tap <b>Share</b> then <b>Add to Home Screen</b>, open Set & Settled from your Home Screen, and turn alerts on there.' : "This browser can't show alerts. Try Chrome, Edge, Firefox or Safari.")
       : isIOS() && !standalone() ? 'On iPhone or iPad: tap <b>Share</b> then <b>Add to Home Screen</b>, open Set & Settled from your Home Screen, and turn alerts on there.'
       : Notification.permission === 'denied' ? 'Alerts are blocked for this site. Allow notifications for setnsettled.com in your browser or phone settings, then come back.' : '';
@@ -180,7 +194,7 @@ function appExtras() {
           </div>
         </div>
         <label class="ssx-check"><input type="checkbox" id="ssx-hide" ${p.hideDetails ? 'checked' : ''}> Hide show names on my lock screen</label>
-        ${upcoming.length ? `<div class="ssx-next"><div class="eyebrow">Next reminders</div>${upcoming.map(i => `<div class="ssx-li"><span>${esc(niceDate(i.at))}</span>${esc(i.body)}</div>`).join('')}</div>` : '<p class="note">No reminders coming up. They come from the due dates on your booking checklists.</p>'}
+        ${upcoming.length ? `<div class="ssx-next"><div class="eyebrow">Next reminders</div>${upcoming.map(i => `<div class="ssx-li"><span>${esc(niceDate(i.at))}</span>${esc(compose(i, i.at))}</div>`).join('')}</div>` : '<p class="note">No reminders coming up. They come from the due dates on your booking checklists.</p>'}
         ${st.status && st.status.email === 'needs_gmail' && p.email ? '<p class="note ssx-warn">Your last digest couldn\'t be sent: Gmail isn\'t connected.</p>' : ''}
       </div>
       ${msgHTML('notify')}
@@ -205,7 +219,7 @@ function appExtras() {
           <div class="f"><label for="ssx-late">Latest start</label><select id="ssx-late">${tOpts(L.latest)}</select></div>
         </div>
         <div class="f"><label>Set lengths you offer</label><div class="ssx-chips" id="ssx-lens">${[30, 45, 60, 90, 120, 180, 240].map(n => `<button type="button" class="ssx-chip" data-ssx-len="${n}" aria-pressed="${L.lengths.includes(n)}">${n < 60 ? n + ' min' : n / 60 + ' hr'}</button>`).join('')}</div></div>
-        <div class="f"><label>Dates you're not available</label>${blockCal(L)}<span class="note">Dates with a Confirmed, Played or Paid show are already closed.</span></div>
+        <div class="f"><label>Dates you're not available</label>${blockCal(L)}          <span class="note">Dates with a Confirmed, Played or Paid show are already closed.</span></div>
       </div>
     </div>`;
     const cut = html.indexOf('<div class="card ssx" id="ssx-link">');
@@ -238,10 +252,11 @@ function appExtras() {
     box.querySelectorAll('[data-ssx-day]').forEach(b => b.onclick = e => { e.stopPropagation(); const d = Number(b.dataset.ssxDay), s = new Set(L.days); s.has(d) ? s.delete(d) : s.add(d); if (!s.size) return note('link', 'Pick at least one day.', true); saveLink({ days: [...s].sort() }, true); });
     box.querySelectorAll('[data-ssx-len]').forEach(b => b.onclick = e => { e.stopPropagation(); const n = Number(b.dataset.ssxLen), s = new Set(L.lengths); s.has(n) ? s.delete(n) : s.add(n); if (!s.size) return note('link', 'Pick at least one set length.', true); saveLink({ lengths: [...s].sort((a, b) => a - b) }, true); });
     wireBlockCal(box, L);
+    box.querySelectorAll('[data-ssx-unblock]').forEach(b => b.onclick = e => { e.stopPropagation(); saveLink({ blocked: (L.blocked || []).filter(d => d !== b.dataset.ssxUnblock) }, true); });
     wireLink(box, link, L, 'link');
   }
 
-  /* ---------- "Dates you're not available" calendar */
+  /* ---------- "Dates you're not available": tap days to block them, or block a range */
   const BC = { month: null, range: false, from: '' };
   function blockCal(L) {
     const t0 = todayStr(), blocked = new Set((L.blocked || []).filter(d => d >= t0));
@@ -253,6 +268,7 @@ function appExtras() {
       const ds = `${y}-${pad(mo + 1)}-${pad(d)}`, past = ds < t0, on = blocked.has(ds), from = BC.range && BC.from === ds;
       cells += `<button type="button" class="ssx-bd${on ? ' on' : ''}${from ? ' from' : ''}" data-ssx-bd="${ds}" ${past ? 'disabled' : ''} aria-pressed="${on}" aria-label="${niceDate(ds)}${on ? ', blocked' : ''}">${d}</button>`;
     }
+    // group consecutive blocked days into ranges for the summary
     const list = [...blocked].sort(), ranges = [];
     for (const d of list) { const last = ranges[ranges.length - 1]; if (last && addDays(last[1], 1) === d) last[1] = d; else ranges.push([d, d]); }
     const label = ([a, b]) => a === b ? niceDate(a) : `${new Date(a + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(b + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
@@ -281,8 +297,8 @@ function appExtras() {
     });
   }
 
-  /* ---------- Settings: grouped in the order you use the app */
-  const GROUPS = [['profile', 'Profile'], ['google', 'Google'], ['bookings', 'Bookings'], ['reminders', 'Reminders'], ['email', 'Email & invoices'], ['look', 'Look'], ['account', 'Account']];
+  /* ---------- Settings: grouped in the order you use the app, with a section menu */
+  const GROUPS = [['profile', 'Profile'], ['goals', 'Goals'], ['google', 'Google'], ['bookings', 'Bookings'], ['reminders', 'Reminders'], ['email', 'Email & invoices'], ['look', 'Look'], ['account', 'Account']];
   let curGroup = (() => { try { return localStorage.getItem('ss-setgroup') || 'profile'; } catch (_) { return 'profile'; } })();
   let organizing = false;
   function organize() {
@@ -304,11 +320,15 @@ function appExtras() {
         anchor = g;
       }
       const card = q => { const el = sec.querySelector(q); return el ? (el.closest('.ssx-host') || el.closest('.card') || el) : null; };
+      // Appearance (light/dark) gets its own card in Look
       let look = document.getElementById('ssg-appearance');
       const seg = document.getElementById('themeSeg');
       if (!look && seg) { look = document.createElement('div'); look.className = 'card'; look.id = 'ssg-appearance'; look.innerHTML = '<div class="head"><h3>Light or dark</h3></div>'; look.appendChild(seg.parentElement); }
+      const ep = document.getElementById('editProfile'), pc = card('#kitAvatar');
+      if (ep && pc && !pc.contains(ep)) { ep.textContent = 'Edit profile'; ep.classList.add('small'); ep.style.whiteSpace = 'nowrap'; (pc.querySelector('.chips') || pc).appendChild(ep); }
       const place = {
         profile: [card('#kitAvatar')],
+        goals: [document.getElementById('ssx-host-goals')],
         google: [card('#ss-google'), card('#driveRoots'), card('#setCals')],
         bookings: [card('#defCl'), document.getElementById('ssx-host-link')],
         reminders: [document.getElementById('ssx-host-notify')],
@@ -317,6 +337,7 @@ function appExtras() {
         account: [card('#ss-account'), card('[data-legal]')],
       };
       for (const [k, els] of Object.entries(place)) { const g = sec.querySelector(`:scope > .ssg[data-ssg="${k}"]`); for (const el of els) if (el && el.parentElement !== g) g.appendChild(el); }
+      // anything else that shows up later lands in Account so nothing is ever lost
       const acct = sec.querySelector(':scope > .ssg[data-ssg="account"]');
       [...sec.children].filter(c => c.classList.contains('card') || c.classList.contains('ssx-host')).forEach(c => acct.insertBefore(c, acct.firstChild));
       showGroup(curGroup, false);
@@ -331,9 +352,10 @@ function appExtras() {
     if (scroll) { const nav = sec.querySelector('.ssg-nav'); const y = nav.getBoundingClientRect().top + scrollY - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ss-top')) || 64) - 4; if (scrollY > y) window.scrollTo({ top: y, behavior: 'smooth' }); }
   }
   window.ssShowSettings = (k, targetId) => { window.goTab('settings'); organize(); showGroup(k, false); if (targetId) setTimeout(() => { const t = document.getElementById(targetId); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 200); };
+  // a field inside a hidden group that gets focus (for example from an app message) opens its group
   document.addEventListener('focusin', e => { const g = e.target.closest && e.target.closest('section[data-view="settings"] > .ssg[hidden]'); if (g) showGroup(g.dataset.ssg, false); });
 
-  /* ---------- Settings in the tab menu */
+  /* ---------- Settings in the tab menu (bottom of the side menu / end of the phone bar) */
   function setupNav() {
     const tabs = document.getElementById('tabs'); if (!tabs || tabs.querySelector('[data-tab="settings"]')) return;
     const b = document.createElement('button'); b.type = 'button'; b.dataset.tab = 'settings'; b.className = 'ssx-settab'; b.setAttribute('aria-current', 'false');
@@ -343,8 +365,212 @@ function appExtras() {
     document.documentElement.classList.add('ssx-settab-on');
     try { if (document.querySelector('section[data-view="settings"]:not([hidden])')) b.setAttribute('aria-current', 'true'); } catch (_) {}
   }
+  // the side menu stays put under the header while you scroll
   const syncTop = () => { const h = document.querySelector('header.top'); if (h) document.documentElement.style.setProperty('--ss-top', Math.round(Math.max(0, h.getBoundingClientRect().bottom)) + 'px'); };
   addEventListener('scroll', syncTop, { passive: true }); addEventListener('resize', syncTop);
+
+  /* ---------- Goals: numbers you track, numbers the app counts for you, checklists and milestones */
+  const GTPL = [
+    ['Grow your audience', [
+      ['Instagram followers', 'metric', { unit: 'followers' }], ['TikTok followers', 'metric', { unit: 'followers' }],
+      ['Spotify monthly listeners', 'metric', { unit: 'listeners' }], ['SoundCloud followers', 'metric', { unit: 'followers' }],
+      ['YouTube subscribers', 'metric', { unit: 'subscribers' }], ['Email list signups', 'metric', { unit: 'signups' }],
+      ['Mix plays', 'metric', { unit: 'plays' }]]],
+    ['From your bookings (counts itself)', [
+      ['Shows played', 'auto', { source: 'played', unit: 'shows' }], ['Shows booked', 'auto', { source: 'booked', unit: 'shows' }],
+      ['Income from paid shows', 'auto', { source: 'income', unit: '$' }], ['New venues played', 'auto', { source: 'venues', unit: 'venues' }],
+      ['Cities played', 'auto', { source: 'cities', unit: 'cities' }], ['Booking-link requests', 'auto', { source: 'requests', unit: 'requests' }],
+      ['Average fee per show', 'auto', { source: 'avgfee', unit: '$' }]]],
+    ['Milestones', [
+      ['Release a new mix', 'steps', { steps: ['Pick the tracks', 'Record the mix', 'Make the artwork', 'Upload and share'] }],
+      ['Refresh my EPK', 'steps', { steps: ['New photos', 'Update my bio', 'Add recent shows', 'Send it to 5 venues'] }],
+      ['Land a festival slot', 'check', {}], ['Book a residency', 'check', {}],
+      ['Get featured in press or on a podcast', 'check', {}], ['Play a show out of state', 'check', {}]]],
+    ['Your own', [['Custom number goal', 'metric', { unit: '' }], ['Custom checklist', 'steps', { steps: [] }], ['Custom yes/no goal', 'check', {}]]],
+  ];
+  const AUTO = { played: 'Shows played', booked: 'Shows booked', income: 'Income from paid shows', venues: 'New venues played', cities: 'Cities played', requests: 'Booking-link requests', avgfee: 'Average fee per show' };
+  const GS = { form: null, confirmDel: '' };
+  const endOfYear = () => `${new Date().getFullYear()}-12-31`;
+  const num = v => { const n = Number(String(v ?? '').replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; };
+  const fmtN = (n, unit) => unit === '$' ? '$' + Math.round(n).toLocaleString('en-US') : Math.round(n).toLocaleString('en-US') + (unit ? ' ' + unit : '');
+  function autoValue(g) {
+    let bs = []; try { bs = S.bookings || []; } catch (_) {}
+    const to = g.due || endOfYear(), from = g.from || `${to.slice(0, 4)}-01-01`, k = b => String(b.status || '').toLowerCase();
+    const inP = b => b.date && b.date >= from && b.date <= to;
+    const played = bs.filter(b => inP(b) && ['played', 'paid'].includes(k(b)));
+    switch (g.source) {
+      case 'played': return played.length;
+      case 'booked': return bs.filter(b => inP(b) && ['confirmed', 'played', 'paid'].includes(k(b))).length;
+      case 'income': return bs.filter(b => inP(b) && k(b) === 'paid').reduce((s, b) => s + (+b.fee || 0), 0);
+      case 'venues': return new Set(played.map(b => b.venueId).filter(Boolean)).size;
+      case 'cities': return new Set(played.map(b => String(b.city || '').trim().toLowerCase()).filter(Boolean)).size;
+      case 'requests': return bs.filter(b => b.source === 'booking-link' && String(b.createdAt || '').slice(0, 10) >= from && String(b.createdAt || '').slice(0, 10) <= to).length;
+      case 'avgfee': { const f = bs.filter(b => inP(b) && ['confirmed', 'played', 'paid'].includes(k(b)) && +b.fee > 0); return f.length ? f.reduce((s, b) => s + (+b.fee), 0) / f.length : 0; }
+    }
+    return 0;
+  }
+  function measure(g) {
+    const t0 = todayStr();
+    let cur = 0, target = 1, start = 0;
+    if (g.type === 'metric') { cur = num(g.current); target = num(g.target); start = num(g.start); }
+    else if (g.type === 'auto') { cur = autoValue(g); target = num(g.target); }
+    else if (g.type === 'steps') { const st2 = g.steps || []; cur = st2.filter(x => x.done).length; target = st2.length || 1; }
+    else { cur = g.done ? 1 : 0; target = 1; }
+    const span = target - start, pct = span > 0 ? Math.max(0, Math.min(1, (cur - start) / span)) : (cur >= target ? 1 : 0);
+    const done = g.type === 'check' ? !!g.done : target > 0 && cur >= target;
+    let pace = '', onTrack = null;
+    if (!done && g.due && (g.type === 'metric' || g.type === 'auto') && g.source !== 'avgfee') {
+      const left = daysBetween(t0, g.due), begin = g.type === 'auto' ? (g.from || `${g.due.slice(0, 4)}-01-01`) : (String(g.createdAt || '').slice(0, 10) || t0);
+      const total = Math.max(1, daysBetween(begin, g.due)), expected = Math.max(0, Math.min(1, 1 - left / total));
+      if (left > 0) {
+        const per = (target - cur) / (left / 30.4);
+        pace = left > 45 ? `About ${fmtN(Math.ceil(per), g.unit)} a month to get there` : `${fmtN(target - cur, g.unit)} to go in ${left} day${left === 1 ? '' : 's'}`;
+        onTrack = pct >= expected - 0.05;
+      } else pace = 'The date has passed. Edit the goal to set a new date.';
+    }
+    return { cur, target, start, pct, done, pace, onTrack };
+  }
+  const spark = h => {
+    if (!Array.isArray(h) || h.length < 2) return '';
+    const pts = h.slice(-12), vs = pts.map(x => num(x.v)), lo = Math.min(...vs), hi = Math.max(...vs), r = hi - lo || 1;
+    const d = pts.map((x, i) => `${i ? 'L' : 'M'}${(i / (pts.length - 1) * 100).toFixed(1)},${(28 - (num(x.v) - lo) / r * 24).toFixed(1)}`).join(' ');
+    return `<svg class="ssx-spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  };
+  const goalLine = (g, m) => {
+    if (g.type === 'steps') return `${m.cur} of ${m.target} steps done`;
+    if (g.type === 'check') return m.done ? 'Done' : 'Not yet';
+    if (g.type === 'metric') return `${fmtN(m.cur, g.unit === '$' ? '$' : '')} of ${fmtN(m.target, g.unit)}${m.start ? ` · started at ${fmtN(m.start, '')}` : ''}`;
+    return `${fmtN(m.cur, g.unit === '$' ? '$' : '')} of ${fmtN(m.target, g.unit)} · counted from your bookings`;
+  };
+  const dueLine = g => { if (!g.due) return ''; const n = daysBetween(todayStr(), g.due); return `by ${prettyDate(g.due)}${n >= 0 ? ` (${n} day${n === 1 ? '' : 's'} left)` : ''}`; };
+  const goalsSorted = () => [...(st.goals || [])].sort((a, b) => (a.archived ? 1 : 0) - (b.archived ? 1 : 0) || String(a.due || '9999').localeCompare(String(b.due || '9999')) || String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  const saveGoal = (id, data) => st.db.collection('goals').doc(id).set(data).catch(() => note('goals', "Couldn't save the goal. " + OFFLINE, true));
+
+  function goalForm(f) {
+    const g = f.g, t = g.type;
+    const tplChips = GTPL.map(([grp, list]) => `<div class="ssx-tplgrp"><div class="eyebrow">${esc(grp)}</div><div class="ssx-chips">${list.map(([title, type], i) => `<button type="button" class="ssx-chip" data-ssx-tpl="${esc(grp)}|${i}">${esc(title)}</button>`).join('')}</div></div>`).join('');
+    if (!t) return `<div class="ssx-form"><div class="ssx-row" style="justify-content:space-between"><b>Pick a goal to start from</b><button type="button" class="btn small" data-ssx-gcancel>Cancel</button></div>${tplChips}</div>`;
+    return `<div class="ssx-form">
+      <div class="f"><label for="ssx-g-title">Goal</label><input id="ssx-g-title" maxlength="80" value="${esc(g.title || '')}"></div>
+      ${t === 'metric' ? `<div class="ssx-grid2">
+          <div class="f"><label for="ssx-g-cur">Where you are now</label><input id="ssx-g-cur" inputmode="decimal" value="${esc(g.current ?? '')}" placeholder="4500"></div>
+          <div class="f"><label for="ssx-g-target">Target</label><input id="ssx-g-target" inputmode="decimal" value="${esc(g.target ?? '')}" placeholder="10000"></div>
+          <div class="f"><label for="ssx-g-unit">Counting (unit)</label><input id="ssx-g-unit" maxlength="20" value="${esc(g.unit || '')}" placeholder="followers"></div>
+          <div class="f"><label for="ssx-g-due">By</label><input id="ssx-g-due" type="date" data-pk="native" value="${esc(g.due || endOfYear())}"></div></div>` : ''}
+      ${t === 'auto' ? `<div class="ssx-grid2">
+          <div class="f"><label for="ssx-g-target">Target${g.unit === '$' ? ' ($)' : ''}</label><input id="ssx-g-target" inputmode="decimal" value="${esc(g.target ?? '')}"></div>
+          <div class="f"><label for="ssx-g-due">By</label><input id="ssx-g-due" type="date" data-pk="native" value="${esc(g.due || endOfYear())}"></div></div>
+          <p class="note">Counts ${esc((AUTO[g.source] || '').toLowerCase())} from Jan 1 of that year to the date you pick. Right now: <b>${esc(fmtN(autoValue({ ...g, due: g.due || endOfYear() }), g.unit))}</b>.</p>` : ''}
+      ${t === 'steps' ? `<div class="f"><label for="ssx-g-steps">Steps (one per line)</label><textarea id="ssx-g-steps" rows="5" maxlength="1500">${esc((g.steps || []).map(x => x.t).join('\n'))}</textarea></div>
+          <div class="f"><label for="ssx-g-due">By (optional)</label><input id="ssx-g-due" type="date" data-pk="native" value="${esc(g.due || '')}"></div>` : ''}
+      ${t === 'check' ? `<div class="f"><label for="ssx-g-due">By (optional)</label><input id="ssx-g-due" type="date" data-pk="native" value="${esc(g.due || '')}"></div>` : ''}
+      <label class="ssx-check"><input type="checkbox" id="ssx-g-pin" ${g.pin !== false ? 'checked' : ''}> Show on Home</label>
+      ${msgHTML('goalform')}
+      <div class="ssx-row"><button type="button" class="btn primary small" data-ssx-gsave>${f.id ? 'Save goal' : 'Add goal'}</button><button type="button" class="btn small" data-ssx-gcancel>Cancel</button></div>
+    </div>`;
+  }
+  function renderGoals() {
+    const host = document.getElementById('ssx-host-goals'); if (!host || !st.db) return;
+    const ae = document.activeElement;
+    if (ae && host.contains(ae) && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && /^(text|search|)$/.test(ae.type)))) { if (!ae.__ssxg) { ae.__ssxg = 1; ae.addEventListener('blur', () => setTimeout(() => { ae.__ssxg = 0; renderGoals(); }, 600), { once: true }); } return; }
+    let prof = {}; try { prof = S.profile || {}; } catch (_) {}
+    const goals = goalsSorted();
+    host.innerHTML = `<div class="card ssx" id="ssx-goals">
+      <div class="ssx-head"><div><h3>Goals</h3><p class="note">Track anything you're working toward: followers, releases, shows, income. Goals marked "Show on Home" appear on your Home page.</p></div></div>
+      <div class="ssx-opt"><div class="ssx-row" style="justify-content:space-between"><div><div class="eyebrow">Season goals</div><div class="note">${prof.goalShows ? `${esc(prof.goalShows)} shows` : 'No shows goal'} · ${prof.goalIncome ? esc(fmtN(num(prof.goalIncome), '$')) + ' income' : 'no income goal'}${prof.goalYear ? ` · ${esc(prof.goalYear)}` : ''}</div></div><button type="button" class="btn small" data-ssx-season>Edit season goals</button></div></div>
+      ${msgHTML('goals')}
+      <div class="ssx-goals">${goals.length ? goals.map(goalCard).join('') : '<p class="note">No goals yet. Add one below. Try your Instagram followers, a mix release or a number of shows.</p>'}</div>
+      ${GS.form ? goalForm(GS.form) : '<button type="button" class="btn primary" data-ssx-gadd>+ Add a goal</button>'}
+    </div>`;
+    wireGoals(host);
+  }
+  function goalCard(g) {
+    const m = measure(g), del = GS.confirmDel === g.id;
+    return `<div class="ssx-goal${m.done ? ' done' : ''}" data-ssx-gid="${esc(g.id)}">
+      <div class="ssx-goal-top"><b>${esc(g.title || 'Goal')}</b><span class="ssx-pill ${m.done ? 'on' : ''}">${m.done ? 'Done 🎉' : Math.round(m.pct * 100) + '%'}</span></div>
+      <div class="ssx-bar"><i style="width:${(m.pct * 100).toFixed(1)}%"></i></div>
+      <div class="note">${esc(goalLine(g, m))}${g.due ? ' · ' + esc(dueLine(g)) : ''}</div>
+      ${m.pace ? `<div class="note ${m.onTrack === false ? 'ssx-warn' : ''}">${esc(m.pace)}${m.onTrack === true ? ' · on track ✓' : m.onTrack === false ? ' · behind pace' : ''}</div>` : ''}
+      ${g.type === 'metric' ? spark(g.history) : ''}
+      ${g.type === 'steps' ? `<div class="ssx-steps">${(g.steps || []).map((x, i) => `<label class="ssx-check"><input type="checkbox" data-ssx-gstep="${i}" ${x.done ? 'checked' : ''}> ${esc(x.t)}</label>`).join('')}</div>` : ''}
+      <div class="ssx-row">
+        ${g.type === 'metric' ? `<input class="ssx-gval" type="text" inputmode="decimal" placeholder="New number" aria-label="New number for ${esc(g.title)}" id="ssx-gval-${esc(g.id)}"><button type="button" class="btn primary small" data-ssx-gupd>Update</button>` : ''}
+        ${g.type === 'check' ? `<button type="button" class="btn ${g.done ? '' : 'primary'} small" data-ssx-gcheck>${g.done ? 'Mark not done' : 'Mark done'}</button>` : ''}
+        <button type="button" class="btn small" data-ssx-gedit>Edit</button>
+        <button type="button" class="btn small" data-ssx-gpin>${g.pin !== false ? 'Hide from Home' : 'Show on Home'}</button>
+        <button type="button" class="btn small ${del ? 'danger' : ''}" data-ssx-gdel>${del ? 'Tap again to delete' : 'Delete'}</button>
+      </div>
+    </div>`;
+  }
+  function wireGoals(host) {
+    const q = s => host.querySelector(s);
+    const sea = q('[data-ssx-season]'); if (sea) sea.onclick = e => { e.stopPropagation(); if (typeof profileForm === 'function') profileForm(); else { const b = document.getElementById('editProfile'); b && b.click(); } };
+    const add = q('[data-ssx-gadd]'); if (add) add.onclick = e => { e.stopPropagation(); GS.form = { g: {} }; renderGoals(); };
+    host.querySelectorAll('[data-ssx-gcancel]').forEach(b => b.onclick = e => { e.stopPropagation(); GS.form = null; renderGoals(); });
+    host.querySelectorAll('[data-ssx-tpl]').forEach(b => b.onclick = e => {
+      e.stopPropagation(); const [grp, i] = b.dataset.ssxTpl.split('|'), list = (GTPL.find(x => x[0] === grp) || [])[1] || [], [title, type, extra] = list[Number(i)];
+      const custom = /^Custom /.test(title);
+      GS.form = { g: { title: custom ? '' : title, type, unit: extra.unit || '', source: extra.source, steps: (extra.steps || []).map(t => ({ t, done: false })), due: type === 'metric' || type === 'auto' ? endOfYear() : '', pin: true } };
+      renderGoals(); setTimeout(() => { const t = document.getElementById(custom ? 'ssx-g-title' : (type === 'metric' ? 'ssx-g-cur' : type === 'auto' ? 'ssx-g-target' : 'ssx-g-title')); t && t.focus(); }, 50);
+    });
+    const save = q('[data-ssx-gsave]'); if (save) save.onclick = e => {
+      e.stopPropagation(); const f = GS.form, g = f.g, v = id => (document.getElementById(id) || {}).value || '';
+      const title = v('ssx-g-title').trim().slice(0, 80), due = v('ssx-g-due').trim();
+      const bad = msg => { note('goalform', msg, true); };
+      if (!title) return bad('Give the goal a name.');
+      if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return bad('Write the date like 2026-12-31.');
+      const out = { ...g, title, due, pin: !!(document.getElementById('ssx-g-pin') || {}).checked, updatedAt: new Date().toISOString(), createdAt: g.createdAt || new Date().toISOString() };
+      if (g.type === 'metric') {
+        const cur = num(v('ssx-g-cur')), target = num(v('ssx-g-target'));
+        if (!(target > 0)) return bad('Add a target number.');
+        out.unit = v('ssx-g-unit').trim().slice(0, 20); out.target = target; out.current = cur;
+        if (!f.id) { out.start = cur; out.history = [{ d: todayStr(), v: cur }]; }
+        else if (num(g.current) !== cur) out.history = [...(g.history || []), { d: todayStr(), v: cur }].slice(-60);
+      }
+      if (g.type === 'auto') { const target = num(v('ssx-g-target')); if (!(target > 0)) return bad('Add a target number.'); out.target = target; out.from = `${(due || endOfYear()).slice(0, 4)}-01-01`; }
+      if (g.type === 'steps') {
+        const old = new Map((g.steps || []).map(x => [x.t, x.done]));
+        out.steps = v('ssx-g-steps').split('\n').map(t => t.trim()).filter(Boolean).slice(0, 30).map(t => ({ t: t.slice(0, 120), done: !!old.get(t) }));
+        if (!out.steps.length) return bad('Add at least one step.');
+      }
+      const id = f.id || 'g' + Math.random().toString(36).slice(2, 10);
+      saveGoal(id, out); GS.form = null; note('goals', f.id ? 'Goal saved.' : 'Goal added.');
+    };
+    host.querySelectorAll('[data-ssx-gid]').forEach(card => {
+      const g = (st.goals || []).find(x => x.id === card.dataset.ssxGid); if (!g) return;
+      const b = s => card.querySelector(s);
+      const upd = b('[data-ssx-gupd]'); if (upd) {
+        const inp = b('.ssx-gval');
+        const go = () => { const raw = inp.value.trim(); if (!raw) return; const val = num(raw); saveGoal(g.id, { ...g, current: val, history: [...(g.history || []), { d: todayStr(), v: val }].slice(-60), updatedAt: new Date().toISOString() }); note('goals', `${g.title}: updated to ${fmtN(val, g.unit)}.`); };
+        upd.onclick = e => { e.stopPropagation(); go(); }; inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); go(); } };
+      }
+      card.querySelectorAll('[data-ssx-gstep]').forEach(c => c.onchange = e => { e.stopPropagation(); const steps = (g.steps || []).map((x, i) => i === Number(c.dataset.ssxGstep) ? { ...x, done: c.checked } : x); saveGoal(g.id, { ...g, steps, updatedAt: new Date().toISOString() }); });
+      const chk = b('[data-ssx-gcheck]'); if (chk) chk.onclick = e => { e.stopPropagation(); saveGoal(g.id, { ...g, done: !g.done, doneAt: !g.done ? todayStr() : '', updatedAt: new Date().toISOString() }); };
+      const ed = b('[data-ssx-gedit]'); if (ed) ed.onclick = e => { e.stopPropagation(); GS.form = { id: g.id, g: { ...g } }; renderGoals(); const fm = document.querySelector('#ssx-goals .ssx-form'); fm && fm.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+      const pin = b('[data-ssx-gpin]'); if (pin) pin.onclick = e => { e.stopPropagation(); saveGoal(g.id, { ...g, pin: g.pin === false }); };
+      const del = b('[data-ssx-gdel]'); if (del) del.onclick = e => {
+        e.stopPropagation();
+        if (GS.confirmDel !== g.id) { GS.confirmDel = g.id; renderGoals(); setTimeout(() => { if (GS.confirmDel === g.id) { GS.confirmDel = ''; renderGoals(); } }, 4000); return; }
+        GS.confirmDel = ''; st.db.collection('goals').doc(g.id).delete().then(() => note('goals', 'Goal deleted.')).catch(() => note('goals', "Couldn't delete. " + OFFLINE, true));
+      };
+    });
+  }
+  /* Goals on Home, under the season goals */
+  function renderHomeGoals() {
+    const sec = document.querySelector('section[data-view="home"]'); if (!sec || !st.db) return;
+    let box = document.getElementById('ssx-home-goals');
+    if (!box) {
+      box = document.createElement('div'); box.id = 'ssx-home-goals'; box.className = 'card ssx';
+      const anchor = document.getElementById('goalShows'), grid = anchor && anchor.closest('section[data-view="home"] > *');
+      grid ? grid.after(box) : sec.appendChild(box);
+    }
+    const goals = goalsSorted().filter(g => g.pin !== false).slice(0, 6);
+    box.innerHTML = goals.length
+      ? `<div class="head"><h3>Goals</h3><button type="button" class="btn small" data-ssx-allgoals>All goals</button></div>
+         <div class="ssx-homegoals">${goals.map(g => { const m = measure(g); return `<div class="ssx-hg"><div class="ssx-goal-top"><span>${esc(g.title)}</span><span class="note">${m.done ? 'Done 🎉' : g.type === 'steps' ? `${m.cur}/${m.target}` : g.type === 'check' ? 'Not yet' : esc(fmtN(m.cur, g.unit === '$' ? '$' : '')) + ' / ' + esc(fmtN(m.target, g.unit === '$' ? '$' : ''))}</span></div><div class="ssx-bar"><i style="width:${(m.pct * 100).toFixed(1)}%"></i></div></div>`; }).join('')}</div>`
+      : `<div class="head"><h3>Goals</h3></div><p class="note" style="margin:0">Track followers, releases, shows and more.</p><div class="ssx-row"><button type="button" class="btn small" data-ssx-allgoals>+ Add a goal</button></div>`;
+    const all = box.querySelector('[data-ssx-allgoals]'); if (all) all.onclick = e => { e.stopPropagation(); window.ssShowSettings('goals', 'ssx-goals'); };
+  }
 
   /* ---------- Booking link card in the Kit */
   function renderKit() {
