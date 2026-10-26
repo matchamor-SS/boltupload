@@ -28,6 +28,31 @@ async function perf(op, extra = {}) {
   return data;
 }
 
+/* Nocturne brand: fonts, the Champagne theme (new default) and the S&S monogram in the top bar */
+(function nocturne() {
+  try {
+    if (!document.getElementById('ss-brand-fonts')) {
+      const l = document.createElement('link'); l.id = 'ss-brand-fonts'; l.rel = 'stylesheet';
+      l.href = 'https://fonts.googleapis.com/css2?family=Italiana&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Inter+Tight:wght@400;500;600;700&display=swap';
+      document.head.appendChild(l);
+    }
+  } catch (_) {}
+  const champ = () => {
+    if (typeof PALETTES === 'undefined' || typeof applyPalette !== 'function') return false;
+    if (!PALETTES.some(p => p[0] === 'champagne')) PALETTES.unshift(['champagne', 'Champagne', ['#D4B26E', '#141711', '#EFE7D3']]);
+    let saved = null; try { saved = localStorage.getItem('palette'); } catch (_) {}
+    if (!saved || saved === 'champagne') applyPalette('champagne'); else if (typeof renderPalPick === 'function') renderPalPick();
+    return true;
+  };
+  if (!champ()) { const t = setInterval(() => { if (champ()) clearInterval(t); }, 200); setTimeout(() => clearInterval(t), 20000); }
+  const mono = () => { const b = document.querySelector('header.top .brand'); if (!b || b.querySelector('.ssx-mono')) return; const m = document.createElement('span'); m.className = 'ssx-mono'; m.setAttribute('aria-hidden', 'true'); m.textContent = 'S&S'; const av = b.querySelector('.avatar'); av ? av.after(m) : b.prepend(m); };
+  document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', mono) : mono();
+  // the gold sound wave along the bottom of the sign-in page
+  const wave = () => { const r = document.getElementById('ss-auth'); if (!r || !r.firstChild || r.querySelector('.ssx-wave')) return; const w = document.createElement('div'); w.className = 'ssx-wave'; w.setAttribute('aria-hidden', 'true'); w.innerHTML = Array.from({ length: 96 }, (_, i) => `<i style="height:${Math.round(Math.min(96, 9 + Math.abs(Math.sin(i * .37) * 45 + Math.sin(i * .11) * 30 + Math.cos(i * 1.7) * 9)))}%;opacity:${(.35 + .65 * Math.abs(Math.sin(i * .21))).toFixed(2)}"></i>`).join(''); r.appendChild(w); };
+  const watch = () => { const r = document.getElementById('ss-auth'); if (!r) return; wave(); new MutationObserver(wave).observe(r, { childList: true }); };
+  document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', watch) : watch();
+})();
+
 const params = new URLSearchParams(location.search);
 if (params.get('book')) bookingPage(params.get('book'));
 else appExtras();
