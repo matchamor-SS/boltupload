@@ -11,6 +11,7 @@
 .ssx-check { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
 .ssx-check input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
 .ssx-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ssx-row input[type=date] { min-height: 40px; }
 .ssx-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .ssx-inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ssx .f { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -108,6 +109,7 @@ html.ss-book, html.ss-book body { background: #F4EFE3 !important; margin: 0; }
 .ssx-linkbox .ssx-copybtn { flex: none; min-width: 84px; }
 .ssx-kitcard { margin-bottom: 4px; }
 #ssx-kit .ssx-row .btn, .ssx-share .btn { min-height: 40px; }
+/* keep every app message inside the window */
 html body .toast { max-width: calc(100vw - 24px) !important; box-sizing: border-box; white-space: normal; text-align: center; overflow-wrap: anywhere; border-radius: 18px; }
 
 /* ---------- Settings: section menu + groups */
@@ -145,10 +147,33 @@ html.ssx-settab-on #setBtn { display: none !important; }
   html body .shell { padding-left: 200px; }
   html body #tabs .ssx-settab { margin-top: auto; }
 }
+
+/* ---------- Goals */
+.ssx-goals { display: flex; flex-direction: column; gap: 12px; }
+.ssx-goal { border: 1px solid var(--line); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 8px; background: var(--surface); }
+.ssx-goal.done { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.ssx-goal-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; min-width: 0; }
+.ssx-goal-top > :first-child { min-width: 0; overflow-wrap: anywhere; }
+.ssx-goal-top > :last-child { flex: none; }
+.ssx-bar { position: relative; height: 10px; border-radius: 99px; background: var(--soft); overflow: hidden; }
+.ssx-bar i { position: absolute; inset: 0 auto 0 0; border-radius: 99px; background: var(--accent); transition: width .5s cubic-bezier(.22, 1, .36, 1); }
+.ssx-spark { width: 100%; height: 30px; color: var(--accent); }
+.ssx-steps { display: flex; flex-direction: column; gap: 0; }
+.ssx-steps .ssx-check { min-height: 40px; }
+.ssx-gval { flex: 1 1 140px; min-width: 0; max-width: 220px; }
+.ssx-form { border: 1px dashed color-mix(in srgb, var(--accent) 50%, var(--line)); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.ssx-tplgrp { display: flex; flex-direction: column; gap: 6px; }
+.ssx-homegoals { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px 18px; margin-top: 6px; }
+.ssx-hg { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ssx-hg .ssx-goal-top span:first-child { font-weight: 600; }
+#ssx-home-goals .head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+@media (prefers-reduced-motion: reduce) { .ssx-bar i { transition: none; } }
+
 /* ---------- Buttons: no growing ripple, just a clean press */
 html body .btn > .rp { display: none !important; }
 html body .btn { position: relative; overflow: hidden; }
 html body .btn:active { transform: scale(.96); }
+
 /* ---------- Goals page in the tab menu: room for one more tab on phones */
 @media (max-width: 1023px) {
   html body #tabs.tabs button { padding-left: 0; padding-right: 0; letter-spacing: -.01em; }
@@ -158,6 +183,7 @@ html body .btn:active { transform: scale(.96); }
   html body #tabs.tabs button svg { width: 20px; height: 20px; }
 }
 section[data-view="goals"] > .ssx-host { display: block; }
+
 /* ---------- Goal steps with their own due dates */
 .ssx-steprows { display: flex; flex-direction: column; gap: 8px; }
 .ssx-steprow { display: grid; grid-template-columns: minmax(0, 1fr) 150px 40px; gap: 8px; align-items: center; }
@@ -177,12 +203,14 @@ section[data-view="goals"] > .ssx-host { display: block; }
 
 /* ---------- The top bar stays put while you scroll (the page can grow past one screen) */
 html body { height: auto !important; min-height: 100%; }
+
 /* ---------- Booking page: logo link back to the Set & Settled website */
 .bk-brand { align-self: flex-start; display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 14px 4px 4px; border-radius: 999px; text-decoration: none; color: var(--bk-ink); font-weight: 700; font-size: 15px; letter-spacing: .01em; background: rgba(255, 253, 248, .7); border: 1px solid var(--bk-line); transition: background .15s, border-color .15s, transform .08s; }
 .bk-brand img { width: 30px; height: 30px; border-radius: 8px; flex: none; }
 .bk-brand:hover { background: #FFFDF8; border-color: var(--bk-accent); }
 .bk-brand:active { transform: scale(.97); }
 .bk-brand:focus-visible { outline: 3px solid var(--bk-gold); outline-offset: 2px; }
+
 /* ---------- First-time tour */
 .ssx-tour-offer { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; padding: 16px; background: color-mix(in srgb, #12160F 55%, transparent); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: ssxFade .25s ease; }
 .ssx-tour { position: fixed; inset: 0; z-index: 301; }
