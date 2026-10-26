@@ -100,3 +100,14 @@ html.ss-book, html.ss-book body { background: #F4EFE3 !important; margin: 0; }
   .bk-span { grid-column: 1 / -1; }
 }
 @media (prefers-reduced-motion: reduce) { #ss-book *, .ssx * { transition: none !important; } }
+
+/* in-card messages, copy box, Kit card */
+.ssx-msg { margin: 0; padding: 10px 12px; border-radius: 12px; font-size: 14px; line-height: 1.35; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--ink); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); overflow-wrap: anywhere; }
+.ssx-msg.bad { background: color-mix(in srgb, var(--bad, #B23A3A) 12%, transparent); border-color: color-mix(in srgb, var(--bad, #B23A3A) 40%, transparent); }
+.ssx-linkbox { display: flex; gap: 8px; align-items: stretch; min-width: 0; }
+.ssx-linkbox .ssx-linkurl { flex: 1; min-width: 0; font-size: 15px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); color: var(--ink); text-overflow: ellipsis; cursor: text; }
+.ssx-linkbox .ssx-copybtn { flex: none; min-width: 84px; }
+.ssx-kitcard { margin-bottom: 4px; }
+#ssx-kit .ssx-row .btn, .ssx-share .btn { min-height: 40px; }
+/* keep every app message inside the window */
+html body .toast { max-width: calc(100vw - 24px) !important; box-sizing: border-box; white-space: normal; text-align: center; overflow-wrap: anywhere; border-radius: 18px; }
