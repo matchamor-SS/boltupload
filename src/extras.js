@@ -1,11 +1,4 @@
-/* Set & Settled: Reminders + Booking link.
- * 1. Reminders: performers choose phone/laptop alerts and/or an email digest. The app turns each performer's open
- *    checklist tasks (and unpaid shows) into a small reminder list saved with their own data; the server sends what's due.
- * 2. Booking link: a public page (?book=name) where a promoter or coordinator picks an open date and time and sends a
- *    request. Requests arrive as Leads in Bookings with the person added to People.
- * Security: everything the browser saves goes through the signed-in performer's own data (row-level security).
- * Push keys, the cron secret and the service key live only on the server. Nothing here uses innerHTML with
- * performer or booker text without escaping. */
+/* Set & Settled: Reminders + Booking link. */
 import { sb } from './supabase.js';
 import './extras.css';
 
@@ -18,7 +11,6 @@ const daysBetween = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a
 const niceDate = s => new Date(s + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 const hourLabel = h => (h % 12 || 12) + (h < 12 ? ' am' : ' pm');
 const time12 = t => { const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}:${pad(m)} ${h < 12 ? 'am' : 'pm'}`; };
-const say = t => { if (window.toast) window.toast(t); };
 const tz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Los_Angeles'; } catch { return 'America/Los_Angeles'; } };
 async function fnErr(error) { try { const j = await error.context.json(); return j.error || 'unavailable'; } catch { return 'unavailable'; } }
 const OFFLINE = "Couldn't reach the Set & Settled server. Check your connection and try again in a minute.";
@@ -35,7 +27,6 @@ else appExtras();
 /* ============================================================== in the app */
 function appExtras() {
   const st = { prefs: null, link: null, status: null, server: null, db: null, lastQ: '' };
-  /* Messages show inside the card they belong to (never outside the window). */
   const MSG = {};
   function note(where, text, bad) {
     const at = Date.now(); MSG[where] = { text, bad, at }; render(); renderKit();
@@ -74,7 +65,6 @@ function appExtras() {
     setTimeout(organize, 800); setTimeout(organize, 2500);
     const kitSec = document.querySelector('section[data-view="kit"]');
     if (kitSec) new MutationObserver(() => { if (!document.getElementById('ssx-kit')) renderKit(); }).observe(kitSec, { childList: true });
-
     setInterval(queueSoon, 60000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) queueSoon(); });
     if (params.get('goto')) { goto(params); history.replaceState(null, '', location.pathname); }
@@ -88,7 +78,7 @@ function appExtras() {
     } catch (_) {}
   }
 
-  /* ---------- reminder list (what the server may send, and when) */
+  /* ---------- reminder list */
   const TEXT = {
     promo: (s, r) => `${s} is ${r}. Did you make a post about it yet?`,
     media: (s, r) => `${s} is ${r}, but you said you needed a media person and haven't booked one yet.`,
@@ -154,13 +144,12 @@ function appExtras() {
     const hN = document.getElementById('ssx-host-notify'), hL = document.getElementById('ssx-host-link'); if (!hN || !hL) return;
     const box = { contains: n => !!n && (hN.contains(n) || hL.contains(n)), querySelector: q => hN.querySelector(q) || hL.querySelector(q), querySelectorAll: q => [...hN.querySelectorAll(q), ...hL.querySelectorAll(q)] };
     const ae = document.activeElement;
-    // don't redraw under someone's fingers while they type; redraw when they leave the field
     if (ae && box.contains(ae) && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && /^(text|search|)$/.test(ae.type)))) { if (!ae.__ssx) { ae.__ssx = 1; ae.addEventListener('blur', () => setTimeout(() => { ae.__ssx = 0; render(); }, 600), { once: true }); } return; }
     const keep = ae && box.contains(ae) ? ae.id : null;
     const p = { ...defPrefs(), ...(st.prefs || {}) }, L = { ...defLink(), ...(st.link || {}) }, srv = st.server || {};
     const hours = Array.from({ length: 24 }, (_, h) => `<option value="${h}">${hourLabel(h)}</option>`).join('');
     let upcoming = []; try { upcoming = (buildQueue() || []).filter(i => i.at >= todayStr()).slice(0, 4); } catch (_) {}
-    const emailNote = !p.email ? '' : srv.gmail ? `Sent from your own Gmail to <b>${esc(srv.gmailEmail)}</b>.` : `<span class="ssx-warn">Connect Gmail in <b>Google account</b> above so digests can be sent from your own Gmail.</span>`;
+    const emailNote = !p.email ? '' : srv.gmail ? `Sent from your own Gmail to <b>${esc(srv.gmailEmail)}</b>.` : `<span class="ssx-warn">Connect Gmail in <b>Settings → Google</b> so digests can be sent from your own Gmail.</span>`;
     const devNote = !pushOK() ? (isIOS() && !standalone() ? 'On iPhone or iPad: tap <b>Share</b> then <b>Add to Home Screen</b>, open Set & Settled from your Home Screen, and turn alerts on there.' : "This browser can't show alerts. Try Chrome, Edge, Firefox or Safari.")
       : isIOS() && !standalone() ? 'On iPhone or iPad: tap <b>Share</b> then <b>Add to Home Screen</b>, open Set & Settled from your Home Screen, and turn alerts on there.'
       : Notification.permission === 'denied' ? 'Alerts are blocked for this site. Allow notifications for setnsettled.com in your browser or phone settings, then come back.' : '';
@@ -216,7 +205,7 @@ function appExtras() {
           <div class="f"><label for="ssx-late">Latest start</label><select id="ssx-late">${tOpts(L.latest)}</select></div>
         </div>
         <div class="f"><label>Set lengths you offer</label><div class="ssx-chips" id="ssx-lens">${[30, 45, 60, 90, 120, 180, 240].map(n => `<button type="button" class="ssx-chip" data-ssx-len="${n}" aria-pressed="${L.lengths.includes(n)}">${n < 60 ? n + ' min' : n / 60 + ' hr'}</button>`).join('')}</div></div>
-        <div class="f"><label>Dates you're not available</label>${blockCal(L)}          <span class="note">Dates with a Confirmed, Played or Paid show are already closed.</span></div>
+        <div class="f"><label>Dates you're not available</label>${blockCal(L)}<span class="note">Dates with a Confirmed, Played or Paid show are already closed.</span></div>
       </div>
     </div>`;
     const cut = html.indexOf('<div class="card ssx" id="ssx-link">');
@@ -249,11 +238,10 @@ function appExtras() {
     box.querySelectorAll('[data-ssx-day]').forEach(b => b.onclick = e => { e.stopPropagation(); const d = Number(b.dataset.ssxDay), s = new Set(L.days); s.has(d) ? s.delete(d) : s.add(d); if (!s.size) return note('link', 'Pick at least one day.', true); saveLink({ days: [...s].sort() }, true); });
     box.querySelectorAll('[data-ssx-len]').forEach(b => b.onclick = e => { e.stopPropagation(); const n = Number(b.dataset.ssxLen), s = new Set(L.lengths); s.has(n) ? s.delete(n) : s.add(n); if (!s.size) return note('link', 'Pick at least one set length.', true); saveLink({ lengths: [...s].sort((a, b) => a - b) }, true); });
     wireBlockCal(box, L);
-    box.querySelectorAll('[data-ssx-unblock]').forEach(b => b.onclick = e => { e.stopPropagation(); saveLink({ blocked: (L.blocked || []).filter(d => d !== b.dataset.ssxUnblock) }, true); });
     wireLink(box, link, L, 'link');
   }
 
-  /* ---------- "Dates you're not available": tap days to block them, or block a range */
+  /* ---------- "Dates you're not available" calendar */
   const BC = { month: null, range: false, from: '' };
   function blockCal(L) {
     const t0 = todayStr(), blocked = new Set((L.blocked || []).filter(d => d >= t0));
@@ -265,7 +253,6 @@ function appExtras() {
       const ds = `${y}-${pad(mo + 1)}-${pad(d)}`, past = ds < t0, on = blocked.has(ds), from = BC.range && BC.from === ds;
       cells += `<button type="button" class="ssx-bd${on ? ' on' : ''}${from ? ' from' : ''}" data-ssx-bd="${ds}" ${past ? 'disabled' : ''} aria-pressed="${on}" aria-label="${niceDate(ds)}${on ? ', blocked' : ''}">${d}</button>`;
     }
-    // group consecutive blocked days into ranges for the summary
     const list = [...blocked].sort(), ranges = [];
     for (const d of list) { const last = ranges[ranges.length - 1]; if (last && addDays(last[1], 1) === d) last[1] = d; else ranges.push([d, d]); }
     const label = ([a, b]) => a === b ? niceDate(a) : `${new Date(a + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(b + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
@@ -294,7 +281,7 @@ function appExtras() {
     });
   }
 
-  /* ---------- Settings: grouped in the order you use the app, with a section menu */
+  /* ---------- Settings: grouped in the order you use the app */
   const GROUPS = [['profile', 'Profile'], ['google', 'Google'], ['bookings', 'Bookings'], ['reminders', 'Reminders'], ['email', 'Email & invoices'], ['look', 'Look'], ['account', 'Account']];
   let curGroup = (() => { try { return localStorage.getItem('ss-setgroup') || 'profile'; } catch (_) { return 'profile'; } })();
   let organizing = false;
@@ -317,7 +304,6 @@ function appExtras() {
         anchor = g;
       }
       const card = q => { const el = sec.querySelector(q); return el ? (el.closest('.ssx-host') || el.closest('.card') || el) : null; };
-      // Appearance (light/dark) gets its own card in Look
       let look = document.getElementById('ssg-appearance');
       const seg = document.getElementById('themeSeg');
       if (!look && seg) { look = document.createElement('div'); look.className = 'card'; look.id = 'ssg-appearance'; look.innerHTML = '<div class="head"><h3>Light or dark</h3></div>'; look.appendChild(seg.parentElement); }
@@ -331,7 +317,6 @@ function appExtras() {
         account: [card('#ss-account'), card('[data-legal]')],
       };
       for (const [k, els] of Object.entries(place)) { const g = sec.querySelector(`:scope > .ssg[data-ssg="${k}"]`); for (const el of els) if (el && el.parentElement !== g) g.appendChild(el); }
-      // anything else that shows up later lands in Account so nothing is ever lost
       const acct = sec.querySelector(':scope > .ssg[data-ssg="account"]');
       [...sec.children].filter(c => c.classList.contains('card') || c.classList.contains('ssx-host')).forEach(c => acct.insertBefore(c, acct.firstChild));
       showGroup(curGroup, false);
@@ -346,10 +331,9 @@ function appExtras() {
     if (scroll) { const nav = sec.querySelector('.ssg-nav'); const y = nav.getBoundingClientRect().top + scrollY - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ss-top')) || 64) - 4; if (scrollY > y) window.scrollTo({ top: y, behavior: 'smooth' }); }
   }
   window.ssShowSettings = (k, targetId) => { window.goTab('settings'); organize(); showGroup(k, false); if (targetId) setTimeout(() => { const t = document.getElementById(targetId); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 200); };
-  // a field inside a hidden group that gets focus (for example from an app message) opens its group
   document.addEventListener('focusin', e => { const g = e.target.closest && e.target.closest('section[data-view="settings"] > .ssg[hidden]'); if (g) showGroup(g.dataset.ssg, false); });
 
-  /* ---------- Settings in the tab menu (bottom of the side menu / end of the phone bar) */
+  /* ---------- Settings in the tab menu */
   function setupNav() {
     const tabs = document.getElementById('tabs'); if (!tabs || tabs.querySelector('[data-tab="settings"]')) return;
     const b = document.createElement('button'); b.type = 'button'; b.dataset.tab = 'settings'; b.className = 'ssx-settab'; b.setAttribute('aria-current', 'false');
@@ -359,7 +343,6 @@ function appExtras() {
     document.documentElement.classList.add('ssx-settab-on');
     try { if (document.querySelector('section[data-view="settings"]:not([hidden])')) b.setAttribute('aria-current', 'true'); } catch (_) {}
   }
-  // the side menu stays put under the header while you scroll
   const syncTop = () => { const h = document.querySelector('header.top'); if (h) document.documentElement.style.setProperty('--ss-top', Math.round(Math.max(0, h.getBoundingClientRect().bottom)) + 'px'); };
   addEventListener('scroll', syncTop, { passive: true }); addEventListener('resize', syncTop);
 
