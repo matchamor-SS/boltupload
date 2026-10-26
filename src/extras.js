@@ -72,7 +72,7 @@ function appExtras() {
     if (homeSec) new MutationObserver(() => { if (!document.getElementById('ssx-home-goals')) renderHomeGoals(); }).observe(homeSec, { childList: true });
     st.db.doc('notify/status').onSnapshot(s => { st.status = s.exists ? s.data() : null; render(); }, () => {});
     perf('status').then(d => { st.server = d; render(); }).catch(() => { st.server = { error: true }; render(); });
-    mount(); renderKit(); setupNav(); syncTop(); setTimeout(syncTop, 500);
+    mount(); renderKit(); setupNav(); setupRail(); syncTop(); setTimeout(syncTop, 500);
     const setSec = document.querySelector('section[data-view="settings"]');
     new MutationObserver(() => { if ([...setSec.children].some(c => c.classList.contains('card') || c.classList.contains('ssx-host'))) organize(); }).observe(setSec, { childList: true });
     setTimeout(organize, 800); setTimeout(organize, 2500);
@@ -388,6 +388,18 @@ function appExtras() {
     tabs.appendChild(b);
     document.documentElement.classList.add('ssx-settab-on');
     try { if (document.querySelector('section[data-view="settings"]:not([hidden])')) b.setAttribute('aria-current', 'true'); } catch (_) {}
+  }
+  /* ---------- Side menu runs down the left on every screen, and folds away with the menu button in the top bar */
+  function setupRail() {
+    const top = document.querySelector('header.top'), tabs = document.getElementById('tabs'); if (!top || !tabs || document.getElementById('ssx-railbtn')) return;
+    const root = document.documentElement; root.classList.add('ssx-rail');
+    let min = false; try { const v = localStorage.getItem('ss-rail-min'); min = v === null ? false : v === '1'; } catch (_) {}
+    const b = document.createElement('button'); b.type = 'button'; b.id = 'ssx-railbtn'; b.className = 'iconbtn ssx-railbtn';
+    b.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/><path class="ssx-rb-arrow" d="M15 10l-2 2 2 2"/></svg>';
+    const apply = () => { root.classList.toggle('ssx-rail-min', min); b.setAttribute('aria-expanded', String(!min)); b.setAttribute('aria-label', min ? 'Show menu' : 'Hide menu'); b.title = min ? 'Show menu' : 'Hide menu'; tabs.querySelectorAll('button').forEach(x => { if (!x.title) x.title = x.textContent.trim(); }); };
+    b.onclick = e => { e.stopPropagation(); min = !min; try { localStorage.setItem('ss-rail-min', min ? '1' : '0'); } catch (_) {} apply(); };
+    const brand = top.querySelector('.brand'); brand ? brand.prepend(b) : top.prepend(b);
+    apply();
   }
   // measured from the header's own height (not while scrolling), so the page can't jiggle at the top or bottom
   let lastTop = '';
@@ -727,7 +739,7 @@ function appExtras() {
     if (!s.target) { TS.el.style.cssText = OVERLAY + 'z-index:301;background:rgba(18,22,15,.55);'; card.style.cssText = 'position:relative;width:100%;max-width:420px;'; return; }
     TS.el.style.cssText = 'position:fixed;z-index:301;inset:auto;';
     card.style.cssText = phone
-      ? 'position:fixed;left:12px;right:12px;bottom:calc(92px + env(safe-area-inset-bottom, 0px));width:auto;max-height:calc(100vh - 180px);overflow:auto;'
+      ? 'position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom, 0px));width:auto;max-height:calc(100vh - 140px);overflow:auto;'
       : 'position:fixed;right:24px;bottom:24px;width:360px;max-width:calc(100vw - 48px);max-height:calc(100vh - 48px);overflow:auto;';
   }
   // an action (like "Edit my profile") opens its form; the tour waits with a small "Continue tour" button
@@ -735,7 +747,7 @@ function appExtras() {
     const i = TS.i; endTour(true); TS.i = i;
     setTimeout(() => { try { fn(); } catch (_) {} }, 60);
     TS.pill = document.createElement('div'); TS.pill.className = 'ssx-tour-pill';
-    TS.pill.style.cssText = 'position:fixed;z-index:15;right:16px;bottom:' + (innerWidth >= 1024 ? '24px' : 'calc(96px + env(safe-area-inset-bottom, 0px))') + ';';
+    TS.pill.style.cssText = 'position:fixed;z-index:15;right:16px;bottom:' + (innerWidth >= 1024 ? '24px' : 'calc(16px + env(safe-area-inset-bottom, 0px))') + ';';
     TS.pill.innerHTML = '<button type="button" class="btn primary small" data-ssx-tresume>Continue tour →</button><button type="button" class="ssx-tour-x" data-ssx-tend aria-label="End the tour">×</button>';
     document.body.appendChild(TS.pill);
     TS.pill.querySelector('[data-ssx-tresume]').onclick = e => { e.stopPropagation(); const k = TS.i; TS.pill.remove(); TS.pill = null; startTour(k + 1); };
