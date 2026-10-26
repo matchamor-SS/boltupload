@@ -254,3 +254,54 @@ html body #ss-auth ~ header.top { position: sticky; top: env(safe-area-inset-top
   html body #tabs.tabs { position: fixed !important; top: var(--ss-top, 63px) !important; bottom: 0 !important; height: auto !important; max-height: calc(100vh - var(--ss-top, 63px)); overflow-y: auto; }
   html body #tabs .ssx-settab { position: static !important; margin-top: 8px !important; padding-top: 10px !important; padding-bottom: 10px !important; border-top: 1px solid var(--line); border-radius: 0 0 12px 12px; box-shadow: none !important; background: transparent !important; }
 }
+/* ---------- Side menu down the left on every screen, folds away with the menu button in the top bar */
+html.ssx-rail { --rail-w: 176px; }
+html.ssx-rail.ssx-rail-min { --rail-w: 64px; }
+@media (max-width: 1023px) {
+  html.ssx-rail { --rail-w: 68px; }
+  html.ssx-rail.ssx-rail-min { --rail-w: 0px; }
+}
+.ssx-railbtn { flex: none; margin-right: 2px; }
+.ssx-railbtn svg { width: 18px; height: 18px; }
+.ssx-railbtn .ssx-rb-arrow { transition: transform .25s; transform-origin: 14px 12px; }
+html.ssx-rail-min .ssx-railbtn .ssx-rb-arrow { transform: scaleX(-1); }
+html.ssx-rail body .shell { display: block !important; padding-left: var(--rail-w) !important; transition: padding-left .25s cubic-bezier(.22, 1, .36, 1); }
+html.ssx-rail body #tabs.tabs {
+  position: fixed !important; left: 0 !important; right: auto !important; top: var(--ss-top, 63px) !important; bottom: 0 !important;
+  width: var(--rail-w) !important; height: auto !important; max-height: none !important; margin: 0 !important;
+  display: flex !important; flex-direction: column !important; align-items: stretch !important; gap: 2px !important;
+  padding: 14px 8px 16px !important; overflow-x: hidden !important; overflow-y: auto !important; scrollbar-width: none;
+  border: 0 !important; border-right: 1px solid var(--line) !important; border-radius: 0 !important;
+  background: color-mix(in srgb, var(--surface) 70%, transparent) !important; box-shadow: none !important;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  transition: width .25s cubic-bezier(.22, 1, .36, 1), padding .25s, opacity .2s; z-index: 6 !important;
+}
+html.ssx-rail body #tabs.tabs::-webkit-scrollbar { display: none; }
+html.ssx-rail body #tabs.tabs button {
+  flex: 0 0 auto !important; display: flex !important; flex-direction: row !important; align-items: center !important; justify-content: flex-start !important;
+  gap: 10px !important; padding: 9px 10px !important; min-height: 40px; border-radius: 12px !important; font-size: 14px !important;
+  white-space: nowrap !important; overflow: hidden !important; text-overflow: clip !important; letter-spacing: 0 !important; width: 100%;
+}
+html.ssx-rail body #tabs.tabs button svg { width: 22px !important; height: 22px !important; flex: none !important; }
+html.ssx-rail body #tabs .ssx-settab { position: static !important; margin-top: 8px !important; border-top: 1px solid var(--line); border-radius: 0 0 12px 12px !important; background: transparent !important; box-shadow: none !important; }
+/* icons only: folded menu on laptops, and the slim menu on phones */
+html.ssx-rail.ssx-rail-min body #tabs.tabs button { font-size: 0 !important; gap: 0 !important; justify-content: center !important; padding: 9px 0 !important; }
+@media (max-width: 1023px) {
+  html.ssx-rail body #tabs.tabs { padding: 14px 6px calc(16px + env(safe-area-inset-bottom, 0px)) !important; }
+  html.ssx-rail body #tabs.tabs button { flex-direction: column !important; justify-content: center !important; gap: 3px !important; padding: 7px 0 6px !important; font-size: 9.5px !important; min-height: 50px; text-align: center; }
+  html.ssx-rail body #tabs.tabs button svg { width: 22px !important; height: 22px !important; }
+  html.ssx-rail.ssx-rail-min body #tabs.tabs { padding-left: 0 !important; padding-right: 0 !important; border-right-color: transparent !important; opacity: 0; pointer-events: none; }
+}
+/* the main area uses the room the menu gives back */
+@media (min-width: 1024px) {
+  html.ssx-rail body main { max-width: 1320px !important; padding-left: 32px !important; padding-right: 32px !important; padding-bottom: 48px !important; }
+}
+@media (max-width: 1023px) {
+  html.ssx-rail body main { max-width: none !important; padding-left: 12px !important; padding-right: 12px !important; padding-bottom: calc(32px + env(safe-area-inset-bottom, 0px)) !important; }
+  html.ssx-rail body .dock { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  html.ssx-rail body .toast { bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (prefers-reduced-motion: reduce) { html.ssx-rail body .shell, html.ssx-rail body #tabs.tabs { transition: none !important; } }
+html.ssx-rail body #tabs.tabs button { position: relative !important; }
+html.ssx-rail body #tabs.tabs button::after { top: 50% !important; bottom: auto !important; left: 0 !important; width: 3px !important; height: 22px !important; border-radius: 0 3px 3px 0 !important; transform: translateY(-50%) scaleY(0) !important; }
+html.ssx-rail body #tabs.tabs button[aria-current="true"]::after { transform: translateY(-50%) scaleY(1) !important; }
