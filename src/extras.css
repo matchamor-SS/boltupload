@@ -177,3 +177,9 @@ section[data-view="goals"] > .ssx-host { display: block; }
 
 /* ---------- The top bar stays put while you scroll (the page can grow past one screen) */
 html body { height: auto !important; min-height: 100%; }
+/* ---------- Booking page: logo link back to the Set & Settled website */
+.bk-brand { align-self: flex-start; display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 14px 4px 4px; border-radius: 999px; text-decoration: none; color: var(--bk-ink); font-weight: 700; font-size: 15px; letter-spacing: .01em; background: rgba(255, 253, 248, .7); border: 1px solid var(--bk-line); transition: background .15s, border-color .15s, transform .08s; }
+.bk-brand img { width: 30px; height: 30px; border-radius: 8px; flex: none; }
+.bk-brand:hover { background: #FFFDF8; border-color: var(--bk-accent); }
+.bk-brand:active { transform: scale(.97); }
+.bk-brand:focus-visible { outline: 3px solid var(--bk-gold); outline-offset: 2px; }
