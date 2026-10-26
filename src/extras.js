@@ -642,8 +642,10 @@ function appExtras() {
     { tab: 'settings', group: 'reminders', target: '#ssx-notify', title: 'Reminders', body: 'Choose phone and laptop alerts, a morning email digest, or both. Reminders come from your task and goal due dates.' },
     { title: "You're all set", body: 'That is the tour. You can take it again anytime from Settings, under Account. Have a great season!' },
   ];
-  const TS = { i: -1, el: null, spot: null, pill: null, onKey: null, onMove: null };
+  const TS = { i: -1, el: null, pill: null, onKey: null, onMove: null };
   const saveTour = data => st.db && st.db.doc('settings/tour').set({ ...data, at: new Date().toISOString() }).catch(() => {});
+  // the key layout lives inline too, so the tour always appears in the right place
+  const OVERLAY = 'position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
   async function offerTour() {
     try {
       const d = await st.db.doc('settings/tour').get(); if (d.exists) return;
@@ -651,8 +653,9 @@ function appExtras() {
     setTimeout(() => {
       if (TS.el || document.querySelector('.sheet-bg, .notice-bg') || (document.getElementById('sheetRoot') || {}).innerHTML || new URLSearchParams(location.search).get('goto')) return;
       let name = ''; try { name = (S.profile && (S.profile.djName || S.profile.myName)) || ''; } catch (_) {}
-      const box = document.createElement('div'); box.className = 'ssx-tour-offer'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-labelledby', 'ssx-to-h');
-      box.innerHTML = `<div class="ssx-tour-card ssx-tour-center"><div class="ssx-tour-mark" aria-hidden="true">✦</div><h3 id="ssx-to-h">Welcome${name ? ', ' + esc(name) : ''}!</h3>
+      const box = document.createElement('div'); box.className = 'ssx-tour-offer'; box.style.cssText = OVERLAY + 'background:rgba(18,22,15,.55);';
+      box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-labelledby', 'ssx-to-h');
+      box.innerHTML = `<div class="ssx-tour-card ssx-tour-center" style="position:relative;max-width:420px;width:100%"><div class="ssx-tour-mark" aria-hidden="true">✦</div><h3 id="ssx-to-h">Welcome${name ? ', ' + esc(name) : ''}!</h3>
         <p>Want a quick walk through Set & Settled? We'll help you set up your profile, goals, availability and Google, and show you the rest along the way.</p>
         <div class="ssx-tour-btns"><button type="button" class="btn primary" data-ssx-tgo>Show me around</button><button type="button" class="btn" data-ssx-tskip>Skip, I'll explore</button></div>
         <p class="note">You can take the tour anytime from Settings, under Account.</p></div>`;
@@ -666,27 +669,29 @@ function appExtras() {
   }
   function startTour(i = 0) {
     endTour(true);
-    TS.spot = document.createElement('div'); TS.spot.className = 'ssx-tour-spot'; TS.spot.setAttribute('aria-hidden', 'true');
-    TS.el = document.createElement('div'); TS.el.className = 'ssx-tour'; TS.el.setAttribute('role', 'dialog'); TS.el.setAttribute('aria-modal', 'true'); TS.el.setAttribute('aria-live', 'polite');
-    document.body.append(TS.spot, TS.el);
+    TS.el = document.createElement('div'); TS.el.className = 'ssx-tour'; TS.el.setAttribute('role', 'dialog'); TS.el.setAttribute('aria-live', 'polite');
+    document.body.append(TS.el);
     TS.onKey = e => { if (!TS.el) return; if (e.key === 'Escape') skipTour(); else if (e.key === 'ArrowRight') tourGo(TS.i + 1); else if (e.key === 'ArrowLeft' && TS.i > 0) tourGo(TS.i - 1); };
     TS.onMove = () => placeTour();
-    document.addEventListener('keydown', TS.onKey); addEventListener('resize', TS.onMove); addEventListener('scroll', TS.onMove, { passive: true });
+    document.addEventListener('keydown', TS.onKey); addEventListener('resize', TS.onMove);
     tourGo(i);
   }
   function endTour(quiet) {
-    if (TS.el) TS.el.remove(); if (TS.spot) TS.spot.remove(); if (TS.pill) TS.pill.remove();
+    if (TS.el) TS.el.remove(); if (TS.pill) TS.pill.remove();
     if (TS.onKey) document.removeEventListener('keydown', TS.onKey);
-    if (TS.onMove) { removeEventListener('resize', TS.onMove); removeEventListener('scroll', TS.onMove); }
-    TS.el = TS.spot = TS.pill = null; if (!quiet) TS.i = -1;
+    if (TS.onMove) removeEventListener('resize', TS.onMove);
+    TS.el = TS.pill = null; if (!quiet) TS.i = -1;
   }
   function skipTour() { saveTour({ status: 'skipped', step: TS.i }); endTour(); }
   function finishTour() { saveTour({ status: 'done' }); endTour(); try { window.goTab('home'); scrollTo(0, 0); } catch (_) {} }
-  const tourTarget = s => { const q = TOUR[TS.i]; if (!q || !q.target) return null; return [...document.querySelectorAll(q.target)].find(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) || null; };
+  const tourTarget = () => { const q = TOUR[TS.i]; if (!q || !q.target) return null; return [...document.querySelectorAll(q.target)].find(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) || null; };
+  // close any open form so the tour can move to the next page
+  const closeSheets = () => { try { if (typeof window.close === 'function' && String(window.close).includes('sheetRoot')) window.close(); else { const r = document.getElementById('sheetRoot'); if (r) r.innerHTML = ''; } } catch (_) {} };
   function tourGo(i) {
     if (i >= TOUR.length) return finishTour();
     TS.i = Math.max(0, i); const s = TOUR[TS.i];
     saveTour({ status: 'in_progress', step: TS.i });
+    closeSheets();
     try {
       if (s.tab === 'settings' && s.group) window.ssShowSettings(s.group);
       else if (s.tab) window.goTab(s.tab);
@@ -702,32 +707,35 @@ function appExtras() {
     const back = q('[data-ssx-tback]'); if (back) back.onclick = e => { e.stopPropagation(); tourGo(TS.i - 1); };
     q('[data-ssx-tskip]').onclick = e => { e.stopPropagation(); skipTour(); };
     const act = q('[data-ssx-tact]'); if (act) act.onclick = e => { e.stopPropagation(); pauseTour(s.action[1]); };
-    TS.el.classList.remove('in'); TS.spot.style.opacity = '0';
+    placeTour(); TS.el.classList.remove('in');
     setTimeout(() => {
+      if (!TS.el) return;
       const t = tourTarget();
-      if (t) { const top = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ss-top')) || 64, y = t.getBoundingClientRect().top + scrollY - top - 24; scrollTo({ top: Math.max(0, y), behavior: 'instant' in document.documentElement.style ? 'instant' : 'auto' }); }
-      else scrollTo(0, 0);
-      placeTour(); TS.el && TS.el.classList.add('in'); const n = TS.el && TS.el.querySelector('[data-ssx-tnext]'); n && n.focus({ preventScroll: true });
-    }, 350);
+      if (t) {
+        const nav = s.tab === 'settings' && document.querySelector('section[data-view="settings"] .ssg-nav'), top = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ss-top')) || 72) + (nav ? nav.offsetHeight : 0);
+        document.documentElement.style.scrollBehavior = 'auto';
+        scrollTo(0, Math.max(0, t.getBoundingClientRect().top + scrollY - top - 20));
+        document.documentElement.style.scrollBehavior = '';
+      } else scrollTo(0, 0);
+      placeTour(); TS.el.classList.add('in'); const n = TS.el.querySelector('[data-ssx-tnext]'); n && n.focus({ preventScroll: true });
+    }, 300);
   }
+  // first and last cards sit in the middle of the window; the rest sit in the lower corner (phones: just above the tab bar)
   function placeTour() {
     if (!TS.el) return;
-    const card = TS.el.querySelector('.ssx-tour-card'), t = tourTarget(), phone = innerWidth < 700;
-    if (!t) { TS.spot.style.opacity = '0'; TS.el.dataset.mode = 'center'; card.style.left = card.style.top = ''; return; }
-    const r = t.getBoundingClientRect(), p = 8;
-    Object.assign(TS.spot.style, { opacity: '1', left: r.left - p + 'px', top: r.top - p + 'px', width: r.width + p * 2 + 'px', height: Math.min(r.height + p * 2, innerHeight * .6) + 'px' });
-    if (phone) { TS.el.dataset.mode = 'sheet'; card.style.left = card.style.top = ''; return; }
-    TS.el.dataset.mode = 'float';
-    const cw = card.offsetWidth || 360, ch = card.offsetHeight || 220, below = r.bottom + 16, above = r.top - ch - 16;
-    let top = below + ch < innerHeight - 12 ? below : above > 12 ? above : Math.max(12, innerHeight - ch - 12);
-    let left = Math.min(Math.max(12, r.left), innerWidth - cw - 12);
-    card.style.left = left + 'px'; card.style.top = top + 'px';
+    const s = TOUR[TS.i] || {}, card = TS.el.querySelector('.ssx-tour-card'), phone = innerWidth < 700;
+    if (!s.target) { TS.el.style.cssText = OVERLAY + 'z-index:301;background:rgba(18,22,15,.55);'; card.style.cssText = 'position:relative;width:100%;max-width:420px;'; return; }
+    TS.el.style.cssText = 'position:fixed;z-index:301;inset:auto;';
+    card.style.cssText = phone
+      ? 'position:fixed;left:12px;right:12px;bottom:calc(92px + env(safe-area-inset-bottom, 0px));width:auto;max-height:calc(100vh - 180px);overflow:auto;'
+      : 'position:fixed;right:24px;bottom:24px;width:360px;max-width:calc(100vw - 48px);max-height:calc(100vh - 48px);overflow:auto;';
   }
   // an action (like "Edit my profile") opens its form; the tour waits with a small "Continue tour" button
   function pauseTour(fn) {
     const i = TS.i; endTour(true); TS.i = i;
     setTimeout(() => { try { fn(); } catch (_) {} }, 60);
     TS.pill = document.createElement('div'); TS.pill.className = 'ssx-tour-pill';
+    TS.pill.style.cssText = 'position:fixed;z-index:15;right:16px;bottom:' + (innerWidth >= 1024 ? '24px' : 'calc(96px + env(safe-area-inset-bottom, 0px))') + ';';
     TS.pill.innerHTML = '<button type="button" class="btn primary small" data-ssx-tresume>Continue tour →</button><button type="button" class="ssx-tour-x" data-ssx-tend aria-label="End the tour">×</button>';
     document.body.appendChild(TS.pill);
     TS.pill.querySelector('[data-ssx-tresume]').onclick = e => { e.stopPropagation(); const k = TS.i; TS.pill.remove(); TS.pill = null; startTour(k + 1); };
