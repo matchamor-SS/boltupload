@@ -1,6 +1,7 @@
 /* Boot order: theme -> sign-in -> runtime (window.claude) -> PDF library -> the app (public/app/app.js, unchanged
  * app code) -> Settings cards. The app script is loaded only after sign-in so it never runs without its data. */
 import './shell.css';
+import './extras.js';
 import './theme.css';
 import { sb, MOCK, CONFIGURED } from './supabase.js';
 import { installRuntime, downloads } from './runtime.js';
