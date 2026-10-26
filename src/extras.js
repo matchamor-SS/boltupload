@@ -79,9 +79,10 @@ function appExtras() {
     const kitSec = document.querySelector('section[data-view="kit"]');
     if (kitSec) new MutationObserver(() => { if (!document.getElementById('ssx-kit')) renderKit(); }).observe(kitSec, { childList: true });
 
-    setInterval(queueSoon, 60000); offerTour();
+    setInterval(queueSoon, 60000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) queueSoon(); });
-    if (params.get('goto')) { goto(params);         account: [document.getElementById('ssx-host-tour'), card('#ss-account'), card('[data-legal]')],
+    if (params.get('goto')) { goto(params); history.replaceState(null, '', location.pathname); }
+    offerTour();
   }, 300);
 
   function goto(p) {
@@ -738,6 +739,7 @@ function appExtras() {
     host.innerHTML = `<div class="card ssx" id="ssx-tourcard"><div class="ssx-head"><div><h3>App tour</h3><p class="note">A 2-minute walk through everything Set & Settled can do, and help setting up the basics.</p></div></div><div class="ssx-row"><button type="button" class="btn primary small" data-ssx-treplay>Take the tour</button></div></div>`;
     host.querySelector('[data-ssx-treplay]').onclick = e => { e.stopPropagation(); scrollTo(0, 0); startTour(0); };
   }
+
   /* ---------- Booking link card in the Kit */
   function renderKit() {
     const sec = document.querySelector('section[data-view="kit"]'); if (!sec || !st.db) return;
@@ -864,8 +866,8 @@ async function bookingPage(rawSlug) {
     root.querySelector('#bk-start').onchange = e => { S2.start = e.target.value; };
     root.querySelector('#bk-form').onsubmit = submit;
   }
- function brand() { return `<a class="bk-brand" href="${location.origin}/" target="_blank" rel="noopener" aria-label="Set &amp; Settled website"><img src="/favicon.svg" alt="" width="30" height="30"><span>Set &amp; Settled</span></a>`; }
-  function remember() {root.__vals = {}; root.querySelectorAll('input[id^="bk-"],textarea[id^="bk-"],select[id^="bk-"]').forEach(el => { if (el.id !== 'bk-start') root.__vals[el.id] = el.value; }); }
+  function brand() { return `<a class="bk-brand" href="${location.origin}/" target="_blank" rel="noopener" aria-label="Set &amp; Settled website"><img src="/favicon.svg" alt="" width="30" height="30"><span>Set &amp; Settled</span></a>`; }
+  function remember() { root.__vals = {}; root.querySelectorAll('input[id^="bk-"],textarea[id^="bk-"],select[id^="bk-"]').forEach(el => { if (el.id !== 'bk-start') root.__vals[el.id] = el.value; }); }
   const foot = () => `<footer class="bk-foot">Booking requests by <b>Set & Settled</b> · <a href="/privacy-policy/" target="_blank" rel="noopener">Privacy</a> · <a href="/terms-of-service/" target="_blank" rel="noopener">Terms</a></footer>`;
   async function submit(e) {
     e.preventDefault();
