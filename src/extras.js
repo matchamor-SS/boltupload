@@ -691,7 +691,7 @@ async function bookingPage(rawSlug) {
     if (error || !data || !data.today) throw new Error('nf');
     P = data;
   } catch (_) {
-    root.innerHTML = `<div class="bk-wrap"><div class="bk-card bk-center"><h1>This booking link isn't active</h1><p class="bk-muted">Check the link with the performer who sent it.</p></div></div>`;
+    root.innerHTML = `<div class="bk-wrap">${brand()}<div class="bk-card bk-center"><h1>This booking link isn't active</h1><p class="bk-muted">Check the link with the performer who sent it.</p></div></div>`;
     return;
   }
   document.title = `Book ${P.name || 'a performer'} · Set & Settled`;
@@ -712,12 +712,12 @@ async function bookingPage(rawSlug) {
   }
   function draw() {
     if (S2.sent) {
-      root.innerHTML = `<div class="bk-wrap"><div class="bk-card bk-center"><div class="bk-check" aria-hidden="true">✓</div><h1>Request sent</h1>
+      root.innerHTML = `<div class="bk-wrap">${brand()}<div class="bk-card bk-center"><div class="bk-check" aria-hidden="true">✓</div><h1>Request sent</h1>
         <p>${esc(P.name || 'The performer')} has your request for <b>${esc(niceDate(S2.date))}</b> at <b>${esc(time12(S2.start))}</b> and will reply to you by email.</p>
         <p class="bk-muted">Thank you!</p></div>${foot()}</div>`; return;
     }
     root.innerHTML = `<div class="bk-wrap">
-      <header class="bk-hero"><div class="bk-eyebrow">Booking request</div><h1>${esc(P.name || 'Book a performer')}</h1>${P.headline ? `<p>${esc(P.headline)}</p>` : ''}</header>
+      ${brand()}<header class="bk-hero"><div class="bk-eyebrow">Booking request</div><h1>${esc(P.name || 'Book a performer')}</h1>${P.headline ? `<p>${esc(P.headline)}</p>` : ''}</header>
       <form class="bk-card" id="bk-form" novalidate>
         <section class="bk-step"><h2><span>1</span>Pick a date</h2>${cal()}<p class="bk-muted bk-small">${S2.date ? `Selected: <b>${esc(niceDate(S2.date))}</b>` : 'Open dates are the ones you can tap.'}</p></section>
         <section class="bk-step"><h2><span>2</span>Set time</h2>
@@ -750,7 +750,8 @@ async function bookingPage(rawSlug) {
     root.querySelector('#bk-start').onchange = e => { S2.start = e.target.value; };
     root.querySelector('#bk-form').onsubmit = submit;
   }
-  function remember() { root.__vals = {}; root.querySelectorAll('input[id^="bk-"],textarea[id^="bk-"],select[id^="bk-"]').forEach(el => { if (el.id !== 'bk-start') root.__vals[el.id] = el.value; }); }
+ function brand() { return `<a class="bk-brand" href="${location.origin}/" target="_blank" rel="noopener" aria-label="Set &amp; Settled website"><img src="/favicon.svg" alt="" width="30" height="30"><span>Set &amp; Settled</span></a>`; }
+  function remember() {root.__vals = {}; root.querySelectorAll('input[id^="bk-"],textarea[id^="bk-"],select[id^="bk-"]').forEach(el => { if (el.id !== 'bk-start') root.__vals[el.id] = el.value; }); }
   const foot = () => `<footer class="bk-foot">Booking requests by <b>Set & Settled</b> · <a href="/privacy-policy/" target="_blank" rel="noopener">Privacy</a> · <a href="/terms-of-service/" target="_blank" rel="noopener">Terms</a></footer>`;
   async function submit(e) {
     e.preventDefault();
