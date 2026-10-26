@@ -1,0 +1,15 @@
+{
+  "name": "Set & Settled",
+  "short_name": "Set & Settled",
+  "description": "Bookings, reminders, invoices and money for performers who book themselves.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#11160F",
+  "theme_color": "#3E5530",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
