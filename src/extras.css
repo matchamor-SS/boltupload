@@ -212,18 +212,13 @@ html body { height: auto !important; min-height: 100%; }
 .bk-brand:focus-visible { outline: 3px solid var(--bk-gold); outline-offset: 2px; }
 
 /* ---------- First-time tour */
-.ssx-tour-offer { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; padding: 16px; background: color-mix(in srgb, #12160F 55%, transparent); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: ssxFade .25s ease; }
-.ssx-tour { position: fixed; inset: 0; z-index: 301; }
-.ssx-tour-spot { position: fixed; z-index: 300; border-radius: 16px; pointer-events: none; box-shadow: 0 0 0 9999px color-mix(in srgb, #12160F 58%, transparent), 0 0 0 3px var(--accent); transition: left .35s cubic-bezier(.22, 1, .36, 1), top .35s cubic-bezier(.22, 1, .36, 1), width .35s cubic-bezier(.22, 1, .36, 1), height .35s cubic-bezier(.22, 1, .36, 1), opacity .25s; }
-.ssx-tour[data-mode="center"] { background: color-mix(in srgb, #12160F 58%, transparent); display: grid; place-items: center; padding: 16px; }
-.ssx-tour-card { background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 22px; padding: 20px; width: min(380px, calc(100vw - 24px)); box-sizing: border-box; box-shadow: 0 30px 70px -20px rgba(0, 0, 0, .45); display: flex; flex-direction: column; gap: 10px; }
+.ssx-tour-card { background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 22px; padding: 20px; width: min(380px, calc(100vw - 24px)); box-sizing: border-box; box-shadow: 0 24px 60px -16px rgba(0, 0, 0, .45), 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent); display: flex; flex-direction: column; gap: 10px; }
 .ssx-tour-card h3 { margin: 0; font-size: 20px; line-height: 1.2; }
 .ssx-tour-card p { margin: 0; line-height: 1.45; }
-.ssx-tour[data-mode="float"] .ssx-tour-card { position: fixed; }
-.ssx-tour[data-mode="sheet"] .ssx-tour-card { position: fixed; left: 12px; right: 12px; width: auto; bottom: calc(92px + env(safe-area-inset-bottom, 0px)); }
-.ssx-tour .ssx-tour-card { opacity: 0; transform: translateY(10px); transition: opacity .25s, transform .3s cubic-bezier(.22, 1, .36, 1), left .35s, top .35s; }
+.ssx-tour .ssx-tour-card { opacity: 0; transform: translateY(10px); transition: opacity .25s, transform .3s cubic-bezier(.22, 1, .36, 1); }
 .ssx-tour.in .ssx-tour-card { opacity: 1; transform: none; }
-.ssx-tour-center { text-align: center; align-items: center; max-width: 420px; padding: 28px 22px; }
+.ssx-tour-offer, .ssx-tour { animation: ssxFade .25s ease; }
+.ssx-tour-center { text-align: center; align-items: center; padding: 28px 22px; }
 .ssx-tour-mark { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; color: var(--accent-ink); background: linear-gradient(135deg, var(--accent), var(--accent-2, var(--accent))); }
 .ssx-tour-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .ssx-tour-x { border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; padding: 8px 4px; min-height: 36px; }
@@ -234,7 +229,23 @@ html body { height: auto !important; min-height: 100%; }
 .ssx-tour-dots i.on { width: 20px; background: var(--accent); }
 .ssx-tour-btns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .ssx-tour-center .ssx-tour-btns { justify-content: center; }
-.ssx-tour-pill { position: fixed; z-index: 15; right: 16px; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 8px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 14px 34px -12px rgba(0, 0, 0, .4); animation: ssxFade .25s ease; }
-@media (min-width: 1024px) { .ssx-tour-pill { bottom: 24px; } }
+.ssx-tour-pill { display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 8px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 14px 34px -12px rgba(0, 0, 0, .4); animation: ssxFade .25s ease; }
 @keyframes ssxFade { from { opacity: 0; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .ssx-tour-spot, .ssx-tour .ssx-tour-card, .ssx-tour-offer, .ssx-tour-pill { transition: none !important; animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { .ssx-tour .ssx-tour-card, .ssx-tour-offer, .ssx-tour, .ssx-tour-pill { transition: none !important; animation: none !important; } }
+
+/* ---------- Side menu on laptops: Settings always visible at the bottom, menu tightens on shorter screens */
+@media (min-width: 1024px) {
+  html body #tabs.tabs { padding-bottom: 0; }
+  html body #tabs .ssx-settab { position: sticky; bottom: 0; margin-top: auto; background: var(--bg); box-shadow: 0 -10px 16px -10px var(--bg); padding-top: 12px; padding-bottom: 14px; border-radius: 0; }
+}
+@media (min-width: 1024px) and (max-height: 780px) {
+  html body #tabs.tabs { gap: 0; padding-top: 8px; }
+  html body #tabs.tabs button { padding-top: 7px; padding-bottom: 7px; font-size: 13.5px; }
+  html body #tabs.tabs button svg { width: 20px; height: 20px; }
+}
+@media (min-width: 1024px) and (max-height: 600px) {
+  html body #tabs.tabs button { padding-top: 4px; padding-bottom: 4px; font-size: 13px; }
+}
+
+/* ---------- The top bar stays pinned while you scroll (the sign-in page styles were un-pinning it) */
+html body #ss-auth ~ header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; }
