@@ -79,9 +79,9 @@ function appExtras() {
     const kitSec = document.querySelector('section[data-view="kit"]');
     if (kitSec) new MutationObserver(() => { if (!document.getElementById('ssx-kit')) renderKit(); }).observe(kitSec, { childList: true });
 
-    setInterval(queueSoon, 60000);
+    setInterval(queueSoon, 60000); offerTour();
     document.addEventListener('visibilitychange', () => { if (!document.hidden) queueSoon(); });
-    if (params.get('goto')) { goto(params); history.replaceState(null, '', location.pathname); }
+    if (params.get('goto')) { goto(params);         account: [document.getElementById('ssx-host-tour'), card('#ss-account'), card('[data-legal]')],
   }, 300);
 
   function goto(p) {
@@ -142,9 +142,9 @@ function appExtras() {
   /* ---------- Settings cards */
   function mount() {
     const sec = document.querySelector('section[data-view="settings"]'); if (!sec || document.getElementById('ssx-host-notify')) return;
-    for (const id of ['ssx-host-link', 'ssx-host-notify']) { const h = document.createElement('div'); h.id = id; h.className = 'ssx-host'; sec.appendChild(h); }
+    for (const id of ['ssx-host-link', 'ssx-host-notify', 'ssx-host-tour']) { const h = document.createElement('div'); h.id = id; h.className = 'ssx-host'; sec.appendChild(h); }
     mountGoalsPage();
-    render(); renderGoals(); organize();
+    render(); renderGoals(); renderTourCard(); organize();
   }
   /* Goals get their own page in the tab menu, right under Kit */
   function mountGoalsPage() {
@@ -357,7 +357,7 @@ function appExtras() {
         reminders: [document.getElementById('ssx-host-notify')],
         email: [card('#ss-signature'), card('#payList')],
         look: [look, card('#palPick'), card('#ss-motion-chk')],
-        account: [card('#ss-account'), card('[data-legal]')],
+        account: [document.getElementById('ssx-host-tour'), card('#ss-account'), card('[data-legal]')],
       };
       for (const [k, els] of Object.entries(place)) { const g = sec.querySelector(`:scope > .ssg[data-ssg="${k}"]`); for (const el of els) if (el && el.parentElement !== g) g.appendChild(el); }
       // anything else that shows up later lands in Account so nothing is ever lost
@@ -624,6 +624,120 @@ function appExtras() {
     const all = box.querySelector('[data-ssx-allgoals]'); if (all) all.onclick = e => { e.stopPropagation(); window.goTab('goals'); window.scrollTo(0, 0); };
   }
 
+  /* ---------- First-time walkthrough: offered once to new performers, can be skipped, replay from Settings */
+  const TOUR = [
+    { title: 'Welcome to Set & Settled', body: 'Your home base as a performer: bookings, tasks, money, outreach and goals in one place. This quick tour shows you around and helps you set up the basics. About 2 minutes.' },
+    { tab: 'settings', group: 'profile', target: '#kitAvatar', title: 'Start with your profile', body: 'Your performer name, photo, bio and season goals. They fill in your Kit, invoices and booking page so you only type them once.', action: ['Edit my profile', () => { if (typeof profileForm === 'function') profileForm(); else { const b = document.getElementById('editProfile'); b && b.click(); } }] },
+    { tab: 'goals', target: '#ssx-goals', title: 'Set your goals', body: 'Track followers, releases, shows and income. Some goals count themselves from your bookings, and checklist goals can have a due date for every step.', action: ['Add a goal', () => { const b = document.querySelector('[data-ssx-gadd]'); b && b.click(); }] },
+    { tab: 'settings', group: 'bookings', target: '#ssx-link', title: 'Share when you are available', body: 'Turn on your booking link, pick the days you play and block dates you are away. Promoters pick an open date and their request lands in Bookings as a Lead.' },
+    { tab: 'settings', group: 'google', target: '#ss-google', title: 'Connect Google', body: 'Connect Gmail to send emails and invoices from your own address, Drive to keep your files together and Calendar to see your shows. You choose what to connect.' },
+    { tab: 'bookings', target: '[data-new="booking"]', title: 'Every show in one list', body: 'Add a show and move it from Lead to Confirmed, Played and Paid. Each stage adds its own checklist, with due dates set from the show date.' },
+    { tab: 'calendar', target: '#blockBtn', title: 'See your month', body: 'All your shows on a calendar. Block dates here too, and they close on your booking link.' },
+    { tab: 'tasks', target: '#newTask', title: 'Never miss a step', body: 'Contracts, deposits, promo posts and set prep, sorted by due date. Turn on Reminders and the app nudges you when things are due.' },
+    { tab: 'kit', target: '#copyPress', title: 'Your press kit, ready to send', body: 'Bio, photos, mixes, socials and your booking link in one spot. Copy the whole kit into an email in one tap.' },
+    { tab: 'contacts', target: '[data-new="contact"]', title: 'Your people', body: 'Promoters, venues, photographers and collaborators. Link them to shows so you always know who to follow up with.' },
+    { tab: 'comms', target: '[data-new="template"]', title: 'Email templates', body: 'Save your go-to emails for pitches, confirmations and thank-yous, then fill them in from any show with one tap.' },
+    { tab: 'money', target: '[data-new="expense"]', title: 'Financials', body: 'Log income and expenses, send invoices and see what you have earned this season.' },
+    { tab: 'settings', group: 'reminders', target: '#ssx-notify', title: 'Reminders', body: 'Choose phone and laptop alerts, a morning email digest, or both. Reminders come from your task and goal due dates.' },
+    { title: "You're all set", body: 'That is the tour. You can take it again anytime from Settings, under Account. Have a great season!' },
+  ];
+  const TS = { i: -1, el: null, spot: null, pill: null, onKey: null, onMove: null };
+  const saveTour = data => st.db && st.db.doc('settings/tour').set({ ...data, at: new Date().toISOString() }).catch(() => {});
+  async function offerTour() {
+    try {
+      const d = await st.db.doc('settings/tour').get(); if (d.exists) return;
+    } catch (_) { return; }
+    setTimeout(() => {
+      if (TS.el || document.querySelector('.sheet-bg, .notice-bg') || (document.getElementById('sheetRoot') || {}).innerHTML || new URLSearchParams(location.search).get('goto')) return;
+      let name = ''; try { name = (S.profile && (S.profile.djName || S.profile.myName)) || ''; } catch (_) {}
+      const box = document.createElement('div'); box.className = 'ssx-tour-offer'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-labelledby', 'ssx-to-h');
+      box.innerHTML = `<div class="ssx-tour-card ssx-tour-center"><div class="ssx-tour-mark" aria-hidden="true">✦</div><h3 id="ssx-to-h">Welcome${name ? ', ' + esc(name) : ''}!</h3>
+        <p>Want a quick walk through Set & Settled? We'll help you set up your profile, goals, availability and Google, and show you the rest along the way.</p>
+        <div class="ssx-tour-btns"><button type="button" class="btn primary" data-ssx-tgo>Show me around</button><button type="button" class="btn" data-ssx-tskip>Skip, I'll explore</button></div>
+        <p class="note">You can take the tour anytime from Settings, under Account.</p></div>`;
+      document.body.appendChild(box);
+      const close = () => box.remove();
+      box.querySelector('[data-ssx-tgo]').onclick = e => { e.stopPropagation(); close(); startTour(1); };
+      box.querySelector('[data-ssx-tskip]').onclick = e => { e.stopPropagation(); close(); saveTour({ status: 'skipped' }); };
+      box.addEventListener('keydown', e => { if (e.key === 'Escape') { close(); saveTour({ status: 'skipped' }); } });
+      box.querySelector('[data-ssx-tgo]').focus();
+    }, 1500);
+  }
+  function startTour(i = 0) {
+    endTour(true);
+    TS.spot = document.createElement('div'); TS.spot.className = 'ssx-tour-spot'; TS.spot.setAttribute('aria-hidden', 'true');
+    TS.el = document.createElement('div'); TS.el.className = 'ssx-tour'; TS.el.setAttribute('role', 'dialog'); TS.el.setAttribute('aria-modal', 'true'); TS.el.setAttribute('aria-live', 'polite');
+    document.body.append(TS.spot, TS.el);
+    TS.onKey = e => { if (!TS.el) return; if (e.key === 'Escape') skipTour(); else if (e.key === 'ArrowRight') tourGo(TS.i + 1); else if (e.key === 'ArrowLeft' && TS.i > 0) tourGo(TS.i - 1); };
+    TS.onMove = () => placeTour();
+    document.addEventListener('keydown', TS.onKey); addEventListener('resize', TS.onMove); addEventListener('scroll', TS.onMove, { passive: true });
+    tourGo(i);
+  }
+  function endTour(quiet) {
+    if (TS.el) TS.el.remove(); if (TS.spot) TS.spot.remove(); if (TS.pill) TS.pill.remove();
+    if (TS.onKey) document.removeEventListener('keydown', TS.onKey);
+    if (TS.onMove) { removeEventListener('resize', TS.onMove); removeEventListener('scroll', TS.onMove); }
+    TS.el = TS.spot = TS.pill = null; if (!quiet) TS.i = -1;
+  }
+  function skipTour() { saveTour({ status: 'skipped', step: TS.i }); endTour(); }
+  function finishTour() { saveTour({ status: 'done' }); endTour(); try { window.goTab('home'); scrollTo(0, 0); } catch (_) {} }
+  const tourTarget = s => { const q = TOUR[TS.i]; if (!q || !q.target) return null; return [...document.querySelectorAll(q.target)].find(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) || null; };
+  function tourGo(i) {
+    if (i >= TOUR.length) return finishTour();
+    TS.i = Math.max(0, i); const s = TOUR[TS.i];
+    saveTour({ status: 'in_progress', step: TS.i });
+    try {
+      if (s.tab === 'settings' && s.group) window.ssShowSettings(s.group);
+      else if (s.tab) window.goTab(s.tab);
+    } catch (_) {}
+    const last = TS.i === TOUR.length - 1, first = TS.i === 0;
+    TS.el.innerHTML = `<div class="ssx-tour-card">
+      <div class="ssx-tour-top"><span class="eyebrow">${first || last ? 'Set & Settled' : `Step ${TS.i} of ${TOUR.length - 2}`}</span><button type="button" class="ssx-tour-x" data-ssx-tskip aria-label="Skip the tour">Skip tour</button></div>
+      <h3>${esc(s.title)}</h3><p>${esc(s.body)}</p>
+      <div class="ssx-tour-dots" aria-hidden="true">${TOUR.map((_, k) => `<i class="${k === TS.i ? 'on' : k < TS.i ? 'past' : ''}"></i>`).join('')}</div>
+      <div class="ssx-tour-btns">${first ? '' : '<button type="button" class="btn small" data-ssx-tback>Back</button>'}${s.action ? `<button type="button" class="btn small" data-ssx-tact>${esc(s.action[0])}</button>` : ''}<button type="button" class="btn primary small" data-ssx-tnext>${last ? 'Finish' : first ? "Let's go" : 'Next'}</button></div></div>`;
+    const q = sel => TS.el.querySelector(sel);
+    q('[data-ssx-tnext]').onclick = e => { e.stopPropagation(); tourGo(TS.i + 1); };
+    const back = q('[data-ssx-tback]'); if (back) back.onclick = e => { e.stopPropagation(); tourGo(TS.i - 1); };
+    q('[data-ssx-tskip]').onclick = e => { e.stopPropagation(); skipTour(); };
+    const act = q('[data-ssx-tact]'); if (act) act.onclick = e => { e.stopPropagation(); pauseTour(s.action[1]); };
+    TS.el.classList.remove('in'); TS.spot.style.opacity = '0';
+    setTimeout(() => {
+      const t = tourTarget();
+      if (t) { const top = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ss-top')) || 64, y = t.getBoundingClientRect().top + scrollY - top - 24; scrollTo({ top: Math.max(0, y), behavior: 'instant' in document.documentElement.style ? 'instant' : 'auto' }); }
+      else scrollTo(0, 0);
+      placeTour(); TS.el && TS.el.classList.add('in'); const n = TS.el && TS.el.querySelector('[data-ssx-tnext]'); n && n.focus({ preventScroll: true });
+    }, 350);
+  }
+  function placeTour() {
+    if (!TS.el) return;
+    const card = TS.el.querySelector('.ssx-tour-card'), t = tourTarget(), phone = innerWidth < 700;
+    if (!t) { TS.spot.style.opacity = '0'; TS.el.dataset.mode = 'center'; card.style.left = card.style.top = ''; return; }
+    const r = t.getBoundingClientRect(), p = 8;
+    Object.assign(TS.spot.style, { opacity: '1', left: r.left - p + 'px', top: r.top - p + 'px', width: r.width + p * 2 + 'px', height: Math.min(r.height + p * 2, innerHeight * .6) + 'px' });
+    if (phone) { TS.el.dataset.mode = 'sheet'; card.style.left = card.style.top = ''; return; }
+    TS.el.dataset.mode = 'float';
+    const cw = card.offsetWidth || 360, ch = card.offsetHeight || 220, below = r.bottom + 16, above = r.top - ch - 16;
+    let top = below + ch < innerHeight - 12 ? below : above > 12 ? above : Math.max(12, innerHeight - ch - 12);
+    let left = Math.min(Math.max(12, r.left), innerWidth - cw - 12);
+    card.style.left = left + 'px'; card.style.top = top + 'px';
+  }
+  // an action (like "Edit my profile") opens its form; the tour waits with a small "Continue tour" button
+  function pauseTour(fn) {
+    const i = TS.i; endTour(true); TS.i = i;
+    setTimeout(() => { try { fn(); } catch (_) {} }, 60);
+    TS.pill = document.createElement('div'); TS.pill.className = 'ssx-tour-pill';
+    TS.pill.innerHTML = '<button type="button" class="btn primary small" data-ssx-tresume>Continue tour →</button><button type="button" class="ssx-tour-x" data-ssx-tend aria-label="End the tour">×</button>';
+    document.body.appendChild(TS.pill);
+    TS.pill.querySelector('[data-ssx-tresume]').onclick = e => { e.stopPropagation(); const k = TS.i; TS.pill.remove(); TS.pill = null; startTour(k + 1); };
+    TS.pill.querySelector('[data-ssx-tend]').onclick = e => { e.stopPropagation(); TS.pill.remove(); TS.pill = null; saveTour({ status: 'skipped', step: i }); };
+  }
+  window.ssStartTour = () => startTour(0);
+  function renderTourCard() {
+    const host = document.getElementById('ssx-host-tour'); if (!host || host.firstChild) return;
+    host.innerHTML = `<div class="card ssx" id="ssx-tourcard"><div class="ssx-head"><div><h3>App tour</h3><p class="note">A 2-minute walk through everything Set & Settled can do, and help setting up the basics.</p></div></div><div class="ssx-row"><button type="button" class="btn primary small" data-ssx-treplay>Take the tour</button></div></div>`;
+    host.querySelector('[data-ssx-treplay]').onclick = e => { e.stopPropagation(); scrollTo(0, 0); startTour(0); };
+  }
   /* ---------- Booking link card in the Kit */
   function renderKit() {
     const sec = document.querySelector('section[data-view="kit"]'); if (!sec || !st.db) return;
