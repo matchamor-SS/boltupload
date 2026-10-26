@@ -134,8 +134,24 @@ function appExtras() {
   /* ---------- Settings cards */
   function mount() {
     const sec = document.querySelector('section[data-view="settings"]'); if (!sec || document.getElementById('ssx-host-notify')) return;
-    for (const id of ['ssx-host-link', 'ssx-host-notify', 'ssx-host-goals']) { const h = document.createElement('div'); h.id = id; h.className = 'ssx-host'; sec.appendChild(h); }
+    for (const id of ['ssx-host-link', 'ssx-host-notify']) { const h = document.createElement('div'); h.id = id; h.className = 'ssx-host'; sec.appendChild(h); }
+    mountGoalsPage();
     render(); renderGoals(); organize();
+  }
+  /* Goals get their own page in the tab menu, right under Kit */
+  function mountGoalsPage() {
+    if (document.querySelector('section[data-view="goals"]')) return;
+    const kit = document.querySelector('section[data-view="kit"]'), main = document.getElementById('main'); if (!main) return;
+    const sec = document.createElement('section'); sec.dataset.view = 'goals'; sec.hidden = true;
+    sec.innerHTML = '<div class="head"><div><h2>Goals</h2><p class="note" style="margin:2px 0 0">Followers, releases, shows, income: everything you\'re working toward, in one place.</p></div></div><div id="ssx-host-goals" class="ssx-host"></div>';
+    kit ? kit.after(sec) : main.appendChild(sec);
+    const tabs = document.getElementById('tabs'), kitTab = tabs && tabs.querySelector('[data-tab="kit"]');
+    if (tabs && !tabs.querySelector('[data-tab="goals"]')) {
+      const b = document.createElement('button'); b.type = 'button'; b.dataset.tab = 'goals'; b.setAttribute('aria-current', 'false');
+      b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>Goals';
+      b.onclick = () => window.goTab('goals');
+      kitTab ? kitTab.after(b) : tabs.appendChild(b);
+    }
   }
   const savePrefs = patch => st.db && st.db.doc('settings/notify').set({ ...defPrefs(), ...(st.prefs || {}), ...patch, tz: tz() }).catch(() => note('notify', "Couldn't save your reminder settings. " + OFFLINE, true));
   const defPrefs = () => ({ on: false, push: true, email: false, digest: 'daily', digestHour: 8, alertHour: 9, hideDetails: false });
@@ -298,7 +314,7 @@ function appExtras() {
   }
 
   /* ---------- Settings: grouped in the order you use the app, with a section menu */
-  const GROUPS = [['profile', 'Profile'], ['goals', 'Goals'], ['google', 'Google'], ['bookings', 'Bookings'], ['reminders', 'Reminders'], ['email', 'Email & invoices'], ['look', 'Look'], ['account', 'Account']];
+  const GROUPS = [['profile', 'Profile'], ['google', 'Google'], ['bookings', 'Bookings'], ['reminders', 'Reminders'], ['email', 'Email & invoices'], ['look', 'Look'], ['account', 'Account']];
   let curGroup = (() => { try { return localStorage.getItem('ss-setgroup') || 'profile'; } catch (_) { return 'profile'; } })();
   let organizing = false;
   function organize() {
@@ -328,7 +344,6 @@ function appExtras() {
       if (ep && pc && !pc.contains(ep)) { ep.textContent = 'Edit profile'; ep.classList.add('small'); ep.style.whiteSpace = 'nowrap'; (pc.querySelector('.chips') || pc).appendChild(ep); }
       const place = {
         profile: [card('#kitAvatar')],
-        goals: [document.getElementById('ssx-host-goals')],
         google: [card('#ss-google'), card('#driveRoots'), card('#setCals')],
         bookings: [card('#defCl'), document.getElementById('ssx-host-link')],
         reminders: [document.getElementById('ssx-host-notify')],
@@ -365,9 +380,10 @@ function appExtras() {
     document.documentElement.classList.add('ssx-settab-on');
     try { if (document.querySelector('section[data-view="settings"]:not([hidden])')) b.setAttribute('aria-current', 'true'); } catch (_) {}
   }
-  // the side menu stays put under the header while you scroll
-  const syncTop = () => { const h = document.querySelector('header.top'); if (h) document.documentElement.style.setProperty('--ss-top', Math.round(Math.max(0, h.getBoundingClientRect().bottom)) + 'px'); };
-  addEventListener('scroll', syncTop, { passive: true }); addEventListener('resize', syncTop);
+  // measured from the header's own height (not while scrolling), so the page can't jiggle at the top or bottom
+  let lastTop = '';
+  const syncTop = () => { const h = document.querySelector('header.top'); if (!h) return; const v = Math.round(h.getBoundingClientRect().height + (parseFloat(getComputedStyle(h).top) || 0)) + 'px'; if (v !== lastTop) { lastTop = v; document.documentElement.style.setProperty('--ss-top', v); } };
+  addEventListener('resize', syncTop); try { new ResizeObserver(syncTop).observe(document.querySelector('header.top')); } catch (_) {}
 
   /* ---------- Goals: numbers you track, numbers the app counts for you, checklists and milestones */
   const GTPL = [
@@ -476,7 +492,7 @@ function appExtras() {
     let prof = {}; try { prof = S.profile || {}; } catch (_) {}
     const goals = goalsSorted();
     host.innerHTML = `<div class="card ssx" id="ssx-goals">
-      <div class="ssx-head"><div><h3>Goals</h3><p class="note">Track anything you're working toward: followers, releases, shows, income. Goals marked "Show on Home" appear on your Home page.</p></div></div>
+      <div class="ssx-head"><div><h3>Your goals</h3><p class="note">Goals marked "Show on Home" also appear on your Home page.</p></div></div>
       <div class="ssx-opt"><div class="ssx-row" style="justify-content:space-between"><div><div class="eyebrow">Season goals</div><div class="note">${prof.goalShows ? `${esc(prof.goalShows)} shows` : 'No shows goal'} · ${prof.goalIncome ? esc(fmtN(num(prof.goalIncome), '$')) + ' income' : 'no income goal'}${prof.goalYear ? ` · ${esc(prof.goalYear)}` : ''}</div></div><button type="button" class="btn small" data-ssx-season>Edit season goals</button></div></div>
       ${msgHTML('goals')}
       <div class="ssx-goals">${goals.length ? goals.map(goalCard).join('') : '<p class="note">No goals yet. Add one below. Try your Instagram followers, a mix release or a number of shows.</p>'}</div>
@@ -569,7 +585,7 @@ function appExtras() {
       ? `<div class="head"><h3>Goals</h3><button type="button" class="btn small" data-ssx-allgoals>All goals</button></div>
          <div class="ssx-homegoals">${goals.map(g => { const m = measure(g); return `<div class="ssx-hg"><div class="ssx-goal-top"><span>${esc(g.title)}</span><span class="note">${m.done ? 'Done 🎉' : g.type === 'steps' ? `${m.cur}/${m.target}` : g.type === 'check' ? 'Not yet' : esc(fmtN(m.cur, g.unit === '$' ? '$' : '')) + ' / ' + esc(fmtN(m.target, g.unit === '$' ? '$' : ''))}</span></div><div class="ssx-bar"><i style="width:${(m.pct * 100).toFixed(1)}%"></i></div></div>`; }).join('')}</div>`
       : `<div class="head"><h3>Goals</h3></div><p class="note" style="margin:0">Track followers, releases, shows and more.</p><div class="ssx-row"><button type="button" class="btn small" data-ssx-allgoals>+ Add a goal</button></div>`;
-    const all = box.querySelector('[data-ssx-allgoals]'); if (all) all.onclick = e => { e.stopPropagation(); window.ssShowSettings('goals', 'ssx-goals'); };
+    const all = box.querySelector('[data-ssx-allgoals]'); if (all) all.onclick = e => { e.stopPropagation(); window.goTab('goals'); window.scrollTo(0, 0); };
   }
 
   /* ---------- Booking link card in the Kit */
