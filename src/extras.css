@@ -158,3 +158,22 @@ html body .btn:active { transform: scale(.96); }
   html body #tabs.tabs button svg { width: 20px; height: 20px; }
 }
 section[data-view="goals"] > .ssx-host { display: block; }
+/* ---------- Goal steps with their own due dates */
+.ssx-steprows { display: flex; flex-direction: column; gap: 8px; }
+.ssx-steprow { display: grid; grid-template-columns: minmax(0, 1fr) 150px 40px; gap: 8px; align-items: center; }
+.ssx-steprow.done .ssx-st-t { text-decoration: line-through; color: var(--muted); }
+.ssx-st-x { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
+.ssx-st-x:hover { border-color: var(--bad, #B23A3A); color: var(--bad, #B23A3A); }
+.ssx-stepchk { flex-wrap: wrap; row-gap: 2px; }
+.ssx-stepchk .ssx-st-name { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.ssx-stepchk.done .ssx-st-name { text-decoration: line-through; color: var(--muted); }
+.ssx-due { flex: none; margin-left: auto; font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: var(--soft); color: var(--muted); }
+.ssx-due.late { background: color-mix(in srgb, var(--bad, #B23A3A) 14%, transparent); color: var(--bad, #B23A3A); }
+@media (max-width: 520px) {
+  .ssx-steprow { grid-template-columns: minmax(0, 1fr) 40px; }
+  .ssx-steprow .ssx-st-d { grid-column: 1; grid-row: 2; }
+  .ssx-steprow .ssx-st-x { grid-column: 2; grid-row: 1; }
+}
+
+/* ---------- The top bar stays put while you scroll (the page can grow past one screen) */
+html body { height: auto !important; min-height: 100%; }
