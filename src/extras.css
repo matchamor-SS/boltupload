@@ -145,3 +145,7 @@ html.ssx-settab-on #setBtn { display: none !important; }
   html body .shell { padding-left: 200px; }
   html body #tabs .ssx-settab { margin-top: auto; }
 }
+/* ---------- Buttons: no growing ripple, just a clean press */
+html body .btn > .rp { display: none !important; }
+html body .btn { position: relative; overflow: hidden; }
+html body .btn:active { transform: scale(.96); }
