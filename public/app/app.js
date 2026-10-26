@@ -105,7 +105,7 @@ const offList=st=>STAGE_BASE[st]==="stage"?STAGE_OFFS.stage:OFFSETS;
 const offLabelFor=(st,o)=>{const f=offList(st).find(x=>x[0]===o);return f?f[1]:""};
 const offLabel=o=>{const f=OFFSETS.find(x=>x[0]===o);return f?f[1]:o<0?(-o)+" days before":o+" days after"};
 const stageDate=(b,st)=>((b.stageAt||{})[st])||(b.status===st?(b.updatedAt||b.createdAt||"").slice(0,10):"")||(b.createdAt||"").slice(0,10)||today();
-const dueOf=(b,it,st="confirmed")=>{if(it.due==="none")return"";if(it.due)return it.due;const o=offOf(it);if(o==null)return"";const base=STAGE_BASE[st]==="stage"?stageDate(b,st):b.date;return base?addDays(base,o):""};
+const dueOf=(b,it,st="confirmed")=>{if(it.due==="none")return"";if(it.due)return it.due;const o=offOf(it);if(o==null)return"";const base=STAGE_BASE[st]==="stage"?stageDate(b,st):b.date;if(!base)return"";const d=addDays(base,o),made=stageDate(b,st);return made&&d<made?made:d};
 const dueState=(ds,done)=>!ds||done?"":ds<today()?"late":ds<=addDays(today(),3)?"soon":"";
 const dueShort=ds=>ds?parseD(ds).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"";
 const defChecklist=()=>(Array.isArray(S.checklist)?S.checklist:TASKS.map(([key,label])=>({key,label,offset:DEF_OFF[key]})));
