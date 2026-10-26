@@ -249,3 +249,8 @@ html body { height: auto !important; min-height: 100%; }
 
 /* ---------- The top bar stays pinned while you scroll (the sign-in page styles were un-pinning it) */
 html body #ss-auth ~ header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; }
+/* ---------- Settings sits right under Goals in the side menu, so it is always on screen */
+@media (min-width: 1024px) {
+  html body #tabs.tabs { position: fixed !important; top: var(--ss-top, 63px) !important; bottom: 0 !important; height: auto !important; max-height: calc(100vh - var(--ss-top, 63px)); overflow-y: auto; }
+  html body #tabs .ssx-settab { position: static !important; margin-top: 8px !important; padding-top: 10px !important; padding-bottom: 10px !important; border-top: 1px solid var(--line); border-radius: 0 0 12px 12px; box-shadow: none !important; background: transparent !important; }
+}
