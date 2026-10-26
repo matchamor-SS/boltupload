@@ -341,3 +341,23 @@ html body #ss-auth .legalfoot, html body #ss-auth .legalfoot a { color: rgba(239
   html body #ss-auth .ss-lead { font-size: 28px !important; margin-bottom: 8px !important; }
   html body #ss-auth .ssx-wave { height: 110px; opacity: .3; }
 }
+/* ===== Nocturne · Stage 2: type, logo and the Champagne theme across the app ===== */
+:root { --display: "Cormorant Garamond", Georgia, serif; --body: "Inter Tight", ui-sans-serif, system-ui, sans-serif; }
+html body { font-family: var(--body); }
+html body h1, html body h2, html body h3 { font-family: var(--display); font-weight: 600; letter-spacing: 0; }
+html body section[data-view] > .head h2 { font-weight: 500; font-size: clamp(34px, 4.2vw, 50px); line-height: 1.02; }
+html body .card h3 { font-size: 22px; }
+/* the S&S monogram in the top bar */
+.ssx-mono { flex: none; font-family: "Italiana", "Bodoni 72", Didot, Georgia, serif; font-size: 30px; line-height: 1; background: linear-gradient(115deg, color-mix(in srgb, var(--accent) 65%, #000) 0%, var(--accent2, var(--accent)) 42%, var(--accent) 60%, color-mix(in srgb, var(--accent2, var(--accent)) 55%, #fff) 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; }
+html body header.top .brand h1 { font-family: var(--body) !important; font-weight: 500 !important; font-size: 12px !important; letter-spacing: .42em !important; text-transform: uppercase; }
+@media (max-width: 560px) { html body header.top .brand h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } }
+/* Champagne: Daylight (light) */
+html:root[data-palette="champagne"] { --bg: #F6F1E6; --surface: #FFFCF5; --ink: #1C2117; --muted: #5E5A4E; --line: #E3D9C6; --accent: #8A6A35; --accent2: #B08D57; --accent-ink: #FBF7EC; --soft: #EFE7D3; --hero: linear-gradient(135deg, #26301E, #141711); --hero-ink: #EFE7D3; --glow: rgba(138, 106, 53, .35); }
+html:root[data-palette="champagne"] body { background: radial-gradient(1100px 600px at 70% -10%, rgba(212, 178, 110, .16), transparent 60%), #F6F1E6; }
+/* Champagne: Nocturne (dark) */
+html:root[data-palette="champagne"][data-mode="dark"] { --bg: #0E100C; --surface: #171A13; --ink: #EFE7D3; --muted: #A9A28F; --line: #2C3125; --accent: #D4B26E; --accent2: #F0D99E; --accent-ink: #14170F; --soft: #1E2318; --hero: linear-gradient(135deg, #26301E, #141711); --hero-ink: #F2E8CF; --glow: rgba(212, 178, 110, .45); color-scheme: dark; }
+html:root[data-palette="champagne"][data-mode="dark"] body { background: radial-gradient(1000px 600px at 60% -5%, #1E2618 0%, rgba(30, 38, 24, 0) 60%), #0E100C; }
+html:root[data-palette="champagne"][data-mode="dark"] .card { background: rgba(239, 231, 211, .04); border-color: rgba(212, 178, 110, .2); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+html:root[data-palette="champagne"] .hero { border: 1px solid rgba(212, 178, 110, .4); }
+html:root[data-palette="champagne"] header.top { border-bottom-color: rgba(212, 178, 110, .3) !important; }
+html body header.top .brand .ssx-mono { font-family: "Italiana", "Bodoni 72", Didot, Georgia, serif !important; font-size: 30px !important; letter-spacing: 0 !important; text-transform: none !important; color: transparent !important; }
