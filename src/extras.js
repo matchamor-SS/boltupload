@@ -68,10 +68,13 @@ function appExtras() {
     st.db.doc('settings/bookinglink').onSnapshot(s => { st.link = s.exists ? s.data() : {}; render(); renderKit(); }, () => {});
     st.db.doc('notify/status').onSnapshot(s => { st.status = s.exists ? s.data() : null; render(); }, () => {});
     perf('status').then(d => { st.server = d; render(); }).catch(() => { st.server = { error: true }; render(); });
-    mount(); renderKit();
+    mount(); renderKit(); setupNav(); syncTop(); setTimeout(syncTop, 500);
+    const setSec = document.querySelector('section[data-view="settings"]');
+    new MutationObserver(() => { if ([...setSec.children].some(c => c.classList.contains('card') || c.classList.contains('ssx-host'))) organize(); }).observe(setSec, { childList: true });
+    setTimeout(organize, 800); setTimeout(organize, 2500);
     const kitSec = document.querySelector('section[data-view="kit"]');
     if (kitSec) new MutationObserver(() => { if (!document.getElementById('ssx-kit')) renderKit(); }).observe(kitSec, { childList: true });
-    new MutationObserver(() => { if (!document.getElementById('ss-extras')) mount(); }).observe(document.querySelector('section[data-view="settings"]'), { childList: true });
+
     setInterval(queueSoon, 60000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) queueSoon(); });
     if (params.get('goto')) { goto(params); history.replaceState(null, '', location.pathname); }
@@ -127,8 +130,9 @@ function appExtras() {
 
   /* ---------- Settings cards */
   function mount() {
-    const sec = document.querySelector('section[data-view="settings"]'); if (!sec || document.getElementById('ss-extras')) return;
-    const box = document.createElement('div'); box.id = 'ss-extras'; sec.appendChild(box); render();
+    const sec = document.querySelector('section[data-view="settings"]'); if (!sec || document.getElementById('ssx-host-notify')) return;
+    for (const id of ['ssx-host-link', 'ssx-host-notify']) { const h = document.createElement('div'); h.id = id; h.className = 'ssx-host'; sec.appendChild(h); }
+    render(); organize();
   }
   const savePrefs = patch => st.db && st.db.doc('settings/notify').set({ ...defPrefs(), ...(st.prefs || {}), ...patch, tz: tz() }).catch(() => note('notify', "Couldn't save your reminder settings. " + OFFLINE, true));
   const defPrefs = () => ({ on: false, push: true, email: false, digest: 'daily', digestHour: 8, alertHour: 9, hideDetails: false });
@@ -147,7 +151,8 @@ function appExtras() {
   checkDevice().then(render);
 
   function render() {
-    const box = document.getElementById('ss-extras'); if (!box) return;
+    const hN = document.getElementById('ssx-host-notify'), hL = document.getElementById('ssx-host-link'); if (!hN || !hL) return;
+    const box = { contains: n => !!n && (hN.contains(n) || hL.contains(n)), querySelector: q => hN.querySelector(q) || hL.querySelector(q), querySelectorAll: q => [...hN.querySelectorAll(q), ...hL.querySelectorAll(q)] };
     const ae = document.activeElement;
     // don't redraw under someone's fingers while they type; redraw when they leave the field
     if (ae && box.contains(ae) && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && /^(text|search|)$/.test(ae.type)))) { if (!ae.__ssx) { ae.__ssx = 1; ae.addEventListener('blur', () => setTimeout(() => { ae.__ssx = 0; render(); }, 600), { once: true }); } return; }
@@ -163,7 +168,7 @@ function appExtras() {
     const D = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const times = []; for (let h = 0; h < 24; h++) for (const m of [0, 30]) times.push(`${pad(h)}:${pad(m)}`);
     const tOpts = sel => times.map(t => `<option value="${t}"${t === sel ? ' selected' : ''}>${time12(t)}</option>`).join('');
-    box.innerHTML = `
+    const html = `
     <div class="card ssx" id="ssx-notify">
       <div class="ssx-head"><div><h3>Reminders</h3><p class="note">Nudges from your task due dates, like "did you post about it?", "you still need a media person" or "did you get paid?"</p></div>
         <label class="ssx-switch"><input type="checkbox" id="ssx-on" ${p.on ? 'checked' : ''} aria-label="Reminders on or off"><span></span></label></div>
@@ -211,12 +216,11 @@ function appExtras() {
           <div class="f"><label for="ssx-late">Latest start</label><select id="ssx-late">${tOpts(L.latest)}</select></div>
         </div>
         <div class="f"><label>Set lengths you offer</label><div class="ssx-chips" id="ssx-lens">${[30, 45, 60, 90, 120, 180, 240].map(n => `<button type="button" class="ssx-chip" data-ssx-len="${n}" aria-pressed="${L.lengths.includes(n)}">${n < 60 ? n + ' min' : n / 60 + ' hr'}</button>`).join('')}</div></div>
-        <div class="f"><label for="ssx-block">Dates you're not available</label>
-          <div class="ssx-row"><input type="date" id="ssx-block" min="${todayStr()}"><button class="btn small" id="ssx-addblock">Block date</button></div>
-          <div class="ssx-chips">${(L.blocked || []).filter(d => d >= todayStr()).sort().map(d => `<button type="button" class="ssx-chip on" data-ssx-unblock="${esc(d)}" aria-label="Unblock ${esc(niceDate(d))}">${esc(niceDate(d))} ×</button>`).join('')}</div>
-          <span class="note">Dates with a Confirmed, Played or Paid show are already closed.</span></div>
+        <div class="f"><label>Dates you're not available</label>${blockCal(L)}          <span class="note">Dates with a Confirmed, Played or Paid show are already closed.</span></div>
       </div>
     </div>`;
+    const cut = html.indexOf('<div class="card ssx" id="ssx-link">');
+    hN.innerHTML = html.slice(0, cut); hL.innerHTML = html.slice(cut);
     const $ = s => box.querySelector(s);
     const setSel = (id, v) => { const el = $(id); if (el) el.value = String(v); };
     setSel('#ssx-ah', p.alertHour); setSel('#ssx-dh', p.digestHour); setSel('#ssx-dg', p.digest); setSel('#ssx-notice', L.notice); setSel('#ssx-ahead', L.ahead);
@@ -244,10 +248,120 @@ function appExtras() {
     $('#ssx-late').onchange = e => saveLink({ latest: e.target.value }, true);
     box.querySelectorAll('[data-ssx-day]').forEach(b => b.onclick = e => { e.stopPropagation(); const d = Number(b.dataset.ssxDay), s = new Set(L.days); s.has(d) ? s.delete(d) : s.add(d); if (!s.size) return note('link', 'Pick at least one day.', true); saveLink({ days: [...s].sort() }, true); });
     box.querySelectorAll('[data-ssx-len]').forEach(b => b.onclick = e => { e.stopPropagation(); const n = Number(b.dataset.ssxLen), s = new Set(L.lengths); s.has(n) ? s.delete(n) : s.add(n); if (!s.size) return note('link', 'Pick at least one set length.', true); saveLink({ lengths: [...s].sort((a, b) => a - b) }, true); });
-    $('#ssx-addblock').onclick = () => { const v = $('#ssx-block').value; if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return; saveLink({ blocked: [...new Set([...(L.blocked || []).filter(d => d >= todayStr()), v])].slice(-200) }, true); };
+    wireBlockCal(box, L);
     box.querySelectorAll('[data-ssx-unblock]').forEach(b => b.onclick = e => { e.stopPropagation(); saveLink({ blocked: (L.blocked || []).filter(d => d !== b.dataset.ssxUnblock) }, true); });
     wireLink(box, link, L, 'link');
   }
+
+  /* ---------- "Dates you're not available": tap days to block them, or block a range */
+  const BC = { month: null, range: false, from: '' };
+  function blockCal(L) {
+    const t0 = todayStr(), blocked = new Set((L.blocked || []).filter(d => d >= t0));
+    if (!BC.month) { const d = new Date(); BC.month = new Date(d.getFullYear(), d.getMonth(), 1); }
+    const y = BC.month.getFullYear(), mo = BC.month.getMonth(), first = new Date(y, mo, 1).getDay(), dim = new Date(y, mo + 1, 0).getDate();
+    const now = new Date(), canPrev = y > now.getFullYear() || mo > now.getMonth();
+    let cells = ''; for (let i = 0; i < first; i++) cells += '<span></span>';
+    for (let d = 1; d <= dim; d++) {
+      const ds = `${y}-${pad(mo + 1)}-${pad(d)}`, past = ds < t0, on = blocked.has(ds), from = BC.range && BC.from === ds;
+      cells += `<button type="button" class="ssx-bd${on ? ' on' : ''}${from ? ' from' : ''}" data-ssx-bd="${ds}" ${past ? 'disabled' : ''} aria-pressed="${on}" aria-label="${niceDate(ds)}${on ? ', blocked' : ''}">${d}</button>`;
+    }
+    // group consecutive blocked days into ranges for the summary
+    const list = [...blocked].sort(), ranges = [];
+    for (const d of list) { const last = ranges[ranges.length - 1]; if (last && addDays(last[1], 1) === d) last[1] = d; else ranges.push([d, d]); }
+    const label = ([a, b]) => a === b ? niceDate(a) : `${new Date(a + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(b + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+    return `<p class="note">${BC.range ? (BC.from ? `Now tap the <b>last</b> day of the stretch starting ${esc(niceDate(BC.from))}.` : 'Tap the <b>first</b> day of the stretch you are away.') : 'Tap days to block or unblock them. Use <b>Block a range</b> for trips and stretches.'}</p>
+      <div class="ssx-cal"><div class="ssx-calh"><button type="button" class="ssx-calnav" data-ssx-bm="-1" ${canPrev ? '' : 'disabled'} aria-label="Previous month">‹</button><b>${BC.month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</b><button type="button" class="ssx-calnav" data-ssx-bm="1" aria-label="Next month">›</button></div>
+        <div class="ssx-dow">${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(x => `<span>${x}</span>`).join('')}</div><div class="ssx-grid">${cells}</div></div>
+      <div class="ssx-row"><button type="button" class="ssx-chip" data-ssx-range aria-pressed="${BC.range}">${BC.range ? 'Cancel range' : 'Block a range'}</button>${list.length ? `<span class="note">${list.length} day${list.length === 1 ? '' : 's'} blocked</span><button type="button" class="btn small" data-ssx-clearblocks>Clear all</button>` : ''}</div>
+      ${ranges.length ? `<div class="ssx-chips">${ranges.map(r => `<button type="button" class="ssx-chip on" data-ssx-unrange="${r[0]}|${r[1]}" aria-label="Unblock ${esc(label(r))}">${esc(label(r))} ×</button>`).join('')}</div>` : ''}`;
+  }
+  function wireBlockCal(box, L) {
+    const cur = () => new Set((st.link && st.link.blocked || []).filter(d => d >= todayStr()));
+    const put = set => { saveLink({ blocked: [...set].sort().slice(0, 400) }, true); render(); };
+    box.querySelectorAll('[data-ssx-bm]').forEach(b => b.onclick = e => { e.stopPropagation(); BC.month = new Date(BC.month.getFullYear(), BC.month.getMonth() + Number(b.dataset.ssxBm), 1); render(); });
+    box.querySelectorAll('[data-ssx-range]').forEach(b => b.onclick = e => { e.stopPropagation(); BC.range = !BC.range; BC.from = ''; render(); });
+    box.querySelectorAll('[data-ssx-clearblocks]').forEach(b => b.onclick = e => { e.stopPropagation(); put(new Set()); note('link', 'All blocked dates cleared.'); });
+    box.querySelectorAll('[data-ssx-unrange]').forEach(b => b.onclick = e => { e.stopPropagation(); const [a, z] = b.dataset.ssxUnrange.split('|'), set = cur(); for (let d = a; d <= z; d = addDays(d, 1)) set.delete(d); put(set); });
+    box.querySelectorAll('[data-ssx-bd]').forEach(b => b.onclick = e => {
+      e.stopPropagation(); const d = b.dataset.ssxBd, set = cur();
+      if (BC.range) {
+        if (!BC.from) { BC.from = d; render(); return; }
+        let [a, z] = [BC.from, d].sort(); if (daysBetween(a, z) > 366) z = addDays(a, 366);
+        for (let x = a; x <= z; x = addDays(x, 1)) set.add(x);
+        BC.range = false; BC.from = ''; put(set); return;
+      }
+      set.has(d) ? set.delete(d) : set.add(d); put(set);
+    });
+  }
+
+  /* ---------- Settings: grouped in the order you use the app, with a section menu */
+  const GROUPS = [['profile', 'Profile'], ['google', 'Google'], ['bookings', 'Bookings'], ['reminders', 'Reminders'], ['email', 'Email & invoices'], ['look', 'Look'], ['account', 'Account']];
+  let curGroup = (() => { try { return localStorage.getItem('ss-setgroup') || 'profile'; } catch (_) { return 'profile'; } })();
+  let organizing = false;
+  function organize() {
+    const sec = document.querySelector('section[data-view="settings"]'); if (!sec || organizing) return;
+    organizing = true;
+    try {
+      let nav = sec.querySelector(':scope > .ssg-nav');
+      if (!nav) {
+        nav = document.createElement('nav'); nav.className = 'ssg-nav'; nav.setAttribute('aria-label', 'Settings sections');
+        nav.innerHTML = GROUPS.map(([k, t]) => `<button type="button" data-ssg-go="${k}">${t}</button>`).join('');
+        const head = sec.querySelector(':scope > .head'); head ? head.after(nav) : sec.prepend(nav);
+        nav.addEventListener('click', e => { const b = e.target.closest('[data-ssg-go]'); if (!b) return; e.stopPropagation(); showGroup(b.dataset.ssgGo, true); });
+      }
+      let anchor = nav;
+      for (const [k, t] of GROUPS) {
+        let g = sec.querySelector(`:scope > .ssg[data-ssg="${k}"]`);
+        if (!g) { g = document.createElement('div'); g.className = 'ssg'; g.dataset.ssg = k; g.setAttribute('aria-label', t); }
+        if (anchor.nextElementSibling !== g) anchor.after(g);
+        anchor = g;
+      }
+      const card = q => { const el = sec.querySelector(q); return el ? (el.closest('.ssx-host') || el.closest('.card') || el) : null; };
+      // Appearance (light/dark) gets its own card in Look
+      let look = document.getElementById('ssg-appearance');
+      const seg = document.getElementById('themeSeg');
+      if (!look && seg) { look = document.createElement('div'); look.className = 'card'; look.id = 'ssg-appearance'; look.innerHTML = '<div class="head"><h3>Light or dark</h3></div>'; look.appendChild(seg.parentElement); }
+      const place = {
+        profile: [card('#kitAvatar')],
+        google: [card('#ss-google'), card('#driveRoots'), card('#setCals')],
+        bookings: [card('#defCl'), document.getElementById('ssx-host-link')],
+        reminders: [document.getElementById('ssx-host-notify')],
+        email: [card('#ss-signature'), card('#payList')],
+        look: [look, card('#palPick'), card('#ss-motion-chk')],
+        account: [card('#ss-account'), card('[data-legal]')],
+      };
+      for (const [k, els] of Object.entries(place)) { const g = sec.querySelector(`:scope > .ssg[data-ssg="${k}"]`); for (const el of els) if (el && el.parentElement !== g) g.appendChild(el); }
+      // anything else that shows up later lands in Account so nothing is ever lost
+      const acct = sec.querySelector(':scope > .ssg[data-ssg="account"]');
+      [...sec.children].filter(c => c.classList.contains('card') || c.classList.contains('ssx-host')).forEach(c => acct.insertBefore(c, acct.firstChild));
+      showGroup(curGroup, false);
+    } finally { organizing = false; }
+  }
+  function showGroup(k, scroll) {
+    if (!GROUPS.some(g => g[0] === k)) k = 'profile';
+    curGroup = k; try { localStorage.setItem('ss-setgroup', k); } catch (_) {}
+    const sec = document.querySelector('section[data-view="settings"]'); if (!sec) return;
+    sec.querySelectorAll(':scope > .ssg').forEach(g => { g.hidden = g.dataset.ssg !== k; });
+    sec.querySelectorAll('[data-ssg-go]').forEach(b => { const on = b.dataset.ssgGo === k; b.setAttribute('aria-current', on ? 'true' : 'false'); if (on && scroll !== null) b.scrollIntoView({ block: 'nearest', inline: 'center' }); });
+    if (scroll) { const nav = sec.querySelector('.ssg-nav'); const y = nav.getBoundingClientRect().top + scrollY - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ss-top')) || 64) - 4; if (scrollY > y) window.scrollTo({ top: y, behavior: 'smooth' }); }
+  }
+  window.ssShowSettings = (k, targetId) => { window.goTab('settings'); organize(); showGroup(k, false); if (targetId) setTimeout(() => { const t = document.getElementById(targetId); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 200); };
+  // a field inside a hidden group that gets focus (for example from an app message) opens its group
+  document.addEventListener('focusin', e => { const g = e.target.closest && e.target.closest('section[data-view="settings"] > .ssg[hidden]'); if (g) showGroup(g.dataset.ssg, false); });
+
+  /* ---------- Settings in the tab menu (bottom of the side menu / end of the phone bar) */
+  function setupNav() {
+    const tabs = document.getElementById('tabs'); if (!tabs || tabs.querySelector('[data-tab="settings"]')) return;
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.tab = 'settings'; b.className = 'ssx-settab'; b.setAttribute('aria-current', 'false');
+    b.innerHTML = `<svg viewBox="0 0 28 28" width="28" height="28" fill="none" aria-hidden="true"><circle cx="14" cy="14" r="9.5" fill="color-mix(in srgb, var(--accent) 22%, transparent)"/><g transform="translate(2 2)" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></g><circle cx="14" cy="14" r="3" fill="var(--accent-2, currentColor)"/></svg>Settings`;
+    b.onclick = () => window.goTab('settings');
+    tabs.appendChild(b);
+    document.documentElement.classList.add('ssx-settab-on');
+    try { if (document.querySelector('section[data-view="settings"]:not([hidden])')) b.setAttribute('aria-current', 'true'); } catch (_) {}
+  }
+  // the side menu stays put under the header while you scroll
+  const syncTop = () => { const h = document.querySelector('header.top'); if (h) document.documentElement.style.setProperty('--ss-top', Math.round(Math.max(0, h.getBoundingClientRect().bottom)) + 'px'); };
+  addEventListener('scroll', syncTop, { passive: true }); addEventListener('resize', syncTop);
 
   /* ---------- Booking link card in the Kit */
   function renderKit() {
@@ -263,7 +377,7 @@ function appExtras() {
       : `<div class="ssx-head"><div><h3>Booking link</h3><p class="note">Let promoters and coordinators pick an open date and send you a request. Requests show up as Leads.</p></div></div>
          <div class="ssx-row"><button type="button" class="btn primary small" data-ssx-edit>Set up my booking link</button></div>`;
     wireLink(box, link, L, 'kit');
-    const ed = box.querySelector('[data-ssx-edit]'); if (ed) ed.onclick = e => { e.stopPropagation(); window.goTab('settings'); setTimeout(() => { const c = document.getElementById('ssx-link'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 250); };
+    const ed = box.querySelector('[data-ssx-edit]'); if (ed) ed.onclick = e => { e.stopPropagation(); window.ssShowSettings('bookings', 'ssx-link'); };
   }
 
   async function claimSlug() {
