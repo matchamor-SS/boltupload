@@ -9,6 +9,32 @@
 import { sb } from './supabase.js';
 import './extras.css';
 
+/* Fix: the check-mark animation on app messages watched the message box and added a new check mark every time the
+   box changed, including when it added its own check mark, so it looped forever and froze the page right after
+   "Saved", "Booking added", "Sent" or "Copied". Nothing is allowed to watch the message box now, and the check mark
+   is added here once per message instead. */
+(function safeToast() {
+  const watch = MutationObserver.prototype.observe;
+  MutationObserver.prototype.observe = function (target, options) {
+    if (target && target.id === 'toast') return;
+    return watch.call(this, target, options);
+  };
+  const CHECK = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5 L6.5 12 L13 4.5"/></svg>';
+  const hook = () => {
+    const orig = window.toast; if (typeof orig !== 'function') return false; if (orig.__ssxSafe) return true;
+    const safe = function (msg) {
+      const out = orig.apply(this, arguments);
+      try {
+        const el = document.getElementById('toast');
+        if (el && /saved|sent|added|copied/i.test(String(msg)) && !el.querySelector('.ssx-tick')) { const s = document.createElement('span'); s.className = 'ssx-tick'; s.style.cssText = 'display:inline-flex;margin-right:4px'; s.innerHTML = CHECK; el.insertBefore(s, el.firstChild); }
+      } catch (_) {}
+      return out;
+    };
+    safe.__ssxSafe = true; window.toast = safe; return true;
+  };
+  if (!hook()) { const t = setInterval(() => { if (hook()) clearInterval(t); }, 200); setTimeout(() => clearInterval(t), 60000); }
+})();
+
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pad = n => String(n).padStart(2, '0');
 const isoLocal = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
