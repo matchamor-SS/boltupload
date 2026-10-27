@@ -473,3 +473,11 @@ html.ssx-epk-open, html.ssx-epk-open body { overflow: hidden; }
   html.ssx-epk-open .epk-ed { box-shadow: none !important; }
   html.ssx-epk-open .epk-ed:empty { display: none; }
 }
+/* ===== Smooth saving: busy buttons and the "Saving…" note ===== */
+.btn.ssx-busy { opacity: .75; cursor: progress; }
+.btn.ssx-busy::before { content: ""; width: 13px; height: 13px; margin-right: 8px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; display: inline-block; vertical-align: -2px; animation: ssxSpin .8s linear infinite; }
+@keyframes ssxSpin { to { transform: rotate(360deg); } }
+.ssx-saving { max-width: calc(100vw - 32px); box-sizing: border-box; padding: 8px 16px; border-radius: 999px; background: var(--surface); color: var(--ink); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); box-shadow: 0 10px 30px -12px rgba(0, 0, 0, .4); font-size: 13.5px; font-weight: 600; text-align: center; }
+.ssx-saving[hidden] { display: none; }
+.ssx-saving.slow { border-color: var(--warn, #B7791F); }
+@media (prefers-reduced-motion: reduce) { .btn.ssx-busy::before { animation: none; } }
