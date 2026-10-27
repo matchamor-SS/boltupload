@@ -361,3 +361,77 @@ html:root[data-palette="champagne"][data-mode="dark"] .card { background: rgba(2
 html:root[data-palette="champagne"] .hero { border: 1px solid rgba(212, 178, 110, .4); }
 html:root[data-palette="champagne"] header.top { border-bottom-color: rgba(212, 178, 110, .3) !important; }
 html body header.top .brand .ssx-mono { font-family: "Italiana", "Bodoni 72", Didot, Georgia, serif !important; font-size: 30px !important; letter-spacing: 0 !important; text-transform: none !important; color: transparent !important; }
+/* ===== Fix: pop-ups, menus and floating panels open where you click, inside the window ===== */
+/* (the sign-in page styles were pushing every floating panel into the page flow) */
+html body #ss-auth ~ .pop { position: fixed !important; z-index: 80 !important; }
+html body #ss-auth ~ .notice-bg { position: fixed !important; z-index: 70 !important; }
+html body #ss-auth ~ #toast, html body #ss-auth ~ .toast { position: fixed !important; z-index: 90 !important; }
+html body #ss-auth ~ #sheetRoot, html body #ss-auth ~ #composeRoot { position: relative !important; z-index: 40 !important; }
+html body #ss-auth ~ #composeDock { display: none !important; }
+html body .pop { max-height: min(420px, calc(100vh - 24px)); overflow: auto; overscroll-behavior: contain; }
+
+/* minimized email: a small pill at the bottom right with reopen and discard */
+.ssx-dock { position: fixed; z-index: 35; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; gap: 6px; max-width: calc(100vw - 32px); padding: 6px 6px 6px 14px; border-radius: 999px; background: var(--surface); color: var(--ink); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); box-shadow: 0 16px 40px -14px rgba(0, 0, 0, .45); animation: ssxFade .25s ease; }
+.ssx-dock[hidden] { display: none; }
+.ssx-dock .ssx-dock-l { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; font-weight: 500; }
+.ssx-dock .ssx-dock-l span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.ssx-dock button { flex: none; width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 20px; line-height: 1; cursor: pointer; display: grid; place-items: center; }
+.ssx-dock button.go { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+@media (min-width: 1024px) { .ssx-dock { right: 24px; bottom: 24px; } }
+.ssx-dock button.x.armed { background: var(--bad, #B23A3A); border-color: var(--bad, #B23A3A); color: #fff; }
+
+/* ===== EPK builder ===== */
+#ssx-epk { display: flex; flex-direction: column; background: var(--bg); color: var(--ink); font-family: var(--body); }
+html.ssx-epk-open, html.ssx-epk-open body { overflow: hidden; }
+.ssx-epk-bar { flex: none; padding: 16px 20px 10px; border-bottom: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 10px; max-height: 46vh; overflow-y: auto; }
+.ssx-epk-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
+.ssx-epk-head h2 { margin: 0; font-size: 30px; }
+.ssx-epk-head .note { margin: 2px 0 0; }
+.ssx-epk-opts { display: flex; flex-direction: column; gap: 8px; }
+.ssx-epk-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ssx-epk-row .ssx-chip { min-height: 36px; padding: 6px 12px; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+.ssx-epk-k { width: 70px; flex: none; font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.ssx-epk-sw { width: 22px; height: 10px; border-radius: 99px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .15); }
+.ssx-epk-tip { margin: 0; }
+.ssx-epk-stage { flex: 1; overflow: auto; padding: 20px 16px 40px; background: color-mix(in srgb, var(--ink) 8%, var(--bg)); }
+.ssx-epk-pages { width: 816px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+@media (max-width: 700px) { .ssx-epk-k { width: 100%; } .ssx-epk-head h2 { font-size: 24px; } }
+
+.epk-page { position: relative; width: 816px; height: 1056px; box-sizing: border-box; padding: 56px 64px 64px; display: flex; flex-direction: column; gap: 26px; overflow: hidden; font-family: "Inter Tight", system-ui, sans-serif; box-shadow: 0 24px 60px -30px rgba(0, 0, 0, .55); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.epk-page a { text-decoration: none; }
+.epk-mono { display: inline-block; font-family: "Italiana", "Bodoni 72", Didot, Georgia, serif; line-height: 1; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; }
+.epk-top { display: flex; justify-content: space-between; align-items: center; }
+.epk-label { font-family: "DM Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: .26em; text-transform: uppercase; margin: 0 0 12px; }
+.epk-cover { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 40px; align-items: end; margin-top: 40px; }
+.epk-photo { height: 400px; border-radius: 150px 150px 18px 18px; overflow: hidden; border: 1px solid; display: grid; place-items: center; background: rgba(127, 127, 127, .08); }
+.epk-book { border-top: 1px solid; padding-top: 20px; display: flex; flex-direction: column; gap: 12px; }
+.epk-cta { align-self: flex-start; padding: 12px 20px; border-radius: 999px; font-weight: 600; font-size: 14px; }
+.epk-wave { position: absolute; left: 0; right: 0; bottom: 50px; height: 80px; display: flex; align-items: flex-end; gap: 4px; padding: 0 8px; opacity: .3; pointer-events: none; }
+.epk-wave i { flex: 1; }
+.epk-foot { position: absolute; left: 0; right: 0; bottom: 18px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; z-index: 1; }
+.epk-foot .epk-mono { font-size: 14px; letter-spacing: 0; }
+.epk-stats { display: flex; gap: 48px; border-top: 1px solid; border-bottom: 1px solid; padding: 18px 0; }
+.epk-stats > div { display: flex; flex-direction: column; gap: 4px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; }
+.epk-shows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; }
+.epk-show { display: flex; gap: 14px; align-items: center; padding: 9px 0; border-bottom: 1px solid; font-size: 14px; }
+.epk-date { width: 54px; height: 54px; flex: none; border: 1px solid; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: "DM Mono", monospace; font-size: 9.5px; letter-spacing: .1em; line-height: 1.1; }
+.epk-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px 40px; }
+.epk-link { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid; font-size: 14px; }
+.epk-link span:last-child { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+.epk-ed { outline: none; border-radius: 6px; transition: box-shadow .15s; }
+.epk-ed:hover { box-shadow: 0 0 0 1px rgba(212, 178, 110, .45); }
+.epk-ed:focus { box-shadow: 0 0 0 2px rgba(212, 178, 110, .8); }
+.epk-ed:empty::before { content: attr(data-ph); opacity: .45; }
+
+@media print {
+  @page { size: letter; margin: 0; }
+  html.ssx-epk-open body > *:not(#ssx-epk) { display: none !important; }
+  html.ssx-epk-open, html.ssx-epk-open body { overflow: visible !important; background: #fff !important; height: auto !important; }
+  html.ssx-epk-open #ssx-epk { position: static !important; display: block !important; background: none !important; }
+  html.ssx-epk-open .ssx-epk-bar { display: none !important; }
+  html.ssx-epk-open .ssx-epk-stage { padding: 0 !important; overflow: visible !important; background: none !important; }
+  html.ssx-epk-open .ssx-epk-pages { zoom: 1 !important; gap: 0 !important; width: auto !important; }
+  html.ssx-epk-open .epk-page { box-shadow: none !important; break-after: page; page-break-after: always; }
+  html.ssx-epk-open .epk-ed { box-shadow: none !important; }
+  html.ssx-epk-open .epk-ed:empty { display: none; }
+}
