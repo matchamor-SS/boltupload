@@ -481,3 +481,18 @@ html.ssx-epk-open, html.ssx-epk-open body { overflow: hidden; }
 .ssx-saving[hidden] { display: none; }
 .ssx-saving.slow { border-color: var(--warn, #B7791F); }
 @media (prefers-reduced-motion: reduce) { .btn.ssx-busy::before { animation: none; } }
+/* ===== Booking requests at the top of Bookings ===== */
+.ssx-req { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.ssx-req h3 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ssx-reqs { display: flex; flex-direction: column; gap: 12px; }
+.ssx-reqitem { border: 1px solid var(--line); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 10px; background: var(--surface); }
+.ssx-reqtop { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.ssx-reqtop b { font-size: 16px; }
+.ssx-reqtop .ssx-pill { flex: none; white-space: nowrap; }
+.ssx-reqkv { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 6px 12px; margin: 0; font-size: 14px; }
+.ssx-reqkv dt { color: var(--muted); font-size: 12.5px; padding-top: 1px; }
+.ssx-reqkv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.ssx-reqnote { white-space: pre-line; }
+.ssx-badge { position: absolute; top: 4px; right: 6px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: var(--bad, #B23A3A); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+html.ssx-rail-min body #tabs.tabs button .ssx-badge { font-size: 11px !important; }
+@media (max-width: 520px) { .ssx-reqkv { grid-template-columns: 1fr; gap: 2px; } .ssx-reqkv dt { margin-top: 6px; } }
