@@ -663,19 +663,23 @@ function appExtras() {
   }
 
   /* ---------- First-time walkthrough: offered once to new performers, can be skipped, replay from Settings */
-  const TOUR = [
-    { title: 'Welcome to Set & Settled', body: 'Your home base as a performer: bookings, tasks, money, outreach and goals in one place. This quick tour shows you around and helps you set up the basics. About 2 minutes.' },
-    { tab: 'settings', group: 'profile', target: '#kitAvatar', title: 'Start with your profile', body: 'Your performer name, photo, bio and season goals. They fill in your Kit, invoices and booking page so you only type them once.', action: ['Edit my profile', () => { if (typeof profileForm === 'function') profileForm(); else { const b = document.getElementById('editProfile'); b && b.click(); } }] },
-    { tab: 'goals', target: '#ssx-goals', title: 'Set your goals', body: 'Track followers, releases, shows and income. Some goals count themselves from your bookings, and checklist goals can have a due date for every step.', action: ['Add a goal', () => { const b = document.querySelector('[data-ssx-gadd]'); b && b.click(); }] },
+    const TOUR = [
+    { title: 'Welcome to Set & Settled', body: 'Your home base as a performer: bookings, tasks, money, outreach, goals and your press kit in one place. This quick tour shows you around and helps you set up the basics. About 3 minutes.' },
+    { tab: 'home', target: '#ssx-railbtn', title: 'Your menu', body: 'Every page lives in the menu on the left. Tap this button at the top to fold the menu away when you want more room, and tap it again to bring it back.' },
+    { tab: 'settings', group: 'profile', target: '#kitAvatar', title: 'Start with your profile', body: 'Your performer name, photo, bio and contact details. They fill in your Kit, EPK, invoices and booking page so you only type them once.', action: ['Edit my profile', () => { if (typeof profileForm === 'function') profileForm(); else { const b = document.getElementById('editProfile'); b && b.click(); } }] },
+    { tab: 'settings', group: 'look', target: '#palPick', title: 'Make it yours', body: 'Pick a color theme (Champagne is the default) and switch between Light and Dark. Your choice follows you on every device.' },
+    { tab: 'goals', target: '#ssx-goals', title: 'Set your goals', body: 'Track followers, releases, shows and income. Some goals count themselves from your bookings, checklist goals can have a due date for every step, and your progress shows on Home.', action: ['Add a goal', () => { const b = document.querySelector('[data-ssx-gadd]'); b && b.click(); }] },
     { tab: 'settings', group: 'bookings', target: '#ssx-link', title: 'Share when you are available', body: 'Turn on your booking link, pick the days you play and block dates you are away. Promoters pick an open date and their request lands in Bookings as a Lead.' },
     { tab: 'settings', group: 'google', target: '#ss-google', title: 'Connect Google', body: 'Connect Gmail to send emails and invoices from your own address, Drive to keep your files together and Calendar to see your shows. You choose what to connect.' },
     { tab: 'bookings', target: '[data-new="booking"]', title: 'Every show in one list', body: 'Add a show and move it from Lead to Confirmed, Played and Paid. Each stage adds its own checklist, with due dates set from the show date.' },
     { tab: 'calendar', target: '#blockBtn', title: 'See your month', body: 'All your shows on a calendar. Block dates here too, and they close on your booking link.' },
-    { tab: 'tasks', target: '#newTask', title: 'Never miss a step', body: 'Contracts, deposits, promo posts and set prep, sorted by due date. Turn on Reminders and the app nudges you when things are due.' },
-    { tab: 'kit', target: '#copyPress', title: 'Your press kit, ready to send', body: 'Bio, photos, mixes, socials and your booking link in one spot. Copy the whole kit into an email in one tap.' },
+    { tab: 'tasks', target: '#newTask', title: 'Never miss a step', body: 'Contracts, deposits, promo posts and set prep, sorted by due date. Due dates never land in the past, and Reminders can nudge you when things are due.' },
+    { tab: 'kit', target: '#ssx-kit', title: 'Your Kit', body: 'Bio, photos, mixes, socials and riders in one spot, with your booking link ready to copy. Copy your whole press info into an email in one tap.' },
+    { tab: 'kit', target: '#ssx-epk-btn', title: 'Create an EPK', body: 'Turn your Kit and shows into a designed press kit. Pick colors, Light or Dark, and which sections to include, move them around, edit any text, then download a PDF to send to venues.', action: ['Create my EPK', () => openEPK()] },
     { tab: 'contacts', target: '[data-new="contact"]', title: 'Your people', body: 'Promoters, venues, photographers and collaborators. Link them to shows so you always know who to follow up with.' },
-    { tab: 'comms', target: '[data-new="template"]', title: 'Email templates', body: 'Save your go-to emails for pitches, confirmations and thank-yous, then fill them in from any show with one tap.' },
+    { tab: 'comms', target: '[data-new="template"]', title: 'Emails and templates', body: 'Save your go-to emails for pitches, confirmations and thank-yous, then fill them in from any show. Minimize an email to keep it in the corner, then tap + to reopen it or × to discard it.' },
     { tab: 'money', target: '[data-new="expense"]', title: 'Financials', body: 'Log income and expenses, send invoices and see what you have earned this season.' },
+    { tab: 'settings', group: 'email', target: '#ss-signature', title: 'Email signature and payments', body: 'Add your email signature and how you like to be paid, so every email and invoice goes out looking finished.' },
     { tab: 'settings', group: 'reminders', target: '#ssx-notify', title: 'Reminders', body: 'Choose phone and laptop alerts, a morning email digest, or both. Reminders come from your task and goal due dates.' },
     { title: "You're all set", body: 'That is the tour. You can take it again anytime from Settings, under Account. Have a great season!' },
   ];
@@ -728,7 +732,7 @@ function appExtras() {
     if (i >= TOUR.length) return finishTour();
     TS.i = Math.max(0, i); const s = TOUR[TS.i];
     saveTour({ status: 'in_progress', step: TS.i });
-    closeSheets();
+    closeSheets(); if (EPK.el) closeEPK();
     try {
       if (s.tab === 'settings' && s.group) window.ssShowSettings(s.group);
       else if (s.tab) window.goTab(s.tab);
@@ -772,7 +776,7 @@ function appExtras() {
     const i = TS.i; endTour(true); TS.i = i;
     setTimeout(() => { try { fn(); } catch (_) {} }, 60);
     TS.pill = document.createElement('div'); TS.pill.className = 'ssx-tour-pill';
-    TS.pill.style.cssText = 'position:fixed;z-index:15;right:16px;bottom:' + (innerWidth >= 1024 ? '24px' : 'calc(16px + env(safe-area-inset-bottom, 0px))') + ';';
+    TS.pill.style.cssText = 'position:fixed;z-index:250;right:16px;bottom:' + (innerWidth >= 1024 ? '24px' : 'calc(16px + env(safe-area-inset-bottom, 0px))') + ';';
     TS.pill.innerHTML = '<button type="button" class="btn primary small" data-ssx-tresume>Continue tour →</button><button type="button" class="ssx-tour-x" data-ssx-tend aria-label="End the tour">×</button>';
     document.body.appendChild(TS.pill);
     TS.pill.querySelector('[data-ssx-tresume]').onclick = e => { e.stopPropagation(); const k = TS.i; TS.pill.remove(); TS.pill = null; startTour(k + 1); };
