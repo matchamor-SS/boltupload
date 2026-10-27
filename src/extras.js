@@ -120,7 +120,7 @@ function appExtras() {
         st.db.doc('settings/profile').onSnapshot(() => setTimeout(() => fillProfile(), 0), () => {});
     st.db.doc('settings/bookinglink').onSnapshot(s => { st.link = s.exists ? s.data() : {}; render(); renderKit(); }, () => {});
     st.db.collection('goals').onSnapshot(s => { st.goals = s.docs.map(d => ({ id: d.id, ...d.data() })); renderGoals(); renderHomeGoals(); queueSoon(); }, () => {});
-    let lastB = null; setInterval(() => { try { if (S.bookings !== lastB) { lastB = S.bookings; renderGoals(); renderHomeGoals(); } } catch (_) {} }, 2000);
+    let lastB = null; setInterval(() => { try { if (S.bookings !== lastB) { lastB = S.bookings; renderGoals(); renderHomeGoals(); renderRequests(); } } catch (_) {} }, 1000);
     const homeSec = document.querySelector('section[data-view="home"]');
     if (homeSec) new MutationObserver(() => { if (!document.getElementById('ssx-home-goals')) renderHomeGoals(); }).observe(homeSec, { childList: true });
     st.db.doc('notify/status').onSnapshot(s => { st.status = s.exists ? s.data() : null; render(); }, () => {});
@@ -1213,21 +1213,68 @@ function appExtras() {
     const wrap = document.createElement('div'); wrap.className = 'ssx-row'; cp.replaceWith(wrap); wrap.append(b, cp);
   }
   setInterval(mountEpkButton, 1000);
-  /* ---------- Booking link card in the Kit */
+    /* ---------- Booking link card in the Kit, and a copy of it at the top of Bookings */
   function renderKit() {
-    const sec = document.querySelector('section[data-view="kit"]'); if (!sec || !st.db) return;
-    let box = document.getElementById('ssx-kit');
-    if (!box) { box = document.createElement('div'); box.id = 'ssx-kit'; box.className = 'card ssx ssx-kitcard'; const head = sec.querySelector(':scope > .head'); head ? head.after(box) : sec.prepend(box); }
-    if (box.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;
     const L = { ...defLink(), ...(st.link || {}) }, link = L.slug ? `${location.origin}/?book=${encodeURIComponent(L.slug)}` : '';
-    box.innerHTML = L.on && link
-      ? `<div class="ssx-head"><div><h3>Booking link</h3><p class="note">Send this to promoters and coordinators so they can request an open date.</p></div></div>
-         ${linkBox(link, 'ssx-kiturl')}
-         <div class="ssx-row">${navigator.share ? '<button type="button" class="btn small" data-ssx-share>Share…</button>' : ''}<a class="btn small" href="${esc(link)}" target="_blank" rel="noopener">Preview</a><button type="button" class="btn small" data-ssx-edit>Edit</button></div>${msgHTML('kit')}`
-      : `<div class="ssx-head"><div><h3>Booking link</h3><p class="note">Let promoters and coordinators pick an open date and send you a request. Requests show up as Leads.</p></div></div>
-         <div class="ssx-row"><button type="button" class="btn primary small" data-ssx-edit>Set up my booking link</button></div>`;
-    wireLink(box, link, L, 'kit');
-    const ed = box.querySelector('[data-ssx-edit]'); if (ed) ed.onclick = e => { e.stopPropagation(); window.ssShowSettings('bookings', 'ssx-link'); };
+    const spots = [
+      ['kit', 'ssx-kit', 'card ssx ssx-kitcard', 'ssx-kiturl', 'Send this to promoters and coordinators so they can request an open date.'],
+      ['bookings', 'ssx-bklink', 'card ssx ssx-kitcard', 'ssx-bkurl', 'Copy it and send it to promoters and coordinators. Their requests show up here as Leads.']
+    ];
+    for (const [view, id, cls, urlId, blurb] of spots) {
+      const sec = document.querySelector(`section[data-view="${view}"]`); if (!sec || !st.db) continue;
+      let box = document.getElementById(id);
+      if (!box) { box = document.createElement('div'); box.id = id; box.className = cls; const head = sec.querySelector(':scope > .head'); head ? head.after(box) : sec.prepend(box); }
+      if (box.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') continue;
+      box.innerHTML = L.on && link
+        ? `<div class="ssx-head"><div><h3>Booking link</h3><p class="note">${blurb}</p></div></div>
+           ${linkBox(link, urlId)}
+           <div class="ssx-row">${navigator.share ? '<button type="button" class="btn small" data-ssx-share>Share…</button>' : ''}<a class="btn small" href="${esc(link)}" target="_blank" rel="noopener">Preview</a><button type="button" class="btn small" data-ssx-edit>Edit</button></div>${msgHTML(view)}`
+        : `<div class="ssx-head"><div><h3>Booking link</h3><p class="note">Let promoters and coordinators pick an open date and send you a request. Requests show up as Leads.</p></div></div>
+           <div class="ssx-row"><button type="button" class="btn primary small" data-ssx-edit>Set up my booking link</button></div>`;
+      wireLink(box, link, L, view);
+      const ed = box.querySelector('[data-ssx-edit]'); if (ed) ed.onclick = e => { e.stopPropagation(); window.ssShowSettings('bookings', 'ssx-link'); };
+    }
+  }
+
+  /* ---------- Booking requests from your booking link: shown at the top of Bookings to accept or decline */
+  const REQ = { seen: null, busy: '' };
+  const pendingRequests = () => { let bs = []; try { bs = S.bookings || []; } catch (_) {} return bs.filter(b => b.source === 'booking-link' && !b.requestStatus && String(b.status || '').toLowerCase() === 'lead').sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))); };
+  function renderRequests() {
+    const sec = document.querySelector('section[data-view="bookings"]'); if (!sec || !st.db) return;
+    const list = pendingRequests();
+    // a small count on the Bookings tab
+    const tabBtn = document.querySelector('#tabs [data-tab="bookings"]');
+    if (tabBtn) { let bd = tabBtn.querySelector('.ssx-badge'); if (list.length) { if (!bd) { bd = document.createElement('span'); bd.className = 'ssx-badge'; tabBtn.appendChild(bd); } bd.textContent = String(list.length); bd.setAttribute('aria-label', `${list.length} new booking request${list.length === 1 ? '' : 's'}`); } else if (bd) bd.remove(); }
+    // a heads-up when a new request arrives while the app is open
+    const ids = list.map(b => b.id);
+    if (REQ.seen && ids.some(id => !REQ.seen.has(id)) && window.toast) window.toast('New booking request. See Bookings.');
+    REQ.seen = new Set(ids);
+    let box = document.getElementById('ssx-requests');
+    if (!list.length) { if (box) box.remove(); return; }
+    if (!box) { box = document.createElement('div'); box.id = 'ssx-requests'; box.className = 'card ssx ssx-kitcard ssx-req'; const head = sec.querySelector(':scope > .head'); head ? head.after(box) : sec.prepend(box); }
+    if (box.contains(document.activeElement) && document.activeElement.tagName !== 'BODY' && REQ.busy) return;
+    const who = b => { let c = null; try { c = contact(b.promoterId || b.venueId); } catch (_) {} return c || {}; };
+    const nm = c => { try { return cName(c); } catch (_) { return c.name || c.org || ''; } };
+    const when = b => { const d = b.date ? niceDate(b.date) : 'No date'; const t = b.setStart ? time12(b.setStart) + (b.setEnd ? ' – ' + time12(b.setEnd) : '') : ''; return t ? `${d} · ${t}` : d; };
+    const notes = b => String(b.notes || '').split('\n').filter(l => !/^Booking request from your link/.test(l)).join('\n').trim();
+    box.innerHTML = `<div class="ssx-head"><div><h3>Booking request${list.length === 1 ? '' : 's'} <span class="ssx-pill on">${list.length} new</span></h3><p class="note">Sent through your booking link. Accept to confirm the show, or decline to close it out.</p></div></div>
+      <div class="ssx-reqs">${list.map(b => { const c = who(b); return `<div class="ssx-reqitem" data-req="${esc(b.id)}">
+        <div class="ssx-reqtop"><div><b>${esc(b.title || 'Booking request')}</b><div class="note">${esc(when(b))}${b.city ? ' · ' + esc(b.city) : ''}</div></div>${b.fee ? `<span class="ssx-pill">Offer $${esc(Number(b.fee).toLocaleString('en-US'))}</span>` : ''}</div>
+        <dl class="ssx-reqkv"><dt>From</dt><dd>${esc(nm(c) || 'Someone')}${c.email ? ` · <a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ''}${c.phone ? ` · ${esc(c.phone)}` : ''}</dd>${b.address ? `<dt>Address</dt><dd>${esc(b.address)}</dd>` : ''}${notes(b) ? `<dt>Details</dt><dd class="ssx-reqnote">${esc(notes(b))}</dd>` : ''}<dt>Received</dt><dd>${b.createdAt ? esc(new Date(b.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) : '—'}</dd></dl>
+        <div class="ssx-row"><button type="button" class="btn primary small" data-req-ok>Accept</button><button type="button" class="btn small" data-req-reply>Reply</button><button type="button" class="btn small" data-req-open>Open</button><button type="button" class="btn small" data-req-no>${REQ.busy === 'no:' + b.id ? 'Tap again to decline' : 'Decline'}</button></div>
+      </div>`; }).join('')}</div>`;
+    box.querySelectorAll('[data-req]').forEach(item => {
+      const id = item.dataset.req, b = list.find(x => x.id === id); if (!b) return;
+      const decide = async (status, label) => {
+        const upd = { status, requestStatus: status === 'lost' ? 'declined' : 'accepted', reviewedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), stageAt: { [status]: (b.stageAt || {})[status] || todayStr() } };
+        const ok = typeof window.patch === 'function' ? await window.patch('bookings', id, upd) : null;
+        if (ok) { REQ.busy = ''; if (window.toast) window.toast(label); try { if (status === 'confirmed' && typeof syncBookingEvent === 'function') syncBookingEvent(id, { ...b, ...upd }); } catch (_) {} renderRequests(); }
+      };
+      item.querySelector('[data-req-ok]').onclick = e => { e.stopPropagation(); decide('confirmed', 'Booking accepted and confirmed'); };
+      item.querySelector('[data-req-no]').onclick = e => { e.stopPropagation(); if (REQ.busy !== 'no:' + id) { REQ.busy = 'no:' + id; renderRequests(); setTimeout(() => { if (REQ.busy === 'no:' + id) { REQ.busy = ''; renderRequests(); } }, 4000); return; } decide('lost', 'Request declined'); };
+      item.querySelector('[data-req-open]').onclick = e => { e.stopPropagation(); try { bookingView(id); } catch (_) {} };
+      item.querySelector('[data-req-reply]').onclick = e => { e.stopPropagation(); try { composeSheet({ booking: id, to: b.promoterId || b.venueId || '' }); } catch (_) {} };
+    });
   }
 
   async function claimSlug() {
