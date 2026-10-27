@@ -87,6 +87,7 @@ function appExtras() {
   const wait = setInterval(async () => {
     if (!ready()) return;
     clearInterval(wait);
+        speedUp(); submitGuard();
     st.db = await window.claude.use('db');
     if (!st.db) return;
     st.db.doc('settings/notify').onSnapshot(s => { st.prefs = s.exists ? s.data() : {}; render(); queueSoon(); }, () => {});
@@ -790,7 +791,70 @@ function appExtras() {
     host.querySelector('[data-ssx-treplay]').onclick = e => { e.stopPropagation(); scrollTo(0, 0); startTour(0); };
   }
 
-   /* ---------- Pop-up lists stay open while you type or scroll inside them, and follow the button they belong to */
+  /* ---------- Smooth saving.
+     1. Every saved change used to redraw all nine pages at once, several times per save (once for the save and again
+        when the server echoed it back). With a full season of shows that froze the page for seconds. Now the page
+        redraws at most once per frame, only the page you are looking at right away, and the others while the
+        browser is idle (or the moment you open them).
+     2. Save buttons show "Saving…" while the change is on its way, can't be tapped twice (no duplicate bookings),
+        and a "Saving…" note appears at the top; if the connection is slow it says so instead of looking frozen. */
+  function speedUp() {
+    if (window.__ssxFast || typeof window.render !== 'function') return; window.__ssxFast = true;
+    const PAGES = { home: 'renderHome', bookings: 'renderBookings', calendar: 'renderCalendar', tasks: 'renderTasks', contacts: 'renderContacts', money: 'renderMoney', kit: 'renderKit' };
+    const stale = new Set(); let queued = false, idleOn = false;
+    const cur = () => { try { return tab; } catch (_) { return 'home'; } };
+    const runPage = k => { stale.delete(k); const f = window[PAGES[k]]; if (typeof f === 'function') { try { f(); } catch (e) { console.error(e); } } };
+    const later = window.requestIdleCallback ? f => requestIdleCallback(f, { timeout: 1500 }) : f => setTimeout(f, 80);
+    const idle = () => { if (idleOn || !stale.size) return; idleOn = true; later(() => { idleOn = false; if (queued) return; const k = [...stale][0]; if (k) runPage(k); idle(); }); };
+    const flush = () => {
+      queued = false;
+      try { const y = document.getElementById('yearLbl'); if (y && typeof year === 'function') y.textContent = year() + ' season'; } catch (_) {}
+      Object.keys(PAGES).forEach(k => stale.add(k));
+      const t = cur(); if (PAGES[t]) runPage(t);
+      try { if (typeof renderAvatars === 'function') renderAvatars(); } catch (_) {}
+      idle();
+    };
+    window.render = () => { if (queued) return; queued = true; requestAnimationFrame(flush); };
+    const origSet = window.setTab;
+    if (typeof origSet === 'function') window.setTab = function (t) { if (stale.has(t)) runPage(t); return origSet.apply(this, arguments); };
+  }
+  function submitGuard() {
+    if (window.__ssxGuard) return; window.__ssxGuard = true;
+    let lastBtn = null, lastAt = 0, pending = 0, slowT = null;
+    const busy = new Set();
+    const note = document.createElement('div'); note.className = 'ssx-saving'; note.setAttribute('role', 'status'); note.setAttribute('aria-live', 'polite'); note.hidden = true;
+    note.style.cssText = 'position:fixed;left:50%;top:calc(10px + env(safe-area-inset-top, 0px));transform:translateX(-50%);z-index:260;';
+    document.body.appendChild(note);
+    const say = (t, cls) => { note.textContent = t; note.className = 'ssx-saving' + (cls ? ' ' + cls : ''); note.hidden = !t; };
+    // remember which button started this save (taps inside forms, the email window and the EPK)
+    document.addEventListener('click', e => {
+      const b = e.target.closest && e.target.closest('button, .btn'); if (!b) return;
+      if (busy.has(b)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+      lastBtn = b; lastAt = Date.now();
+    }, true);
+    const markBusy = b => {
+      if (!b || busy.has(b) || !b.isConnected || !b.closest('#sheetRoot, #composeRoot, .sheet')) return;
+      busy.add(b); b.dataset.ssxLabel = b.textContent; b.classList.add('ssx-busy'); b.setAttribute('aria-busy', 'true'); b.disabled = true;
+      if (/save|add|log|create|update/i.test(b.textContent)) b.textContent = 'Saving…';
+    };
+    const unbusy = () => { busy.forEach(b => { b.classList.remove('ssx-busy'); b.removeAttribute('aria-busy'); if (b.isConnected) { b.disabled = false; if (b.dataset.ssxLabel) b.textContent = b.dataset.ssxLabel; } }); busy.clear(); };
+    const wrap = name => {
+      const orig = window[name]; if (typeof orig !== 'function' || orig.__ssx) return;
+      const w = async function (...args) {
+        if (lastBtn && Date.now() - lastAt < 15000) markBusy(lastBtn);
+        pending++; clearTimeout(slowT);
+        const showT = setTimeout(() => { if (pending) say(name === 'remove' ? 'Deleting…' : 'Saving…'); }, 350);
+        slowT = setTimeout(() => { if (pending) { say('Still saving… your connection looks slow. Keep this page open.', 'slow'); unbusy(); } }, 12000);
+        try { return await orig.apply(this, args); }
+        finally { clearTimeout(showT); pending = Math.max(0, pending - 1); if (!pending) { clearTimeout(slowT); unbusy(); say(''); } }
+      };
+      w.__ssx = true; window[name] = w;
+    };
+    ['save', 'patch', 'remove'].forEach(wrap);
+    // when you come back to the tab after a while, make sure the connection is awake before your next save
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) { try { sb.auth.getSession().catch(() => {}); } catch (_) {} } });
+  }
+  /* ---------- Pop-up lists stay open while you type or scroll inside them, and follow the button they belong to */
   new MutationObserver(muts => {
     for (const m of muts) for (const n of m.addedNodes) {
       if (!(n instanceof HTMLElement) || !n.classList.contains('pop') || typeof PK === 'undefined' || !PK.open || PK.open.el !== n) continue;
