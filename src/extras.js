@@ -821,10 +821,24 @@ function appExtras() {
     sync();
   })();
 
-  /* ---------- EPK: a designed, editable press kit built from the Kit and your shows, saved as a PDF */
-  const EPK = { el: null, cfg: null, saveT: null };
-  const EPK_SECTIONS = [['shows', 'Shows'], ['stats', 'Highlights'], ['music', 'Mixes & music'], ['links', 'Website & socials'], ['press', 'Press'], ['rider', 'Tech rider'], ['hosp', 'Hospitality rider']];
-  const epkDefaults = () => ({ palette: 'champagne', mode: 'dark', show: { shows: true, stats: true, music: true, links: true, press: true, rider: true, hosp: false }, text: {} });
+  /* ---------- EPK: a designed, editable press kit built from the Kit and your shows, saved as a PDF.
+     Every section can be turned on or off and moved; pages fill themselves in order. */
+  const EPK = { el: null, cfg: null, saveT: null, listOpen: true };
+  const EPK_BLOCKS = [
+    ['hero', 'Cover (name, picture, short bio)', 'full'], ['stats', 'Highlights', 'full'], ['longBio', 'Long bio', 'full'],
+    ['upcoming', 'Upcoming shows', 'half'], ['played', 'Recently played', 'half'], ['music', 'Mixes & music', 'half'],
+    ['links', 'Website & socials', 'half'], ['press', 'Press', 'half'], ['rider', 'Tech rider', 'half'],
+    ['hosp', 'Hospitality rider', 'half'], ['booking', 'Booking', 'full']
+  ];
+  const EPK_PARTS = {
+    hero: [['genres', 'Genres'], ['name', 'Name'], ['shortBio', 'Short bio'], ['photo', 'Picture']],
+    booking: [['contactName', 'Contact name'], ['email', 'Email'], ['phone', 'Phone'], ['avail', 'Availability'], ['lengths', 'Set lengths'], ['next', 'Next show'], ['button', 'Book button']]
+  };
+  const epkDefaults = () => ({
+    palette: 'champagne', mode: 'dark', order: EPK_BLOCKS.map(b => b[0]),
+    show: Object.fromEntries(EPK_BLOCKS.map(b => [b[0], b[0] !== 'hosp'])),
+    parts: Object.fromEntries(Object.values(EPK_PARTS).flat().map(p => [p[0], true])), text: {}
+  });
   const hexMix = (a, b, t) => { const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)); const x = p(a), y = p(b); return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
   const lum = h => { const [r, g, b] = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255); return .2126 * r + .7152 * g + .0722 * b; };
   function epkTheme(key, mode) {
@@ -835,8 +849,8 @@ function appExtras() {
     const darkest = [...cs].sort((a, b) => lum(a) - lum(b))[0] || '#8A6A35';
     const solid = champ ? (mode === 'dark' ? '#D4B26E' : '#8A6A35') : mode === 'dark' ? hexMix(flag ? cs[Math.floor(cs.length / 2)] : cs[0], '#ffffff', .35) : (flag ? darkest : hexMix(cs[0], '#000000', .15));
     return mode === 'dark'
-      ? { bg: '#0E100C', bg2: '#171A13', glow: '#26301E', ink: '#EFE7D3', muted: 'rgba(239,231,211,.68)', line: 'rgba(239,231,211,.14)', metal, solid }
-      : { bg: '#F6F1E6', bg2: '#FFFCF5', glow: '#EADFC8', ink: '#1C2117', muted: '#5E5A4E', line: '#E3D9C6', metal, solid };
+      ? { bg: '#0E100C', glow: '#26301E', ink: '#EFE7D3', muted: 'rgba(239,231,211,.68)', line: 'rgba(239,231,211,.14)', panel: 'rgba(239,231,211,.04)', metal, solid }
+      : { bg: '#F6F1E6', glow: '#EADFC8', ink: '#1C2117', muted: '#5E5A4E', line: '#E3D9C6', panel: 'rgba(255,252,245,.75)', metal, solid };
   }
   function epkData() {
     let p = {}, k = {}, links = [], bookings = [];
@@ -851,58 +865,97 @@ function appExtras() {
       name: p.djName || p.myName || 'Your name', genres: k.genres || '', shortBio: k.bioShort || '', longBio: k.bioLong || k.bioShort || '',
       rider: k.rider || '', hosp: k.hospitality || '', contactName: p.myName || p.djName || '', email: p.email || '', phone: p.phone || '',
       bookingLink: L.on && L.slug ? `${location.origin}/?book=${encodeURIComponent(L.slug)}` : '', photo,
+      avail: L.on && L.slug ? {
+        days: [0, 1, 2, 3, 4, 5, 6].filter(i => (L.days || []).includes(i)).map(i => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][i]).join(', '),
+        hours: L.earliest && L.latest ? `${time12(L.earliest)} – ${time12(L.latest)}` : '',
+        lengths: (L.lengths || []).slice().sort((a, b) => a - b).map(n => n < 60 ? n + ' min' : (n / 60) + ' hr').join(' · '),
+        notice: L.notice ? `${L.notice} day${L.notice > 1 ? 's' : ''} notice` : ''
+      } : null,
       music: links.filter(l => l.group === 'music'), socials: links.filter(l => (l.group || 'links') === 'links'), press: links.filter(l => l.group === 'press'),
       played: played.slice(0, 8).map(show), upcoming: upcoming.slice(0, 5).map(show),
-      stats: { shows: played.length, cities: new Set(played.map(b => String(b.city || '').trim().toLowerCase()).filter(Boolean)).size, venues: new Set(played.map(b => b.venueId).filter(Boolean)).size }
+      stats: { shows: played.length, cities: new Set(played.map(b => String(b.city || '').trim().toLowerCase()).filter(Boolean)).size, venues: new Set(played.map(b => b.venueId).filter(Boolean)).size, upcoming: upcoming.length }
     };
   }
   const epkDate = d => { const x = new Date(d + 'T12:00:00'); return { m: x.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(), d: x.getDate(), y: x.getFullYear() }; };
   const epkHost = u => { try { return new URL(u).host.replace(/^www\./, ''); } catch (_) { return u; } };
-  function epkPages() {
-    const c = EPK.cfg, d = epkData(), T = epkTheme(c.palette, c.mode), on = c.show, tx = c.text;
-    const ed = (key, val, tag, style, ph) => `<${tag} class="epk-ed" contenteditable="true" spellcheck="true" data-epk-k="${key}" data-ph="${esc(ph || '')}" style="${style}">${esc(tx[key] ?? val)}</${tag}>`;
-    const foot = `<a class="epk-foot" href="https://www.setnsettled.com" style="color:${T.muted}"><span class="epk-mono" style="background-image:${T.metal}">S&amp;S</span>Made by SetnSettled.com</a>`;
-    const wave = `<div class="epk-wave" aria-hidden="true">${Array.from({ length: 64 }, (_, i) => `<i style="height:${Math.round(10 + Math.abs(Math.sin(i * .37) * 45 + Math.cos(i * 1.3) * 12))}%;background:linear-gradient(180deg,${T.solid},transparent)"></i>`).join('')}</div>`;
-    const page = (inner, extra = '') => `<section class="epk-page" style="background:radial-gradient(700px 520px at 75% 0%, ${T.glow} 0%, ${T.bg} 62%);color:${T.ink};${extra}">${inner}${foot}</section>`;
-    const label = t => `<div class="epk-label" style="color:${T.solid}">${t}</div>`;
+  const epkName = (c, d) => c.text.name ?? d.name;
+  /* each section's design; an empty string means "nothing to show" */
+  function epkBlocks(c, d, T) {
+    const tx = c.text, P = c.parts, nm = epkName(c, d);
+    const ed = (key, val, tag, style, ph, cls = '') => `<${tag} class="epk-ed ${cls}" contenteditable="true" spellcheck="true" data-epk-k="${key}" data-ph="${esc(ph || '')}" style="${style}">${esc(tx[key] ?? val)}</${tag}>`;
+    const label = (k, t) => ed('lbl_' + k, t, 'div', `color:${T.solid}`, t, 'epk-label');
     const linkRow = l => `<a class="epk-link" href="${esc(l.url)}" style="border-color:${T.line};color:${T.ink}"><span>${esc(l.label || epkHost(l.url))}</span><span style="color:${T.muted}">${esc(epkHost(l.url))} ↗</span></a>`;
-    const contact = [d.contactName, d.email, d.phone].filter(Boolean);
-    const photo = d.photo ? `<img src="${esc(d.photo)}" alt="" style="width:100%;height:100%;object-fit:cover">` : `<span class="epk-mono" style="background-image:${T.metal};font-size:150px">${esc((d.name.replace(/[^A-Za-z]/g, '')[0] || 'S').toUpperCase())}</span>`;
-    const bookBlock = `<div class="epk-book" style="border-color:${T.line}">${label('Booking')}${contact.length ? `<div style="font-size:14px;line-height:1.6">${contact.map(esc).join(' &nbsp;·&nbsp; ')}</div>` : ''}${d.bookingLink ? `<a href="${esc(d.bookingLink)}" class="epk-cta" style="background:${T.metal};color:#14170F">Request a date &nbsp;→&nbsp; ${esc(epkHost(d.bookingLink))}/?book=…</a>` : ''}</div>`;
-    const p1 = page(`
-      <header class="epk-top"><span class="epk-mono" style="background-image:${T.metal};font-size:30px">S&amp;S</span><span class="epk-label" style="color:${T.muted};margin:0">Electronic press kit · ${new Date().getFullYear()}</span></header>
-      <div class="epk-cover">
-        <div class="epk-cover-l">
-          ${ed('genres', d.genres, 'div', `font-family:'DM Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:${T.solid}`, 'Genres & sound')}
-          ${ed('name', d.name, 'h1', 'font-family:"Cormorant Garamond",Georgia,serif;font-weight:500;font-size:76px;line-height:.95;margin:14px 0 22px', 'Your performer name')}
-          ${ed('shortBio', d.shortBio, 'p', `font-size:15.5px;line-height:1.65;color:${T.muted};margin:0`, 'A two or three sentence bio. Add it in your Kit, or type it here.')}
-        </div>
-        <div class="epk-photo" style="border-color:${T.solid}">${photo}</div>
-      </div>
-      ${bookBlock}${wave}`);
-    const statsOn = on.stats && (d.stats.shows || d.stats.cities || d.stats.venues);
-    const listShows = (arr, t) => arr.length ? `<div>${label(t)}${arr.map(s => { const x = epkDate(s.date); return `<div class="epk-show" style="border-color:${T.line}"><span class="epk-date" style="border-color:${T.line}"><b style="font-family:'Cormorant Garamond',Georgia,serif;font-size:24px;font-weight:500">${x.d}</b><span style="color:${T.solid}">${x.m} ${String(x.y).slice(2)}</span></span><span><b style="font-weight:500">${esc(s.title)}</b><br><span style="color:${T.muted};font-size:12.5px">${esc(s.where)}</span></span></div>`; }).join('')}</div>` : '';
-    const showsHtml = on.shows ? listShows(d.upcoming, 'Upcoming') + listShows(d.played, 'Recently played') : '';
-    const p2 = page(`
-      <header class="epk-top"><span class="epk-mono" style="background-image:${T.metal};font-size:30px">S&amp;S</span><span class="epk-label" style="color:${T.muted};margin:0">${esc(tx.name ?? d.name)}</span></header>
-      ${label('About')}
-      ${ed('longBio', d.longBio, 'div', `font-size:13.5px;line-height:1.7;column-count:2;column-gap:36px;white-space:pre-line;max-height:330px;overflow:hidden`, 'Your longer bio for event pages and press.')}
-      ${statsOn ? `<div class="epk-stats" style="border-color:${T.line}">${[['shows', 'Shows played'], ['cities', 'Cities'], ['venues', 'Venues']].filter(([k2]) => d.stats[k2]).map(([k2, l]) => `<div><b class="epk-mono" style="background-image:${T.metal};font-family:'Cormorant Garamond',Georgia,serif;font-size:56px">${d.stats[k2]}</b><span style="color:${T.muted}">${l}</span></div>`).join('')}</div>` : ''}
-      ${showsHtml ? `<div class="epk-shows">${showsHtml}</div>` : ''}`);
-    const grp = (key, t, arr) => on[key] && arr.length ? `<div>${label(t)}${arr.slice(0, 8).map(linkRow).join('')}</div>` : '';
-    const music = grp('music', 'Listen', d.music), socials = grp('links', 'Find me', d.socials), press = grp('press', 'Press', d.press);
-    const rider = on.rider ? `<div>${label('Tech rider')}${ed('rider', d.rider, 'div', 'font-size:13px;line-height:1.65;white-space:pre-line', 'Your tech rider')}</div>` : '';
-    const hosp = on.hosp ? `<div>${label('Hospitality')}${ed('hosp', d.hosp, 'div', 'font-size:13px;line-height:1.65;white-space:pre-line', 'Your hospitality rider')}</div>` : '';
-    const p3 = page(`
-      <header class="epk-top"><span class="epk-mono" style="background-image:${T.metal};font-size:30px">S&amp;S</span><span class="epk-label" style="color:${T.muted};margin:0">Listen · Links · Riders</span></header>
-      <div class="epk-grid">${music}${socials}${press}${rider}${hosp}</div>
-      <div style="margin-top:auto"><h2 style="font-family:'Cormorant Garamond',Georgia,serif;font-weight:500;font-size:46px;margin:0 0 14px">Book ${esc(tx.name ?? d.name)}</h2>${bookBlock}</div>`);
-    return p1 + p2 + p3;
+    const B = {};
+    // cover
+    const photo = d.photo ? `<img src="${esc(d.photo)}" alt="" style="width:100%;height:100%;object-fit:cover">` : `<span class="epk-mono" style="background-image:${T.metal};font-size:150px">${esc((nm.replace(/[^A-Za-z]/g, '')[0] || 'S').toUpperCase())}</span>`;
+    const left = [
+      P.genres ? ed('genres', d.genres, 'div', `font-family:'DM Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:${T.solid}`, 'Genres & sound') : '',
+      P.name ? ed('name', d.name, 'h1', '', 'Your performer name', 'epk-name') : '',
+      P.name && P.shortBio ? `<div style="width:56px;height:1px;background:${T.solid}"></div>` : '',
+      P.shortBio ? ed('shortBio', d.shortBio, 'p', 'font-size:18px;line-height:1.7;margin:0', 'A few sentences about you and your sound. Add it in your Kit, or type it here.') : ''
+    ].join('');
+    const pic = P.photo ? `<div class="epk-photo" style="border-color:${T.solid}">${photo}</div>` : '';
+    B.hero = left || pic ? `<div class="epk-hero${pic ? '' : ' solo'}${left ? '' : ' piconly'}">${left ? `<div class="epk-hero-l">${left}</div>` : ''}${pic}</div>` : '';
+    // highlights
+    const st4 = [['shows', 'Shows played'], ['cities', 'Cities'], ['venues', 'Venues'], ['upcoming', 'Upcoming']].filter(([k]) => d.stats[k]);
+    B.stats = st4.length ? `<div class="epk-stats" style="border-color:${T.line}">${st4.map(([k, l]) => `<div><b style="color:${T.solid}">${d.stats[k]}</b><span style="color:${T.muted}">${l}</span></div>`).join('')}</div>` : '';
+    B.longBio = `${label('longBio', 'About')}${ed('longBio', d.longBio, 'div', 'font-size:13.5px;line-height:1.75;column-count:2;column-gap:40px;white-space:pre-line;max-height:380px;overflow:hidden', 'Your longer bio for event pages and press.')}`;
+    const listShows = (k, arr, t) => arr.length ? `${label(k, t)}${arr.map(s => { const x = epkDate(s.date); return `<div class="epk-show" style="border-color:${T.line}"><span class="epk-date" style="border-color:${T.line}"><b>${x.d}</b><span style="color:${T.solid}">${x.m} ${String(x.y).slice(2)}</span></span><span><b style="font-weight:500">${esc(s.title)}</b><br><span style="color:${T.muted};font-size:12.5px">${esc(s.where)}</span></span></div>`; }).join('')}` : '';
+    B.upcoming = listShows('upcoming', d.upcoming, 'Upcoming');
+    B.played = listShows('played', d.played, 'Recently played');
+    const grp = (k, t, arr) => arr.length ? `${label(k, t)}${arr.slice(0, 8).map(linkRow).join('')}` : '';
+    B.music = grp('music', 'Listen', d.music); B.links = grp('links', 'Find me', d.socials); B.press = grp('press', 'Press', d.press);
+    B.rider = `${label('rider', 'Tech rider')}${ed('rider', d.rider, 'div', 'font-size:13px;line-height:1.7;white-space:pre-line', 'Your tech rider')}`;
+    B.hosp = `${label('hosp', 'Hospitality')}${ed('hosp', d.hosp, 'div', 'font-size:13px;line-height:1.7;white-space:pre-line', 'Your hospitality rider')}`;
+    // booking: each line is optional
+    const col = (t, lines) => { const l = lines.filter(Boolean); return l.length ? `<div class="epk-bcol"><div class="epk-label" style="color:${T.solid};margin:0 0 8px">${t}</div>${l.map(x => `<div>${x}</div>`).join('')}</div>` : ''; };
+    const nx = d.upcoming[0], nxd = nx ? new Date(nx.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+    const cols = [
+      col('Contact', [P.contactName && esc(d.contactName), P.email && d.email && `<a href="mailto:${esc(d.email)}" style="color:${T.ink}">${esc(d.email)}</a>`, P.phone && esc(d.phone)]),
+      P.avail && d.avail ? col('Availability', [esc(d.avail.days), esc(d.avail.hours), esc(d.avail.notice)]) : '',
+      P.lengths && d.avail ? col('Set lengths', [esc(d.avail.lengths)]) : '',
+      P.next && nx ? col('Next show', [`<b style="font-weight:500">${esc(nx.title)}</b>`, esc(nxd), `<span style="color:${T.muted}">${esc(nx.where)}</span>`]) : ''
+    ].join('');
+    const cta = P.button && d.bookingLink ? `<a href="${esc(d.bookingLink)}" class="epk-cta" style="background:${T.metal};color:#14170F">Book ${esc(nm)}</a>` : '';
+    B.booking = `<div class="epk-book" style="border-color:${T.line};background:${T.panel}">
+        <div class="epk-bhead"><div>${label('booking', 'Booking')}${ed('bookTitle', "Let's work together", 'div', "font-family:'Cormorant Garamond',Georgia,serif;font-size:34px;line-height:1.05", 'A short invite')}</div>${cta}</div>
+        ${cols ? `<div class="epk-bgrid" style="border-color:${T.line}">${cols}</div>` : ''}
+      </div>`;
+    return B;
   }
   function epkRender() {
     const stage = EPK.el && EPK.el.querySelector('.ssx-epk-pages'); if (!stage) return;
-    stage.innerHTML = epkPages();
-    stage.querySelectorAll('[data-epk-k]').forEach(n => n.addEventListener('input', () => { EPK.cfg.text[n.dataset.epkK] = n.innerText.slice(0, 4000); epkSave(); }));
+    const c = EPK.cfg, d = epkData(), T = epkTheme(c.palette, c.mode), B = epkBlocks(c, d, T), nm = epkName(c, d);
+    stage.style.zoom = '1'; stage.innerHTML = '';
+    const wave = `<div class="epk-wave" aria-hidden="true">${Array.from({ length: 72 }, (_, i) => `<i style="height:${Math.round(12 + Math.abs(Math.sin(i * .37) * 50 + Math.cos(i * 1.3) * 14))}%;background:linear-gradient(180deg,${T.solid},transparent)"></i>`).join('')}</div>`;
+    const foot = `<div class="epk-foot" style="color:${T.muted}">Made by&nbsp;<a href="https://www.setnsettled.com" target="_blank" rel="noopener" style="color:${T.solid}">SetnSettled.com</a></div>`;
+    let body = null, n = 0;
+    const newPage = () => {
+      n++; const pg = document.createElement('section'); pg.className = 'epk-page';
+      pg.style.cssText = `background:radial-gradient(700px 520px at 75% 0%, ${T.glow} 0%, ${T.bg} 62%);color:${T.ink}`;
+      pg.innerHTML = `${n > 1 ? `<header class="epk-top"><span class="epk-label" style="color:${T.ink};margin:0">${esc(nm)}</span><span class="epk-label epk-pn" style="color:${T.muted};margin:0"></span></header>` : ''}<div class="epk-body"></div><div class="epk-endslot"></div>${wave}${foot}`;
+      stage.appendChild(pg); body = pg.querySelector('.epk-body');
+    };
+    newPage();
+    for (const k of c.order) {
+      const def = EPK_BLOCKS.find(b => b[0] === k); if (!def || !c.show[k] || !B[k]) continue;
+      const el = document.createElement('div'); el.className = 'epk-blk ' + def[2]; el.dataset.blk = k; el.innerHTML = B[k];
+      const slot = () => body.parentElement.querySelector('.epk-endslot');
+      const overflows = () => { const lc = body.lastElementChild; return !!lc && lc.getBoundingClientRect().bottom > body.getBoundingClientRect().bottom - 4; };
+      if (k === 'booking') {
+        // booking sits at the bottom of its page as a closing panel
+        el.classList.add('epk-pinned'); slot().appendChild(el);
+        if (overflows()) { el.remove(); newPage(); slot().appendChild(el); }
+        continue;
+      }
+      body.appendChild(el);
+      if (overflows() && body.children.length > 1) { el.remove(); newPage(); body.appendChild(el); }
+    }
+    // a page that only holds the booking panel becomes a closing page
+    stage.querySelectorAll('.epk-page').forEach(pg => { if (!pg.querySelector('.epk-body').children.length && pg.querySelector('.epk-pinned')) pg.classList.add('epk-closing'); });
+    const pages = stage.querySelectorAll('.epk-page'), two = x => String(x).padStart(2, '0');
+    pages.forEach((p, i) => { const pn = p.querySelector('.epk-pn'); if (pn) pn.textContent = `${two(i + 1)} / ${two(pages.length)}`; });
+    stage.querySelectorAll('[data-epk-k]').forEach(el => el.addEventListener('input', () => { EPK.cfg.text[el.dataset.epkK] = el.innerText.slice(0, 4000); epkSave(); }));
     stage.querySelectorAll('img').forEach(img => img.onerror = () => img.remove());
     epkFit(); epkBar();
   }
@@ -910,34 +963,56 @@ function appExtras() {
   function epkFit() { const s = EPK.el && EPK.el.querySelector('.ssx-epk-pages'); if (!s) return; const z = Math.min(1, (EPK.el.querySelector('.ssx-epk-stage').clientWidth - 32) / 816); s.style.zoom = String(z); }
   function epkBar() {
     const bar = EPK.el.querySelector('.ssx-epk-opts'), c = EPK.cfg, all = typeof PALETTES !== 'undefined' ? PALETTES : [['champagne', 'Champagne', ['#D4B26E']]];
-    bar.innerHTML = `<div class="ssx-epk-row"><span class="ssx-epk-k">Colors</span>${all.map(([k2, n, cs]) => `<button type="button" class="ssx-chip" data-epk-pal="${k2}" aria-pressed="${c.palette === k2}"><span class="ssx-epk-sw" style="background:linear-gradient(90deg,${cs.slice(0, 4).join(',')})"></span>${esc(n)}</button>`).join('')}</div>
-      <div class="ssx-epk-row"><span class="ssx-epk-k">Look</span><button type="button" class="ssx-chip" data-epk-mode="dark" aria-pressed="${c.mode === 'dark'}">Dark</button><button type="button" class="ssx-chip" data-epk-mode="light" aria-pressed="${c.mode === 'light'}">Light</button></div>
-      <div class="ssx-epk-row"><span class="ssx-epk-k">Include</span>${EPK_SECTIONS.map(([k2, n]) => `<button type="button" class="ssx-chip" data-epk-sec="${k2}" aria-pressed="${!!c.show[k2]}">${n}</button>`).join('')}</div>`;
-    bar.querySelectorAll('[data-epk-pal]').forEach(b => b.onclick = () => { c.palette = b.dataset.epkPal; epkSave(); epkRender(); });
-    bar.querySelectorAll('[data-epk-mode]').forEach(b => b.onclick = () => { c.mode = b.dataset.epkMode; epkSave(); epkRender(); });
-    bar.querySelectorAll('[data-epk-sec]').forEach(b => b.onclick = () => { c.show[b.dataset.epkSec] = !c.show[b.dataset.epkSec]; epkSave(); epkRender(); });
+    const chips = (list, attr, isOn) => list.map(([k, n]) => `<button type="button" class="ssx-chip" ${attr}="${k}" aria-pressed="${isOn(k)}">${esc(n)}</button>`).join('');
+    const nameOf = k => (EPK_BLOCKS.find(b => b[0] === k) || [k, k])[1];
+    bar.innerHTML = `<div class="ssx-epk-row"><span class="ssx-epk-k">Colors</span>${all.map(([k, n, cs]) => `<button type="button" class="ssx-chip" data-epk-pal="${k}" aria-pressed="${c.palette === k}"><span class="ssx-epk-sw" style="background:linear-gradient(90deg,${cs.slice(0, 4).join(',')})"></span>${esc(n)}</button>`).join('')}</div>
+      <div class="ssx-epk-row"><span class="ssx-epk-k">Look</span>${chips([['dark', 'Dark'], ['light', 'Light']], 'data-epk-mode', k => c.mode === k)}</div>
+      <details class="ssx-epk-sec"${EPK.listOpen ? ' open' : ''}><summary>Sections and order</summary>
+        <p class="note">Tap a section to show or hide it. Use the arrows to move it. Pages fill in order.</p>
+        <ol class="ssx-epk-list">${c.order.map((k, i) => `<li><button type="button" class="ssx-chip" data-epk-sec="${k}" aria-pressed="${!!c.show[k]}">${esc(nameOf(k))}</button><span class="ssx-epk-mv"><button type="button" data-epk-mv="${k}|-1" aria-label="Move ${esc(nameOf(k))} up" ${i ? '' : 'disabled'}>↑</button><button type="button" data-epk-mv="${k}|1" aria-label="Move ${esc(nameOf(k))} down" ${i < c.order.length - 1 ? '' : 'disabled'}>↓</button></span></li>`).join('')}</ol>
+        <button type="button" class="btn small" data-epk-order>Reset order</button>
+      </details>
+      <div class="ssx-epk-row"><span class="ssx-epk-k">Cover</span>${chips(EPK_PARTS.hero, 'data-epk-part', k => !!c.parts[k])}</div>
+      <div class="ssx-epk-row"><span class="ssx-epk-k">Booking</span>${chips(EPK_PARTS.booking, 'data-epk-part', k => !!c.parts[k])}</div>`;
+    const redo = () => { epkSave(); epkRender(); };
+    bar.querySelector('details').ontoggle = e => { EPK.listOpen = e.target.open; };
+    bar.querySelectorAll('[data-epk-pal]').forEach(b => b.onclick = () => { c.palette = b.dataset.epkPal; redo(); });
+    bar.querySelectorAll('[data-epk-mode]').forEach(b => b.onclick = () => { c.mode = b.dataset.epkMode; redo(); });
+    bar.querySelectorAll('[data-epk-sec]').forEach(b => b.onclick = () => { c.show[b.dataset.epkSec] = !c.show[b.dataset.epkSec]; redo(); });
+    bar.querySelectorAll('[data-epk-part]').forEach(b => b.onclick = () => { c.parts[b.dataset.epkPart] = !c.parts[b.dataset.epkPart]; redo(); });
+    bar.querySelectorAll('[data-epk-mv]').forEach(b => b.onclick = () => {
+      const [k, dir] = b.dataset.epkMv.split('|'), i = c.order.indexOf(k), j = i + Number(dir); if (i < 0 || j < 0 || j >= c.order.length) return;
+      [c.order[i], c.order[j]] = [c.order[j], c.order[i]]; redo();
+      const nb = bar.querySelector(`[data-epk-mv="${k}|${dir}"]`); if (nb && !nb.disabled) nb.focus();
+    });
+    bar.querySelector('[data-epk-order]').onclick = () => { c.order = epkDefaults().order; redo(); };
   }
   async function openEPK() {
     if (EPK.el) return;
     let saved = null; try { const s = await st.db.doc('settings/epk').get(); if (s.exists) saved = s.data(); } catch (_) {}
-    const def = epkDefaults(); EPK.cfg = { ...def, ...(saved || {}), show: { ...def.show, ...((saved || {}).show || {}) }, text: { ...((saved || {}).text || {}) } };
+    const def = epkDefaults(), sv = saved || {}, known = def.order;
+    const order = [...(Array.isArray(sv.order) ? sv.order.filter(k => known.includes(k)) : []), ...known.filter(k => !(sv.order || []).includes(k))];
+    EPK.cfg = { ...def, ...sv, order: [...new Set(order)], show: { ...def.show, ...(sv.order ? (sv.show || {}) : {}) }, parts: { ...def.parts, ...(sv.parts || {}) }, text: { ...(sv.text || {}) } };
     const el = document.createElement('div'); el.id = 'ssx-epk'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', 'Create an EPK');
     el.style.cssText = 'position:fixed;inset:0;z-index:200;';
     el.innerHTML = `<div class="ssx-epk-bar">
         <div class="ssx-epk-head"><div><h2>Your EPK</h2><p class="note">Built from your Kit and your shows. Tap any text on the pages to edit it.</p></div>
-          <div class="ssx-row"><button type="button" class="btn small" data-epk-reset>Reset text to my Kit</button><button type="button" class="btn primary" data-epk-pdf>Download PDF</button><button type="button" class="btn small" data-epk-close aria-label="Close">Close</button></div></div>
+          <div class="ssx-row"><button type="button" class="btn primary" data-epk-pdf>Download PDF</button><button type="button" class="btn small" data-epk-reset>Reset text to my Kit</button><button type="button" class="btn small" data-epk-close>Close</button></div></div>
         <div class="ssx-epk-opts"></div>
         <p class="note ssx-epk-tip">Download PDF opens your print window. Choose <b>Save as PDF</b> and keep <b>Background graphics</b> on. Links stay clickable in the PDF.</p>
       </div>
       <div class="ssx-epk-stage"><div class="ssx-epk-pages"></div></div>`;
     document.body.appendChild(el); EPK.el = el; document.documentElement.classList.add('ssx-epk-open');
     el.querySelector('[data-epk-close]').onclick = closeEPK;
-    el.querySelector('[data-epk-pdf]').onclick = () => { const t = document.title; document.title = (EPK.cfg.text.name || epkData().name) + ' EPK'; setTimeout(() => { window.print(); document.title = t; }, 50); };
+    el.querySelector('[data-epk-pdf]').onclick = () => { epkRender(); const t = document.title; document.title = (EPK.cfg.text.name || epkData().name) + ' EPK'; setTimeout(() => { window.print(); document.title = t; }, 80); };
     let armed = false; const rs = el.querySelector('[data-epk-reset]');
     rs.onclick = () => { if (!armed) { armed = true; rs.textContent = 'Tap again to reset'; setTimeout(() => { armed = false; rs.textContent = 'Reset text to my Kit'; }, 4000); return; } armed = false; rs.textContent = 'Reset text to my Kit'; EPK.cfg.text = {}; epkSave(); epkRender(); };
     el.addEventListener('keydown', e => { if (e.key === 'Escape' && !e.target.closest('[contenteditable]')) closeEPK(); });
+    // after editing text, the pages re-flow so nothing gets cut off
+    el.addEventListener('focusout', e => { if (!e.target.closest || !e.target.closest('[data-epk-k]')) return; setTimeout(() => { const a = document.activeElement; if (EPK.el && !(a && a.closest && a.closest('[data-epk-k]'))) epkRender(); }, 250); });
     addEventListener('resize', epkFit);
     epkRender();
+    try { document.fonts.ready.then(() => { if (EPK.el) epkRender(); }); } catch (_) {}
   }
   function closeEPK() { if (!EPK.el) return; EPK.el.remove(); EPK.el = null; document.documentElement.classList.remove('ssx-epk-open'); removeEventListener('resize', epkFit); }
   window.ssOpenEPK = openEPK;
