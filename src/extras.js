@@ -87,10 +87,11 @@ function appExtras() {
   const wait = setInterval(async () => {
     if (!ready()) return;
     clearInterval(wait);
-        speedUp(); submitGuard();
+    speedUp(); submitGuard(); routeProfile();
     st.db = await window.claude.use('db');
     if (!st.db) return;
     st.db.doc('settings/notify').onSnapshot(s => { st.prefs = s.exists ? s.data() : {}; render(); queueSoon(); }, () => {});
+        st.db.doc('settings/profile').onSnapshot(() => setTimeout(() => fillProfile(), 0), () => {});
     st.db.doc('settings/bookinglink').onSnapshot(s => { st.link = s.exists ? s.data() : {}; render(); renderKit(); }, () => {});
     st.db.collection('goals').onSnapshot(s => { st.goals = s.docs.map(d => ({ id: d.id, ...d.data() })); renderGoals(); renderHomeGoals(); queueSoon(); }, () => {});
     let lastB = null; setInterval(() => { try { if (S.bookings !== lastB) { lastB = S.bookings; renderGoals(); renderHomeGoals(); } } catch (_) {} }, 2000);
@@ -377,9 +378,9 @@ function appExtras() {
       const seg = document.getElementById('themeSeg');
       if (!look && seg) { look = document.createElement('div'); look.className = 'card'; look.id = 'ssg-appearance'; look.innerHTML = '<div class="head"><h3>Light or dark</h3></div>'; look.appendChild(seg.parentElement); }
       const ep = document.getElementById('editProfile'), pc = card('#kitAvatar');
-      if (ep && pc && !pc.contains(ep)) { ep.textContent = 'Edit profile'; ep.classList.add('small'); ep.style.whiteSpace = 'nowrap'; (pc.querySelector('.chips') || pc).appendChild(ep); }
+      if (ep) ep.hidden = true; // profile details now live right on the Profile page
       const place = {
-        profile: [card('#kitAvatar')],
+        profile: [card('#kitAvatar'), profileCard()],
         google: [card('#ss-google'), card('#driveRoots'), card('#setCals')],
         bookings: [card('#defCl'), document.getElementById('ssx-host-link')],
         reminders: [document.getElementById('ssx-host-notify')],
@@ -406,6 +407,55 @@ function appExtras() {
   // a field inside a hidden group that gets focus (for example from an app message) opens its group
   document.addEventListener('focusin', e => { const g = e.target.closest && e.target.closest('section[data-view="settings"] > .ssg[hidden]'); if (g) showGroup(g.dataset.ssg, false); });
 
+  /* ---------- Profile details, right on the Settings > Profile page (no pop-up) */
+  const PF = [['djName', 'DJ name', 'text', 'name'], ['myName', 'Your name', 'text', 'name'], ['email', 'Booking email', 'email', 'email'], ['phone', 'Phone', 'tel', 'tel'], ['website', 'Website', 'url', 'url'], ['epk', 'EPK link', 'url', 'url'], ['instagram', 'Instagram', 'text', 'off']];
+  const PS = { dirty: false };
+  function profileCard() {
+    let c = document.getElementById('ssx-profile');
+    if (!c) { c = document.createElement('div'); c.id = 'ssx-profile'; c.className = 'card ssx'; fillProfile(c); }
+    return c;
+  }
+  function fillProfile(c) {
+    c = c || document.getElementById('ssx-profile'); if (!c || PS.dirty) return;
+    if (c.contains(document.activeElement) && /INPUT|SELECT/.test(document.activeElement.tagName)) return;
+    let p = {}; try { p = S.profile || {}; } catch (_) {}
+    let nav = []; try { nav = NAV; } catch (_) {} if (!nav.length) nav = [['google', 'Google Maps'], ['apple', 'Apple Maps']];
+    c.innerHTML = `<div class="ssx-head"><div><h3>Profile details</h3><p class="note">Used in your emails, templates, invoices, Kit, EPK and booking page.</p></div></div>
+      <div class="ssx-grid2">${PF.map(([k, l, t, ac]) => `<div class="f"><label for="ssx-pf-${k}">${l}</label><input id="ssx-pf-${k}" data-pf="${k}" type="${t}" autocomplete="${ac}" ${t === 'url' ? 'inputmode="url" autocapitalize="none" spellcheck="false"' : ''} ${t === 'email' ? 'autocapitalize="none" spellcheck="false"' : ''} maxlength="${t === 'url' ? 500 : 120}" value="${esc(p[k] || '')}"></div>`).join('')}
+        <div class="f"><label for="ssx-pf-navApp">Directions open in</label><select id="ssx-pf-navApp" data-pf="navApp">${nav.map(([k, l]) => `<option value="${esc(k)}"${(p.navApp || 'google') === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div></div>
+      <div class="ssx-row" style="justify-content:flex-end"><span class="note" data-pf-state style="margin-right:auto"></span><button type="button" class="btn" data-pf-undo hidden>Discard changes</button><button type="button" class="btn primary" data-pf-save disabled>Save</button></div>`;
+    const st0 = c.querySelector('[data-pf-state]'), sv = c.querySelector('[data-pf-save]'), un = c.querySelector('[data-pf-undo]');
+    if (PS.savedAt && Date.now() - PS.savedAt < 4000) st0.textContent = 'Saved ✓';
+    const mark = () => { PS.dirty = true; sv.disabled = false; un.hidden = false; st0.textContent = 'Unsaved changes'; };
+    c.querySelectorAll('[data-pf]').forEach(el => { el.addEventListener('input', mark); el.addEventListener('change', mark); el.addEventListener('keydown', e => { if (e.key === 'Enter' && el.tagName === 'INPUT') { e.preventDefault(); sv.click(); } }); });
+    un.onclick = e => { e.stopPropagation(); PS.dirty = false; fillProfile(c); };
+    sv.onclick = async e => {
+      e.stopPropagation();
+      const v = {}; c.querySelectorAll('[data-pf]').forEach(el => { v[el.dataset.pf] = el.value.trim(); });
+      if (v.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.email)) { st0.textContent = 'Check the booking email address.'; c.querySelector('[data-pf="email"]').focus(); return; }
+      if (v.instagram) v.instagram = v.instagram.replace(/^@/, '');
+      let cur = {}; try { cur = S.profile || {}; } catch (_) {}
+      const ok = typeof window.save === 'function' ? await window.save('settings', 'profile', { ...cur, ...v }) : null;
+      if (ok) { PS.dirty = false; PS.savedAt = Date.now(); try { S.profile = { ...cur, ...v }; } catch (_) {} fillProfile(c); if (window.toast) window.toast('Profile saved'); }
+    };
+  }
+  // anything in the app that used to open the profile pop-up now brings you here
+  const routeProfile = () => window.profileForm = () => { try { window.ssShowSettings('profile', 'ssx-profile'); setTimeout(() => { const f = document.querySelector('#ssx-profile input'); f && f.focus({ preventScroll: true }); }, 350); } catch (_) {} };
+  // the season targets (shows and income) moved to Goals, in their own small form
+  function seasonGoalsForm() {
+    let p = {}; try { p = S.profile || {}; } catch (_) {}
+    if (typeof sheet !== 'function') return;
+    sheet(`<h3>Season targets</h3><p class="note" style="margin:0">How many shows and how much income you're aiming for this season.</p>
+      <div class="frow"><div class="f"><label for="sg-y">Year</label><input id="sg-y" type="number" inputmode="numeric" value="${esc(p.goalYear || new Date().getFullYear())}"></div><div class="f"><label for="sg-s">Shows</label><input id="sg-s" type="number" inputmode="numeric" min="0" value="${esc(p.goalShows ?? '')}"></div><div class="f"><label for="sg-i">Income ($)</label><input id="sg-i" type="number" inputmode="decimal" min="0" value="${esc(p.goalIncome ?? '')}"></div></div>
+      <div class="actions"><button class="btn" data-cancel>Cancel</button><button class="btn primary" data-save>Save</button></div>`, root => {
+      root.querySelector('[data-cancel]').onclick = () => close();
+      root.querySelector('[data-save]').onclick = async () => {
+        const n = id => { const x = root.querySelector(id).value; return x === '' ? '' : Number(x); };
+        let cur = {}; try { cur = S.profile || {}; } catch (_) {}
+        if (await window.save('settings', 'profile', { ...cur, goalYear: n('#sg-y') || new Date().getFullYear(), goalShows: n('#sg-s'), goalIncome: n('#sg-i') })) { close(); if (window.toast) window.toast('Saved'); }
+      };
+    });
+  }
   /* ---------- Settings in the tab menu (bottom of the side menu / end of the phone bar) */
   function setupNav() {
     const tabs = document.getElementById('tabs'); if (!tabs || tabs.querySelector('[data-tab="settings"]')) return;
@@ -586,7 +636,7 @@ function appExtras() {
   }
   function wireGoals(host) {
     const q = s => host.querySelector(s);
-    const sea = q('[data-ssx-season]'); if (sea) sea.onclick = e => { e.stopPropagation(); if (typeof profileForm === 'function') profileForm(); else { const b = document.getElementById('editProfile'); b && b.click(); } };
+    const sea = q('[data-ssx-season]'); if (sea) sea.onclick = e => { e.stopPropagation(); seasonGoalsForm(); };
     const add = q('[data-ssx-gadd]'); if (add) add.onclick = e => { e.stopPropagation(); MSG.goalform = null; GS.form = { g: {} }; renderGoals(); };
     host.querySelectorAll('[data-ssx-gcancel]').forEach(b => b.onclick = e => { e.stopPropagation(); GS.form = null; renderGoals(); });
     host.querySelectorAll('[data-ssx-tpl]').forEach(b => b.onclick = e => {
@@ -668,7 +718,7 @@ function appExtras() {
     const TOUR = [
     { title: 'Welcome to Set & Settled', body: 'Your home base as a performer: bookings, tasks, money, outreach, goals and your press kit in one place. This quick tour shows you around and helps you set up the basics. About 3 minutes.' },
     { tab: 'home', target: '#ssx-railbtn', title: 'Your menu', body: 'Every page lives in the menu on the left. Tap this button at the top to fold the menu away when you want more room, and tap it again to bring it back.' },
-    { tab: 'settings', group: 'profile', target: '#kitAvatar', title: 'Start with your profile', body: 'Your performer name, photo, bio and contact details. They fill in your Kit, EPK, invoices and booking page so you only type them once.', action: ['Edit my profile', () => { if (typeof profileForm === 'function') profileForm(); else { const b = document.getElementById('editProfile'); b && b.click(); } }] },
+    { tab: 'settings', group: 'profile', target: '#ssx-profile', title: 'Start with your profile', body: 'Your DJ name, contact details, website and Instagram live right here. They fill in your Kit, EPK, emails, invoices and booking page so you only type them once.' },
     { tab: 'settings', group: 'look', target: '#palPick', title: 'Make it yours', body: 'Pick a color theme (Champagne is the default) and switch between Light and Dark. Your choice follows you on every device.' },
     { tab: 'goals', target: '#ssx-goals', title: 'Set your goals', body: 'Track followers, releases, shows and income. Some goals count themselves from your bookings, checklist goals can have a due date for every step, and your progress shows on Home.', action: ['Add a goal', () => { const b = document.querySelector('[data-ssx-gadd]'); b && b.click(); }] },
     { tab: 'settings', group: 'bookings', target: '#ssx-link', title: 'Share when you are available', body: 'Turn on your booking link, pick the days you play and block dates you are away. Promoters pick an open date and their request lands in Bookings as a Lead.' },
