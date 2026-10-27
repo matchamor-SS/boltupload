@@ -1028,7 +1028,7 @@ function appExtras() {
     });
     bar.querySelector('[data-epk-order]').onclick = () => { const d0 = epkDefaults(); c.order = d0.order; c.heroOrder = d0.heroOrder; c.bookOrder = d0.bookOrder; redo(); };
   }
-  async function openEPK() {
+    async function openEPK() {
     if (EPK.el) return;
     let saved = null; try { const s = await st.db.doc('settings/epk').get(); if (s.exists) saved = s.data(); } catch (_) {}
     const def = epkDefaults(), sv = saved || {};
@@ -1038,13 +1038,13 @@ function appExtras() {
     el.style.cssText = 'position:fixed;inset:0;z-index:200;';
     el.innerHTML = `<div class="ssx-epk-bar">
         <div class="ssx-epk-head"><div><h2>Your EPK</h2><p class="note">Built from your Kit and your shows. Tap any text on the pages to edit it.</p></div>
-          <div class="ssx-row"><button type="button" class="btn primary" data-epk-pdf>Download PDF</button><button type="button" class="btn small" data-epk-reset>Reset text to my Kit</button><button type="button" class="btn small" data-epk-close>Close</button></div></div>
+          <div class="ssx-row"><button type="button" class="btn primary" data-epk-pdf>Download PDF</button><button type="button" class="btn small" data-epk-reset>Reset text to my Kit</button><button type="button" class="btn small" data-epk-close>${EPK.tab ? 'Close tab' : 'Close'}</button>${EPK.tab ? '<a class="btn small" href="/" data-epk-home>← Back to Set & Settled</a>' : ''}</div></div>
         <div class="ssx-epk-opts"></div>
         <p class="note ssx-epk-tip">Download PDF opens your print window. Choose <b>Save as PDF</b> and keep <b>Background graphics</b> on. Links stay clickable in the PDF.</p>
       </div>
       <div class="ssx-epk-stage"><div class="ssx-epk-pages"></div></div>`;
     document.body.appendChild(el); EPK.el = el; document.documentElement.classList.add('ssx-epk-open');
-    el.querySelector('[data-epk-close]').onclick = closeEPK;
+    el.querySelector('[data-epk-close]').onclick = () => { if (EPK.tab) epkCloseTab(); setTimeout(closeEPK, 150); };
     el.querySelector('[data-epk-pdf]').onclick = () => { epkRender(); const t = document.title; document.title = (EPK.cfg.text.name || epkData().name) + ' EPK'; setTimeout(() => { window.print(); document.title = t; }, 80); };
     let armed = false; const rs = el.querySelector('[data-epk-reset]');
     rs.onclick = () => { if (!armed) { armed = true; rs.textContent = 'Tap again to reset'; setTimeout(() => { armed = false; rs.textContent = 'Reset text to my Kit'; }, 4000); return; } armed = false; rs.textContent = 'Reset text to my Kit'; EPK.cfg.text = {}; epkSave(); epkRender(); };
@@ -1052,15 +1052,23 @@ function appExtras() {
     // after editing text, the pages re-flow so nothing gets cut off
     el.addEventListener('focusout', e => { if (!e.target.closest || !e.target.closest('[data-epk-k]')) return; setTimeout(() => { const a = document.activeElement; if (EPK.el && !(a && a.closest && a.closest('[data-epk-k]'))) epkRender(); }, 250); });
     addEventListener('resize', epkFit);
+    if (EPK.tab) document.title = 'Your EPK · Set & Settled';
     epkRender();
     try { document.fonts.ready.then(() => { if (EPK.el) epkRender(); }); } catch (_) {}
+    const typing = () => { const a = document.activeElement; return a && a.closest && a.closest('#ssx-epk [data-epk-k], #ssx-epk input'); };
+    [800, 2000, 4000].forEach(ms => setTimeout(() => { if (EPK.el && !typing()) epkRender(); }, ms));
+  }
+  // the app has its own close() for forms, so borrow the browser's real "close this tab" from a blank frame
+  function epkCloseTab() {
+    try { const f = document.createElement('iframe'); f.style.display = 'none'; document.body.appendChild(f); const real = f.contentWindow.close; f.remove(); real.call(window); } catch (_) {}
   }
   function closeEPK() { if (!EPK.el) return; EPK.el.remove(); EPK.el = null; document.documentElement.classList.remove('ssx-epk-open'); removeEventListener('resize', epkFit); }
   window.ssOpenEPK = openEPK;
   function mountEpkButton() {
     const sec = document.querySelector('section[data-view="kit"]'), cp = document.getElementById('copyPress'); if (!sec || !cp || document.getElementById('ssx-epk-btn')) return;
     const b = document.createElement('button'); b.type = 'button'; b.id = 'ssx-epk-btn'; b.className = 'btn'; b.textContent = 'Create an EPK';
-    b.onclick = e => { e.stopPropagation(); openEPK(); };
+    b.onclick = e => { e.stopPropagation(); // the Home Screen app on a phone can't share a sign-in with a new browser tab, so it opens in place there
+      if (standalone()) return openEPK(); const w = window.open(location.origin + '/?epk=1', '_blank'); if (!w) openEPK(); };
     const wrap = document.createElement('div'); wrap.className = 'ssx-row'; cp.replaceWith(wrap); wrap.append(b, cp);
   }
   setInterval(mountEpkButton, 1000);
