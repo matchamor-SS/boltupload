@@ -107,7 +107,8 @@ function appExtras() {
     setInterval(queueSoon, 60000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) queueSoon(); });
     if (params.get('goto')) { goto(params); history.replaceState(null, '', location.pathname); }
-    offerTour();
+    if (params.get('epk')) { history.replaceState(null, '', location.pathname); EPK.tab = true; openEPK(); }
+    else offerTour();
   }, 300);
 
   function goto(p) {
