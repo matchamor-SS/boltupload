@@ -403,6 +403,12 @@ html.ssx-epk-open, html.ssx-epk-open body { overflow: hidden; }
 .ssx-epk-mv button { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 16px; cursor: pointer; }
 .ssx-epk-mv button:hover:not(:disabled) { border-color: var(--accent); }
 .ssx-epk-mv button:disabled { opacity: .3; cursor: default; }
+.ssx-epk-list li.lv1 { padding-left: 22px; }
+.ssx-epk-list li.lv2 { padding-left: 44px; padding-right: 80px; }
+.ssx-epk-list li.lv1 .ssx-chip, .ssx-epk-list li.lv2 .ssx-chip { min-height: 32px; font-size: 12.5px; }
+.ssx-epk-list li.lv1:not(:has(.ssx-epk-mv)), .ssx-epk-list li.lv2 { padding-right: 80px; }
+.ssx-epk-row input[type=range] { flex: 1 1 160px; accent-color: var(--accent); min-height: 32px; }
+.ssx-epk-row .note { margin: 0; width: 100%; }
 .ssx-epk-tip { margin: 0; }
 .ssx-epk-stage { flex: 1; min-height: 0; overflow: auto; padding: 20px 16px 40px; background: color-mix(in srgb, var(--ink) 8%, var(--bg)); }
 .ssx-epk-pages { width: 816px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
@@ -426,12 +432,10 @@ html.ssx-epk-open, html.ssx-epk-open body { overflow: hidden; }
 .epk-mono { display: inline-block; font-family: "Italiana", "Bodoni 72", Didot, Georgia, serif; line-height: 1; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; }
 .epk-top { display: flex; justify-content: space-between; align-items: center; padding-bottom: 14px; border-bottom: 1px solid rgba(127, 127, 127, .2); }
 .epk-label { font-family: "DM Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: .26em; text-transform: uppercase; margin: 0 0 10px; }
-.epk-hero { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 48px; align-items: center; }
-.epk-hero.solo { grid-template-columns: 1fr; }
-.epk-hero.piconly { grid-template-columns: 1fr; justify-items: center; }
+.epk-hero { display: grid; gap: 48px; align-items: center; }
 .epk-hero-l { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
-.epk-page h1.epk-name { font-family: "Cormorant Garamond", Georgia, serif !important; font-weight: 500 !important; font-size: 84px !important; line-height: 1 !important; letter-spacing: -.01em !important; margin: 0 !important; padding: 0 0 4px !important; overflow-wrap: anywhere; }
-.epk-photo { width: 300px; height: 500px; border-radius: 150px 150px 18px 18px; overflow: hidden; border: 1px solid; display: grid; place-items: center; background: rgba(127, 127, 127, .08); }
+.epk-page h1.epk-name { font-family: "Cormorant Garamond", Georgia, serif !important; font-weight: 500 !important; line-height: 1.05 !important; letter-spacing: -.01em !important; margin: 0 !important; padding: 0 0 4px !important; width: 100%; white-space: nowrap; overflow: hidden; overflow-wrap: anywhere; }
+.epk-photo { box-sizing: border-box; overflow: hidden; border: 1px solid; display: grid; place-items: center; background: rgba(127, 127, 127, .08); }
 .epk-stats { display: flex; gap: 56px; border-top: 1px solid; border-bottom: 1px solid; padding: 20px 0; }
 .epk-stats > div { display: flex; flex-direction: column; gap: 6px; font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; }
 .epk-stats b { font-family: "Cormorant Garamond", Georgia, serif; font-size: 56px; font-weight: 500; line-height: 1; letter-spacing: 0; }
