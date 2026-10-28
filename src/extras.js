@@ -116,7 +116,7 @@ function appExtras() {
     speedUp(); submitGuard(); routeProfile(); hookFinance(); hookRequestView();
     st.db = await window.claude.use('db');
     if (!st.db) return;
-    hookAutopilot(); hookLayout();
+    hookAutopilot(); hookLayout(); hookEase();
     st.db.doc('settings/notify').onSnapshot(s => { st.prefs = s.exists ? s.data() : {}; render(); queueSoon(); }, () => {});
         st.db.doc('settings/profile').onSnapshot(() => setTimeout(() => fillProfile(), 0), () => {});
     st.db.doc('settings/bookinglink').onSnapshot(s => { st.link = s.exists ? s.data() : {}; render(); renderKit(); }, () => {});
@@ -1246,6 +1246,7 @@ function appExtras() {
     const m0 = +t.slice(5, 7), ly = +t.slice(0, 4) - 1;
     if (m0 >= 1 && m0 <= 4 && !skip('season:' + ly))
       out.push({ k: 'season:' + ly, at: t, icon: '🗂️', text: `Tax season: your ${ly} tax packet is ready, and your 1099 checklist is in Financials.`, btn: 'Open tax packet', go: () => { try { goTab('money'); FP.preset = 'year:' + ly; renderMoney(); taxSheet(); } catch (_) { try { taxSheet(); } catch (__) {} } } });
+    try { out.push(...easeItems(c, t, skip)); } catch (_) {}
     return out.sort((a, b) => String(a.at).localeCompare(String(b.at)));
   }
   function renderUpNext() {
@@ -1621,6 +1622,254 @@ function appExtras() {
     // the Totals tiles filter Transactions: bring the list into view when it's off screen
     document.addEventListener('click', e => { const t = e.target.closest && e.target.closest('#moneyStats [data-tx]'); if (!t) return;
       setTimeout(() => { const c = document.getElementById('txCard'); if (!c || c.classList.contains('ssx-lay-off')) return; const r = c.getBoundingClientRect(); if (r.top > innerHeight * 0.7 || r.top < 0) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80); });
+  }
+
+  /* ---------- Easier every day: shows move stages on their own, Undo instead of "are you sure", smart pre-fill,
+     one search box, a short booking form, quick replies to booking requests, holds from the calendar,
+     and a duplicate-people check. */
+  const EZ = { skipUndo: 0, bRef: null, cRef: null, cfgRef: null };
+  const stageName = k => { try { return ((STATUSES || []).find(s => s[0] === k) || [])[1] || k; } catch (_) { return k; } };
+  const stageKey = kind => { try { return ((STATUSES || []).find(s => K(s[0]) === kind) || [kind])[0]; } catch (_) { return kind; } };
+  const clone = o => JSON.parse(JSON.stringify(o));
+
+  // -- Undo: put back exactly the fields a change touched
+  async function undoPatch(prev, data) {
+    const upd = {}; Object.keys(data).forEach(k => { upd[k] = prev[k] === undefined ? null : prev[k]; }); upd.updatedAt = new Date().toISOString();
+    EZ.skipUndo++; try { await window.patch('bookings', prev.id, upd); } finally { EZ.skipUndo--; }
+    try { syncBookingEvent(prev.id, { ...prev, ...upd }); } catch (_) {}
+    try { if (document.querySelector('#sheetRoot .sheet [data-status]')) window.bookingView(prev.id); } catch (_) {}
+    if (window.toast) window.toast(`Undone. ${bName(prev)} is ${stageName(prev.status)} again`);
+  }
+
+  // -- 1) Confirmed → Played the day after the show (once per show; Undo keeps it Confirmed)
+  async function autoStages() {
+    if (!st.db || !AP.cfg || EZ.busy || Date.now() - (AP.t0 || Date.now()) < 5000) return;
+    const c = apCfg(), t = todayStr(), done = c.autoPlayed || {}, pk = stageKey('played');
+    const due = bk().filter(b => stat(b) === 'confirmed' && b.date && b.date < t && daysBetween(b.date, t) <= 30 && !done[b.id]);
+    if (!due.length) return;
+    EZ.busy = true;
+    try { for (const b of due) {
+      const prev = clone(b), upd = { status: pk, stageAt: { ...(b.stageAt || {}), [pk]: (b.stageAt || {})[pk] || t }, updatedAt: new Date().toISOString() };
+      let ok = null; EZ.skipUndo++; try { ok = await window.patch('bookings', b.id, upd); } finally { EZ.skipUndo--; }
+      if (!ok) continue;
+      apMark('autoPlayed', b.id, t);
+      try { syncBookingEvent(b.id, { ...b, ...upd }); } catch (_) {}
+      if (window.toast) window.toast(`${bName(b)} is now ${stageName(pk)}. Nice show!`, () => undoPatch(prev, upd));
+    } } finally { EZ.busy = false; }
+  }
+
+  // -- 6) quick reply when someone books you through your link
+  function ackMail(b) {
+    const who = person(b.promoterId || b.venueId || b.contactPersonId), first = who ? String(cName(who) || '').split(' ')[0] : '';
+    try { composeSheet({ booking: b.id, to: b.promoterId || b.venueId || '', subject: `Got your booking request${b.date ? ' for ' + niceDate(b.date) : ''}`, body: `Hi ${first || 'there'},\n\nThanks so much for reaching out about ${bName(b)}${b.date ? ' on ' + niceDate(b.date) : ''}! I got your request and I'll get back to you within 48 hours to confirm the details.\n\nTalk soon,\n${myName()}` }); } catch (_) {}
+  }
+
+  // -- extra "Up next" items: reply to new requests, paid yet?, duplicate people
+  function easeItems(c, t, skip) {
+    const out = [];
+    for (const b of bk()) {
+      if (isRequest(b) && !skip('ack:' + b.id)) out.push({ k: 'ack:' + b.id, at: String(b.createdAt || t).slice(0, 10), icon: '💬', text: `New booking request: <b>${esc(bName(b))}</b>${b.date ? ' on ' + esc(niceDate(b.date)) : ''}. Send a quick "got it" so they know you saw it.`, btn: 'Write reply', mark: true, go: () => ackMail(b) });
+      const since = b.date ? daysBetween(b.date, t) : null;
+      if (stat(b) === 'played' && +b.fee > 0 && since !== null && since >= 2 && since <= 90 && !skip('paidq:' + b.id)) {
+        const pk = stageKey('paid');
+        out.push({ k: 'paidq:' + b.id, at: b.date, icon: '💸', text: `Did you get paid for <b>${esc(bName(b))}</b> (${esc('$' + Number(b.fee).toLocaleString('en-US'))})?`, btn: 'Mark Paid', snooze: 7, go: async () => { await window.patch('bookings', b.id, { status: pk, paidDate: b.paidDate || t, stageAt: { ...(b.stageAt || {}), [pk]: t }, updatedAt: new Date().toISOString() }); } });
+      }
+    }
+    const dp = dupPairs(); if (dp.length && !skip('dups:' + dp.map(x => x[2]).join(',')))
+      out.push({ k: 'dups:' + dp.map(x => x[2]).join(','), at: t, icon: '👥', text: `${dp.length} ${dp.length === 1 ? 'person looks' : 'people look'} like ${dp.length === 1 ? 'a duplicate' : 'duplicates'} in People. Merge them so history and mileage stay together.`, btn: 'Review', snooze: 14, go: () => { try { goTab('contacts'); } catch (_) {} } });
+    return out;
+  }
+
+  // -- 3) smart pre-fill + 5) short booking form
+  function bookingExtras(b) {
+    const root = document.querySelector('#sheetRoot .sheet'); if (!root || !root.querySelector('#b-title')) return;
+    const acts = root.querySelector('.actions');
+    if (acts && !root.querySelector('.ssx-more')) {
+      const pick = [['#b-addr', '.f'], ['#b-inctype', '.f'], ['#b-pp', '.f'], ['#b-media', '.frow'], ['#b-drive', '.f'], ['#b-notes', '.f']].map(([s, w]) => { const el = root.querySelector(s); return el && el.closest(w); }).filter(Boolean);
+      if (pick.length) {
+        const det = document.createElement('details'); det.className = 'ssx-more';
+        const filled = !!(b.address || b.notes || b.mediaId || b.ticketUrl || b.driveUrl || b.payInfo || (b.payPrefs || []).length);
+        det.innerHTML = `<summary>More details <span class="note">address, payment, media, notes${filled ? ' · has info' : ''}</span></summary><div class="ssx-morebody"></div>`;
+        const body = det.querySelector('.ssx-morebody'); pick.forEach(el => body.appendChild(el)); acts.before(det);
+      }
+    }
+    if (b.id) return;
+    const venue = root.querySelector('#b-venue'); if (!venue) return;
+    const note = document.createElement('p'); note.className = 'note ssx-prefill'; note.hidden = true; (venue.closest('.frow') || venue).after(note);
+    const setSel = (sel, v) => { const el = root.querySelector(sel); if (!el || !v || (el.value && el.value !== '')) return false; if (![...el.options].some(o => o.value === v)) return false; el.value = v; el.dispatchEvent(new Event('change', { bubbles: true })); if (typeof el._sync === 'function') el._sync(); return true; };
+    venue.addEventListener('change', () => {
+      const id = venue.value; if (!id || id === '__new__') return;
+      const last = bk().filter(x => x.venueId === id).sort((a, c) => String(c.date || '').localeCompare(String(a.date || '')))[0]; if (!last) { note.hidden = true; return; }
+      const got = [], fee = root.querySelector('#b-fee');
+      if (fee && !fee.value && +last.fee) { fee.value = last.fee; fee.dispatchEvent(new Event('input', { bubbles: true })); got.push('fee'); }
+      if (setSel('#b-promo', last.promoterId)) got.push('promoter');
+      if (setSel('#b-media', last.mediaId)) got.push('media person');
+      try { if (!readTime(root, 'b-ts') && last.setStart) { setTimeSel(root, 'b-ts', last.setStart); if (last.setEnd) setTimeSel(root, 'b-te', last.setEnd); got.push('set time'); } } catch (_) {}
+      if (got.length) { note.hidden = false; note.textContent = `Filled in the ${got.join(', ')} from your last show here (${niceDate(last.date)}). Change anything that's different.`; }
+    });
+  }
+
+  // -- 4) one search box
+  function searchSheet() {
+    if (typeof sheet !== 'function') return;
+    sheet(`<h3>Search</h3><input id="ssx-q" class="ssx-qin" type="search" placeholder="Shows, people, templates, expenses…" autocomplete="off" aria-label="Search everything"><div id="ssx-qres" class="ssx-qres"></div>
+      <div class="actions"><button class="btn" data-cancel>Close</button></div>`, root => {
+      root.querySelector('[data-cancel]').onclick = () => { try { close(); } catch (_) {} };
+      const q = root.querySelector('#ssx-q'), res = root.querySelector('#ssx-qres');
+      const run = () => {
+        const s = q.value.trim().toLowerCase(); if (s.length < 2) { res.innerHTML = '<p class="note">Type at least 2 letters.</p>'; return; }
+        const has = (...v) => v.some(x => String(x || '').toLowerCase().includes(s));
+        const grp = (n, items) => items.length ? `<div class="ssx-qgrp"><span class="eyebrow">${n}</span><div class="list">${items.slice(0, 8).join('')}</div></div>` : '';
+        const row = (attr, t, sub) => `<button type="button" class="row" ${attr}><span class="main"><span class="t" style="display:block">${esc(t)}</span><span class="sub" style="display:block">${esc(sub)}</span></span></button>`;
+        let D = {}; try { D = S; } catch (_) {}
+        const bks = (D.bookings || []).filter(b => { const v = person(b.venueId), p = person(b.promoterId); return has(b.title, b.city, b.address, b.notes, v && cName(v), p && cName(p), b.date); }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).map(b => row(`data-q-b="${esc(b.id)}"`, bName(b), [b.date ? niceDate(b.date) : '', stageName(b.status), b.city].filter(Boolean).join(' · ')));
+        const ppl = (D.contacts || []).filter(c => has(c.name, c.org, c.email, c.phone, c.ig, c.city)).map(c => row(`data-q-c="${esc(c.id)}"`, cName(c) || c.email || 'Contact', [c.email, c.city].filter(Boolean).join(' · ')));
+        const tpl = (D.templates || []).filter(t => has(t.name, t.subject, t.body)).map(t => row(`data-q-t="${esc(t.id)}"`, t.name || t.subject || 'Template', t.subject || ''));
+        const mon = [...(D.expenses || []).filter(x => has(x.desc, x.purpose, x.category)).map(x => row(`data-q-x="${esc(x.id)}"`, x.desc || 'Expense', `Expense · $${Number(x.amount || 0).toFixed(2)}${x.date ? ' · ' + niceDate(x.date) : ''}`)),
+          ...(D.income || []).filter(x => has(x.desc, x.source)).map(x => row(`data-q-i="${esc(x.id)}"`, x.desc || 'Income', `Income · $${Number(x.amount || 0).toFixed(2)}${x.date ? ' · ' + niceDate(x.date) : ''}`))];
+        res.innerHTML = grp('Shows', bks) + grp('People', ppl) + grp('Templates', tpl) + grp('Money', mon) || '<p class="note">Nothing found.</p>';
+        const on = (sel, fn) => res.querySelectorAll(sel).forEach(el => el.onclick = () => { try { fn(el); } catch (e) { console.error(e); } });
+        on('[data-q-b]', el => window.bookingView(el.dataset.qB));
+        on('[data-q-c]', el => contactForm((D.contacts || []).find(c => c.id === el.dataset.qC)));
+        on('[data-q-t]', el => templateForm((D.templates || []).find(t => t.id === el.dataset.qT)));
+        on('[data-q-x]', el => window.expenseForm((D.expenses || []).find(x => x.id === el.dataset.qX)));
+        on('[data-q-i]', el => incomeForm((D.income || []).find(x => x.id === el.dataset.qI)));
+      };
+      q.addEventListener('input', run); run(); setTimeout(() => q.focus(), 60);
+    });
+  }
+
+  // -- 7) hold an open date for a venue, straight from the calendar
+  function holdButton(ds) {
+    const sh = document.querySelector('#sheetRoot .sheet'); if (!sh || !ds || ds < todayStr()) return;
+    let busy = false; try { busy = availBusy(ds); } catch (_) {} if (busy) return;
+    const acts = sh.querySelector('.actions'); if (!acts || acts.querySelector('[data-ssx-hold]')) return;
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn'; btn.dataset.ssxHold = '1'; btn.textContent = 'Hold for a venue…';
+    acts.insertBefore(btn, acts.lastElementChild); btn.onclick = () => holdSheet(ds);
+  }
+  function holdSheet(ds) {
+    let cs = []; try { cs = S.contacts || []; } catch (_) {}
+    const by = type => cs.filter(c => c.type === type).sort((a, b) => String(cName(a)).localeCompare(String(cName(b))));
+    const og = (label, list) => list.length ? `<optgroup label="${label}">${list.map(c => `<option value="${esc(c.id)}">${esc(cName(c))}</option>`).join('')}</optgroup>` : '';
+    const pk = stageKey('pitched');
+    sheet(`<h3>Hold ${esc(niceDate(ds))}</h3><p class="note" style="margin:4px 0 10px">Saves this date as <b>${esc(stageName(pk))}</b> so it closes on your booking link, then opens your pitch email to review.</p>
+      <div class="f"><label for="ssx-hv">Venue or promoter</label><select id="ssx-hv"><option value="">Pick one…</option>${og('Venues', by('venue'))}${og('Promoters', by('promoter'))}</select></div>
+      ${!by('venue').length && !by('promoter').length ? '<p class="note">Add a venue or promoter in People first.</p>' : ''}
+      <div class="actions"><button class="btn" data-cancel>Back</button><button class="btn primary" data-hold>Hold and write pitch</button></div>`, root => {
+      root.querySelector('[data-cancel]').onclick = () => { try { window.daySheet(ds); } catch (_) { try { close(); } catch (__) {} } };
+      root.querySelector('[data-hold]').onclick = async e => {
+        const id = root.querySelector('#ssx-hv').value; if (!id) { if (window.toast) window.toast('Pick a venue or promoter'); return; }
+        e.currentTarget.disabled = true;
+        const c = person(id) || {}, t = todayStr(), now = new Date().toISOString();
+        const data = { title: cName(c) || 'Hold', date: ds, status: pk, stageAt: { [pk]: t }, city: c.city || '', [c.type === 'promoter' ? 'promoterId' : 'venueId']: id, createdAt: now, updatedAt: now };
+        const nid = await window.save('bookings', null, data); if (!nid) { e.currentTarget.disabled = false; return; }
+        try { close(); } catch (_) {}
+        if (window.toast) window.toast(`Held ${niceDate(ds)} for ${cName(c)}`);
+        let n = 0; const open = () => { const b = bk().find(x => x.id === nid); if (!b && n++ < 20) return setTimeout(open, 200);
+          try { syncBookingEvent(nid, { ...data, id: nid }); } catch (_) {}
+          const to = c.bookingContactId || id, first = String(cName(person(c.bookingContactId) || c) || '').split(' ')[0];
+          try { (S.templates || []).some(x => x.id === 'venue-pitch') ? useTemplate('venue-pitch', nid) : composeSheet({ booking: nid, to, subject: `Booking inquiry: ${niceDate(ds)}`, body: `Hi ${first || 'there'},\n\nI'd love to play ${cName(c)} on ${niceDate(ds)}. I'm holding the date for you for now. Let me know if it works and I'll send everything you need.\n\nThanks,\n${myName()}` }); } catch (_) {} };
+        setTimeout(open, 300);
+      };
+    });
+  }
+
+  // -- 8) duplicate people: same email, or same name and type
+  const normName = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  function dupPairs() {
+    let cs = []; try { cs = S.contacts || []; } catch (_) {}
+    const nd = apCfg().notDup || {}, out = [];
+    for (let i = 0; i < cs.length && out.length < 20; i++) for (let j = i + 1; j < cs.length && out.length < 20; j++) {
+      const a = cs[i], b = cs[j], k = [a.id, b.id].sort().join('|'); if (nd[k]) continue;
+      const ea = String(a.email || '').trim().toLowerCase(), eb = String(b.email || '').trim().toLowerCase(), na = normName(cName(a)), nb = normName(cName(b));
+      if ((ea && ea === eb) || (na.length > 2 && na === nb && (a.type || '') === (b.type || ''))) out.push([a, b, k]);
+    }
+    return out;
+  }
+  async function mergeContacts(a, b) {
+    if (!st.db) return;
+    const uses = c => bk().filter(x => [x.venueId, x.promoterId, x.mediaId, x.contactPersonId].includes(c.id)).length;
+    const [keep, drop] = uses(b) > uses(a) ? [b, a] : [a, b];
+    const merged = { ...keep };
+    for (const [k, v] of Object.entries(drop)) { if (k === 'id' || k === 'createdAt') continue; const cur = merged[k];
+      if (Array.isArray(v)) merged[k] = [...new Set([...(Array.isArray(cur) ? cur : []), ...v])];
+      else if (cur === undefined || cur === null || cur === '') merged[k] = v; }
+    const swap = v => v === drop.id ? keep.id : v;
+    ['venueIds', 'promoterIds', 'memberIds', 'collectiveIds'].forEach(f => { if (Array.isArray(merged[f])) merged[f] = [...new Set(merged[f].map(swap))].filter(x => x !== keep.id); });
+    ['bookingContactId', 'mainContactId', 'runBy', 'collectiveId'].forEach(f => { if (merged[f] === drop.id || merged[f] === keep.id) merged[f] = ''; });
+    const { id: _k, ...keepData } = merged; await st.db.collection('contacts').doc(keep.id).set(keepData);
+    for (const x of bk()) { const upd = {}; ['venueId', 'promoterId', 'mediaId', 'contactPersonId'].forEach(f => { if (x[f] === drop.id) upd[f] = keep.id; }); if (Object.keys(upd).length) await window.patch('bookings', x.id, upd); }
+    let cs = [], inc = []; try { cs = S.contacts || []; inc = S.income || []; } catch (_) {}
+    for (const c of cs) { if (c.id === keep.id || c.id === drop.id) continue; let ch = false; const n = { ...c };
+      ['bookingContactId', 'mainContactId', 'runBy', 'collectiveId'].forEach(f => { if (n[f] === drop.id) { n[f] = keep.id; ch = true; } });
+      ['venueIds', 'promoterIds', 'memberIds', 'collectiveIds'].forEach(f => { if (Array.isArray(n[f]) && n[f].includes(drop.id)) { n[f] = [...new Set(n[f].map(swap))]; ch = true; } });
+      if (ch) { const { id, ...d } = n; await st.db.collection('contacts').doc(id).set(d).catch(() => {}); } }
+    for (const i of inc) if (i.sourceId === drop.id) { const { id, ...d } = i; await st.db.collection('income').doc(id).set({ ...d, sourceId: keep.id }).catch(() => {}); }
+    await st.db.collection('contacts').doc(drop.id).delete().catch(() => {});
+    if (window.toast) window.toast(`Merged into ${cName(keep) || 'one contact'}`);
+  }
+  function renderDups() {
+    const sec = document.querySelector('section[data-view="contacts"]'); if (!sec || !st.db) return;
+    const list = dupPairs(); let box = document.getElementById('ssx-dups');
+    if (!list.length) { if (box) box.remove(); return; }
+    if (!box) { box = document.createElement('div'); box.id = 'ssx-dups'; box.className = 'card ssx ssx-kitcard'; const head = sec.querySelector(':scope > .head'); head ? head.after(box) : sec.prepend(box); }
+    const line = c => `<b>${esc(cName(c) || 'No name')}</b>${c.email ? ` · ${esc(c.email)}` : ''}${c.city ? ` · ${esc(c.city)}` : ''}`;
+    box.innerHTML = `<div class="ssx-head"><div><h3>Possible duplicates <span class="ssx-pill on">${list.length}</span></h3><p class="note">Same email or same name. Merging keeps every show, payment and note, and joins them under one person.</p></div></div>
+      <div class="ssx-uplist">${list.map(([a, b, k]) => `<div class="ssx-upi" data-dup="${esc(k)}"><span class="ssx-upic">👥</span><span class="ssx-uptx">${line(a)}<br>${line(b)}</span><span class="ssx-upbt"><button type="button" class="btn small primary" data-dup-go>Merge</button><button type="button" class="btn small" data-dup-no>Not the same</button></span></div>`).join('')}</div>`;
+    box.querySelectorAll('[data-dup]').forEach(row => {
+      const pair = list.find(x => x[2] === row.dataset.dup); if (!pair) return;
+      row.querySelector('[data-dup-go]').onclick = async e => { e.stopPropagation(); e.currentTarget.disabled = true; e.currentTarget.textContent = 'Merging…'; try { await mergeContacts(pair[0], pair[1]); } catch (err) { console.error(err); if (window.toast) window.toast("Couldn't merge. Try again."); } };
+      row.querySelector('[data-dup-no]').onclick = e => { e.stopPropagation(); apMark('notDup', pair[2]); setTimeout(renderDups, 100); };
+    });
+  }
+
+  function hookEase() {
+    if (window.__ssxEase || !st.db) return; window.__ssxEase = true;
+    // Undo for stage changes
+    const pt = window.patch;
+    if (typeof pt === 'function') window.patch = async function (col, id, data) {
+      const p = col === 'bookings' && data && typeof data === 'object' && 'status' in data ? bk().find(b => b.id === id) : null, prev = p ? clone(p) : null;
+      const out = await pt.apply(this, arguments);
+      if (out && prev && !EZ.skipUndo && prev.status !== data.status) {
+        const label = data.requestStatus === 'accepted' ? 'Request accepted' : data.requestStatus === 'declined' ? 'Request declined' : `${bName(prev)} moved to ${stageName(data.status)}`;
+        setTimeout(() => { if (window.toast) window.toast(label, () => undoPatch(prev, data)); }, 80);
+      }
+      return out;
+    };
+    // Undo for deletes (no more "tap again to delete"; files from your Kit still ask first)
+    const rm = window.remove;
+    if (typeof rm === 'function') window.remove = async function (col, id) {
+      let snap = null; try { const arr = S[col]; snap = Array.isArray(arr) ? arr.find(x => x.id === id) : null; } catch (_) {}
+      snap = snap ? clone(snap) : null;
+      const out = await rm.apply(this, arguments);
+      if (snap && col !== 'kitFiles') setTimeout(() => { if (window.toast) window.toast('Deleted', async () => {
+        const { id: _i, ...data } = snap; if (col === 'bookings') delete data.gcal;
+        await st.db.collection(col).doc(id).set(data).catch(() => {});
+        if (col === 'bookings') setTimeout(() => { try { syncBookingEvent(id, { ...data, id }); } catch (_) {} }, 800);
+        if (window.toast) window.toast('Restored');
+      }); }, 80);
+      return out;
+    };
+    const ad = window.armDelete;
+    if (typeof ad === 'function') window.armDelete = function (root, fn) { if (String(fn).includes('kitFiles')) return ad.apply(this, arguments); const b = root && root.querySelector('[data-del]'); if (!b) return; b.onclick = () => { b.disabled = true; fn(); }; };
+    // short form + smart pre-fill
+    const bf = window.bookingForm;
+    if (typeof bf === 'function') window.bookingForm = function (b = {}) { const out = bf.apply(this, arguments); try { bookingExtras(b || {}); } catch (e) { console.error(e); } return out; };
+    // hold from the calendar
+    const dsh = window.daySheet;
+    if (typeof dsh === 'function') window.daySheet = function (ds) { const out = dsh.apply(this, arguments); try { holdButton(ds); } catch (e) { console.error(e); } return out; };
+    // search: a button in the top bar, plus "/" or Ctrl/Cmd+K
+    const topr = document.querySelector('header.top .topr');
+    if (topr && !document.getElementById('ssx-search')) { const s = document.createElement('button'); s.className = 'iconbtn'; s.id = 'ssx-search'; s.type = 'button'; s.setAttribute('aria-label', 'Search'); s.title = 'Search (/)';
+      s.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+      s.onclick = searchSheet; topr.prepend(s); }
+    document.addEventListener('keydown', e => { const t = e.target, typing = t && (/INPUT|TEXTAREA|SELECT/.test(t.tagName) || t.isContentEditable);
+      if ((e.key === 'k' && (e.metaKey || e.ctrlKey)) || (e.key === '/' && !typing && !e.metaKey && !e.ctrlKey)) { e.preventDefault(); searchSheet(); } });
+    // background: auto stages + duplicates
+    setInterval(() => { try { let b = null, c = null; try { b = S.bookings; c = S.contacts; } catch (_) {}
+      if (b !== EZ.bRef || AP.cfg !== EZ.cfgRef) { EZ.bRef = b; EZ.cfgRef = AP.cfg; EZ.cRef = c; autoStages(); renderDups(); }
+      else if (c !== EZ.cRef) { EZ.cRef = c; renderDups(); }
+      autoStages(); } catch (e) { console.error(e); } }, 1500);
   }
 
   /* ---------- Smooth saving.
@@ -2018,7 +2267,7 @@ function appExtras() {
     const go = async status => { all.forEach(x => x.disabled = true); const done = await decideRequest(b, status); if (!done) { all.forEach(x => x.disabled = false); return; } bar.remove(); setTimeout(() => { try { if (document.querySelector('#sheetRoot .sheet')) window.bookingView(id); } catch (_) {} }, 400); };
     ok.onclick = e => { e.stopPropagation(); go('confirmed'); };
     no.onclick = e => { e.stopPropagation(); if (!no.dataset.armed) { no.dataset.armed = '1'; no.textContent = 'Tap again to decline'; setTimeout(() => { if (no.isConnected) { delete no.dataset.armed; no.textContent = 'Decline'; } }, 4000); return; } go('lost'); };
-    bar.querySelector('[data-rb-reply]').onclick = e => { e.stopPropagation(); try { composeSheet({ booking: id, to: b.promoterId || b.venueId || '' }); } catch (_) {} };
+    bar.querySelector('[data-rb-reply]').onclick = e => { e.stopPropagation(); apMark('done', 'ack:' + id); ackMail(b); };
   }
   function hookRequestView() {
     const bv = window.bookingView; if (typeof bv !== 'function' || bv.__ssxReq) return;
@@ -2055,7 +2304,7 @@ function appExtras() {
       item.querySelector('[data-req-ok]').onclick = e => { e.stopPropagation(); decide('confirmed'); };
       item.querySelector('[data-req-no]').onclick = e => { e.stopPropagation(); if (REQ.busy !== 'no:' + id) { REQ.busy = 'no:' + id; renderRequests(); setTimeout(() => { if (REQ.busy === 'no:' + id) { REQ.busy = ''; renderRequests(); } }, 4000); return; } decide('lost'); };
       item.querySelector('[data-req-open]').onclick = e => { e.stopPropagation(); try { bookingView(id); } catch (_) {} };
-      item.querySelector('[data-req-reply]').onclick = e => { e.stopPropagation(); try { composeSheet({ booking: id, to: b.promoterId || b.venueId || '' }); } catch (_) {} };
+      item.querySelector('[data-req-reply]').onclick = e => { e.stopPropagation(); apMark('done', 'ack:' + id); ackMail(b); };
     });
   }
 
