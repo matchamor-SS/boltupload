@@ -1156,6 +1156,10 @@ function appExtras() {
     let exps = []; try { exps = S.expenses || []; } catch (_) {}
     exps.filter(x => String(x.id).startsWith('rec-') && !x.receipt && x.date && daysBetween(x.date, t) <= 45 && !skip('rcpt:' + x.id)).forEach(x =>
       out.push({ k: 'rcpt:' + x.id, at: x.date, icon: '📎', text: `Add the receipt for <b>${esc(x.desc || 'your repeating cost')}</b> (${esc(niceDate(x.date))}).`, btn: 'Add receipt', go: () => { try { goTab('money'); expenseForm(x); } catch (_) {} } }));
+    // far-away shows: confirm where you drove from
+    const pendIds = Object.keys(c.pend || {}).filter(id => bk().some(b => b.id === id));
+    if (pendIds.length && !skip('milefar:' + pendIds.join(',')))
+      out.push({ k: 'milefar:' + pendIds.join(','), at: t, icon: '📍', text: `${pendIds.length} show${pendIds.length === 1 ? ' was' : 's were'} out of town or far from home. Confirm where you drove from to log the miles.`, btn: 'Check miles', snooze: 3, go: () => { try { goTab('money'); setTimeout(() => { const el = document.getElementById('ssx-miles'); el && el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 200); } catch (_) {} } });
     // miles to log
     const ms = mileageToLog(); if (ms.length && !skip('miles:' + t.slice(0, 7)))
       out.push({ k: 'miles:' + t.slice(0, 7), at: t, icon: '🚗', text: `${ms.length} show${ms.length === 1 ? '' : 's'} to log miles for. Mileage is one of the easiest deductions to miss.`, btn: 'Log miles', snooze: 7, go: () => { try { goTab('money'); setTimeout(() => { const el = document.getElementById('ssx-miles'); el && el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 200); } catch (_) {} } });
@@ -1190,12 +1194,74 @@ function appExtras() {
   const venueKey = b => b.venueId || String(b.address || '').toLowerCase().replace(/\s+/g, ' ').trim();
   function mileageToLog() {
     const c = apCfg(), y = todayStr().slice(0, 4), logged = new Set(AP.mileage.map(m => m.bookingId).filter(Boolean));
-    return bk().filter(b => ['played', 'paid'].includes(stat(b)) && String(b.date || '').startsWith(y) && (b.venueId || b.address) && !logged.has(b.id) && !c.noDrive[b.id]).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    const auto = c.autoMiles && c.home && c.home.lat, pend = c.pend || {};
+    return bk().filter(b => ['played', 'paid'].includes(stat(b)) && String(b.date || '').startsWith(y) && (b.venueId || b.address || b.city) && !logged.has(b.id) && !c.noDrive[b.id] && !pend[b.id] && !(auto && destOf(b) && !GEO.fail[b.id])).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   }
-  async function logTrip(b, oneWay) {
+  async function logTrip(b, oneWay, o = {}) {
     const miles = Math.round(oneWay * 2 * 10) / 10, v = person(b.venueId), where = (v && cName(v)) || b.address || b.city || 'the venue';
-    await st.db.collection('mileage').doc('m-' + b.id).set({ date: b.date, miles, purpose: `Round trip to ${where} for ${bName(b)}`, bookingId: b.id, createdAt: new Date().toISOString() });
-    const c = apCfg(), k = venueKey(b); if (k) apSave({ venueMiles: { ...c.venueMiles, [k]: oneWay } });
+    const from = o.from ? ` from ${o.from}` : '';
+    await st.db.collection('mileage').doc('m-' + b.id).set({ date: b.date, miles, purpose: `Round trip${from} to ${where} for ${bName(b)}`, bookingId: b.id, auto: !!o.auto, createdAt: new Date().toISOString() });
+    const c = apCfg(), k = venueKey(b), pend = { ...(c.pend || {}) }; delete pend[b.id];
+    apSave({ pend, ...(k && !o.custom ? { venueMiles: { ...c.venueMiles, [k]: oneWay } } : {}) });
+  }
+
+  /* -- automatic mileage: measures the drive from home (or another start you set) to each show.
+     Uses OpenStreetMap to find addresses and the OSRM route service for driving distance; only addresses are sent. */
+  const GEO = { last: 0, busy: false, fail: {} };
+  const normAddr = s => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const sameCity = (a, b) => normAddr(a) && normAddr(a) === normAddr(b);
+  async function geoFind(q) {
+    const k = normAddr(q); if (!k) return null;
+    const cache = apCfg().geo || {}; if (cache[k]) return cache[k];
+    const wait = 1100 - (Date.now() - GEO.last); if (wait > 0) await new Promise(r => setTimeout(r, wait)); GEO.last = Date.now();
+    const r = await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&q=' + encodeURIComponent(String(q).slice(0, 200)), { headers: { Accept: 'application/json' } });
+    if (!r.ok) throw new Error('geo ' + r.status);
+    const j = (await r.json())[0]; if (!j) return null;
+    const a = j.address || {}, hit = { lat: +j.lat, lon: +j.lon, city: a.city || a.town || a.village || a.hamlet || a.municipality || a.county || '' };
+    const g = { ...(apCfg().geo || {}) }; const keys = Object.keys(g); if (keys.length > 300) delete g[keys[0]]; g[k] = hit; apSave({ geo: g });
+    return hit;
+  }
+  async function driveMiles(from, to) {
+    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`);
+    if (!r.ok) throw new Error('route ' + r.status);
+    const j = await r.json(); const m = j && j.routes && j.routes[0] && j.routes[0].distance;
+    if (!(m > 0)) throw new Error('no route');
+    return Math.round(m / 1609.344 * 10) / 10;
+  }
+  function destOf(b) {
+    const v = person(b.venueId) || {}, addr = b.address || v.address || '', city = b.city || v.city || '';
+    const q = [addr, city && !normAddr(addr).includes(normAddr(city)) ? city : ''].filter(Boolean).join(', ');
+    return q ? { q, city } : null;
+  }
+  // shows that happened and can be measured automatically
+  function autoCandidates() {
+    const c = apCfg(), t = todayStr(), y = t.slice(0, 4), logged = new Set(AP.mileage.map(m => m.bookingId).filter(Boolean)), pend = c.pend || {};
+    return bk().filter(b => ['confirmed', 'played', 'paid'].includes(stat(b)) && b.date && b.date < t && String(b.date).startsWith(y) && !logged.has(b.id) && !c.noDrive[b.id] && !pend[b.id] && !GEO.fail[b.id] && destOf(b));
+  }
+  async function autoMiles() {
+    const c = apCfg(); if (GEO.busy || !c.autoMiles || !c.home || !c.home.lat || !st.db) return;
+    const list = autoCandidates().slice(0, 4); if (!list.length) return;
+    GEO.busy = true;
+    try {
+      for (const b of list) {
+        try {
+          const d = destOf(b), to = await geoFind(d.q); if (!to) { GEO.fail[b.id] = 1; continue; }
+          const cc = apCfg(), start = (cc.mileFrom || {})[b.id], from = start && start.lat ? start : cc.home;
+          const one = await driveMiles(from, to), city = to.city || d.city || '';
+          const far = !start && (one > (Number(cc.farMiles) || 50) || (city && cc.home.city && !sameCity(city, cc.home.city)));
+          if (far) apSave({ pend: { ...(apCfg().pend || {}), [b.id]: { mi: one, city } } });
+          else { await logTrip(b, one, { auto: true, from: start ? start.label || 'your start address' : 'home', custom: !!start }); if (window.toast) window.toast(`Logged ${Math.round(one * 2 * 10) / 10} mi for ${bName(b)}`); }
+        } catch (err) { GEO.fail[b.id] = 1; console.warn('mileage', err); }
+      }
+    } finally { GEO.busy = false; }
+  }
+  async function measureFrom(b, addr) {
+    const start = await geoFind(addr); if (!start) { if (window.toast) window.toast("Couldn't find that start address"); return false; }
+    const d = destOf(b), to = d && await geoFind(d.q); if (!to) { if (window.toast) window.toast("Couldn't find the show's address"); return false; }
+    const one = await driveMiles(start, to);
+    apSave({ mileFrom: { ...(apCfg().mileFrom || {}), [b.id]: { ...start, label: String(addr).slice(0, 120) } } });
+    await logTrip(b, one, { auto: true, from: String(addr).slice(0, 120), custom: true });
+    if (window.toast) window.toast(`Logged ${Math.round(one * 2 * 10) / 10} mi for ${bName(b)}`); return true;
   }
 
   /* -- repeating expenses */
@@ -1222,11 +1288,12 @@ function appExtras() {
     const sec = document.querySelector('section[data-view="money"]'); if (!sec || !st.db) return;
     let wrap = document.getElementById('ssx-fin');
     if (!wrap) { wrap = document.createElement('div'); wrap.id = 'ssx-fin'; wrap.className = 'ssx-fin'; const s = document.getElementById('moneyStats'); s ? s.after(wrap) : sec.appendChild(wrap); }
-    if (wrap.contains(document.activeElement) && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+    const ae = document.activeElement; if (wrap.contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName) && !/checkbox|radio/.test(ae.type || '')) return;
     const c = apCfg(), t = todayStr(), y = +t.slice(0, 4), tn = taxNumbers(y), nd = nextDue(), $ = n => '$' + Math.round(n).toLocaleString('en-US');
     const pays = (c.estPayments || []).filter(p => +p.year === y).sort((a, b) => String(a.date).localeCompare(String(b.date)));
     const ly = y - 1, m0 = +t.slice(5, 7), nec = ly >= 2026 ? 2000 : 600;
     let payers = []; if (m0 <= 4) { try { payers = window.taxData(yearR(ly)).byPayer.filter(([, v]) => v.amt >= nec); } catch (_) {} }
+    const home = c.home || {}, far = Number(c.farMiles) || 50, pendL = Object.entries(c.pend || {}).map(([id, p]) => [bk().find(b => b.id === id), p]).filter(([b]) => b);
     const ml = mileageToLog(), trips = AP.mileage.filter(m => String(m.date || '').startsWith(String(y))).sort((a, b) => String(b.date).localeCompare(String(a.date)));
     wrap.innerHTML = `
     <div class="card ssx" id="ssx-tax">
@@ -1245,12 +1312,24 @@ function appExtras() {
       <p class="note" style="margin:0">A rough guide, not tax advice: 25–30% of profit covers self-employment tax plus income tax for many performers. Your preparer can fine-tune it.</p>
     </div>
     <div class="card ssx" id="ssx-miles">
-      <div class="ssx-head"><div><h3>Mileage</h3><p class="note">${y}: ${trips.reduce((s, m) => s + (+m.miles || 0), 0).toLocaleString('en-US')} miles · about ${$(tn.mileDed)} deduction at the IRS rate of ${(mileRate(y) * 100).toFixed(1)}¢ a mile${MILE_RATE[y] ? '' : ' (check this year\'s rate)'}.</p></div></div>
+      <div class="ssx-head"><div><h3>Mileage</h3><p class="note">${y}: ${trips.reduce((s, m) => s + (+m.miles || 0), 0).toLocaleString('en-US')} miles · about ${$(tn.mileDed)} deduction at the IRS rate of ${(mileRate(y) * 100).toFixed(1)}¢ a mile${MILE_RATE[y] ? '' : ' (check this year\'s rate)'}.</p></div>
+        <label class="ssx-switch"><input type="checkbox" id="ssx-am-on" ${c.autoMiles ? 'checked' : ''} aria-label="Count miles automatically"><span></span></label></div>
+      <div class="ssx-opt ssx-am">
+        <b>Count miles automatically ${c.autoMiles ? (home.lat ? '<span class="ssx-pill on">On</span>' : '<span class="ssx-pill">Needs your home address</span>') : '<span class="ssx-pill">Off</span>'}</b>
+        <p class="note" style="margin:0">After each show, the app measures the drive from your home to the venue and logs the round trip. If a show is in another city or more than ${esc(far)} miles away, it asks where you left from first.</p>
+        <details class="ssx-det" ${home.lat ? '' : 'open'}><summary>Home address and settings</summary>
+        <div class="ssx-grid2"><div class="f"><label for="ssx-am-home">Home (starting address)</label><input id="ssx-am-home" autocomplete="street-address" maxlength="200" placeholder="Street, city, state" value="${esc(home.address || '')}"></div>
+          <div class="f"><label for="ssx-am-far">Ask me when it's more than (miles one way)</label><input id="ssx-am-far" type="number" min="5" max="500" step="5" inputmode="numeric" value="${esc(far)}"></div></div>
+        <div class="ssx-row"><button type="button" class="btn small primary" data-am-save>Save</button>${home.city ? `<span class="note" style="margin:0">Home city: ${esc(home.city)}</span>` : ''}</div>
+        <p class="note" style="margin:0">Addresses are looked up with OpenStreetMap to measure the drive; nothing else is shared. Drives from home count when home is your main place of business (a home studio usually qualifies). Your preparer can confirm.</p></details>
+      </div>
+      ${pendL.length ? `<div class="ssx-uplist ssx-pend"><b>Where did you drive from?</b>${pendL.map(([b, p]) => `<div class="ssx-upi" data-pd="${esc(b.id)}"><span class="ssx-upic">📍</span><span class="ssx-uptx"><b>${esc(bName(b))}</b> · ${esc(niceDate(b.date))}${p.city ? ' · ' + esc(p.city) : ''}${p.mi ? ` · ${p.mi} mi one way from home` : ''}</span><span class="ssx-upbt">${p.mi || home.lat ? `<button type="button" class="btn small primary" data-pd-home>From home${p.mi ? ` (${Math.round(p.mi * 2 * 10) / 10} mi)` : ''}</button>` : ''}<button type="button" class="btn small" data-pd-other>Different start</button><button type="button" class="btn small" data-pd-no>Didn't drive</button></span>
+        <div class="ssx-row ssx-pdform" hidden><input data-pd-addr maxlength="200" placeholder="Where you left from (hotel, friend's place…)" aria-label="Starting address" style="flex:1 1 220px"><button type="button" class="btn small primary" data-pd-go>Measure and log</button></div></div>`).join('')}</div>` : ''}
       ${ml.length ? `<div class="ssx-uplist">${ml.slice(0, 6).map(b => { const k = venueKey(b), known = c.venueMiles[k]; return `<div class="ssx-upi" data-ml="${esc(b.id)}"><span class="ssx-upic">🚗</span><span class="ssx-uptx"><b>${esc(bName(b))}</b> · ${esc(niceDate(b.date))}${known ? ` · ${known * 2} mi round trip` : ''}</span><span class="ssx-upbt">${known ? `<button type="button" class="btn small primary" data-ml-ok>Log ${known * 2} mi</button>` : `<input type="number" min="0" step="0.1" inputmode="decimal" placeholder="Miles one way" aria-label="Miles one way" style="width:120px" data-ml-in><button type="button" class="btn small primary" data-ml-ok>Log</button>`}<button type="button" class="btn small" data-ml-no>Didn't drive</button></span></div>`; }).join('')}</div>${ml.length > 6 ? `<p class="note" style="margin:0">+ ${ml.length - 6} more</p>` : ''}<p class="note" style="margin:0">Enter the one-way miles once per venue. Next time you play there, it's one tap.</p>` : '<p class="note" style="margin:0">Played shows with a venue or address show up here to log in one tap.</p>'}
       <details class="ssx-det"><summary>Add another trip (gear runs, rehearsals, meetings)</summary>
         <div class="ssx-grid2"><div class="f"><label for="ssx-mt-d">Date</label><input id="ssx-mt-d" type="date" value="${esc(t)}"></div><div class="f"><label for="ssx-mt-m">Miles (total)</label><input id="ssx-mt-m" type="number" min="0" step="0.1" inputmode="decimal"></div></div>
         <div class="f"><label for="ssx-mt-p">Where and why</label><input id="ssx-mt-p" maxlength="160" placeholder="e.g. Guitar Center for cables"></div><div class="ssx-row"><button type="button" class="btn primary small" data-mt-add>Save trip</button></div></details>
-      ${trips.length ? `<details class="ssx-det"><summary>Your ${y} trips (${trips.length})</summary><div class="ssx-mini">${trips.map(m => `<div><span>${esc(niceDate(m.date))} · ${esc(m.purpose || '')}</span><b class="num">${esc(m.miles)} mi</b><button type="button" class="ssx-upx" data-mt-del="${esc(m.id)}" aria-label="Remove trip">×</button></div>`).join('')}</div></details>` : ''}
+      ${trips.length ? `<details class="ssx-det"><summary>Your ${y} trips (${trips.length})</summary><div class="ssx-mini">${trips.map(m => `<div><span>${esc(niceDate(m.date))} · ${esc(m.purpose || '')}${m.auto ? ' <span class="ssx-pill">auto</span>' : ''}</span><b class="num">${esc(m.miles)} mi</b><button type="button" class="ssx-upx" data-mt-del="${esc(m.id)}" aria-label="Remove trip" title="${m.bookingId ? 'Remove and re-check this show' : 'Remove trip'}">×</button></div>`).join('')}</div></details>` : ''}
     </div>
     <div class="card ssx" id="ssx-rec">
       <div class="ssx-head"><div><h3>Repeating expenses</h3><p class="note">Subscriptions and regular costs log themselves on their date. Set one up from <b>+ Log expense</b> with "Repeats".</p></div></div>
@@ -1267,7 +1346,25 @@ function appExtras() {
       row.querySelector('[data-ml-no]').onclick = e => { e.stopPropagation(); apMark('noDrive', b.id); };
     });
     q('[data-mt-add]').onclick = async e => { e.stopPropagation(); const m = Number(q('#ssx-mt-m').value), d = q('#ssx-mt-d').value, p = q('#ssx-mt-p').value.trim(); if (!(m > 0) || !d || !p) { if (window.toast) window.toast('Add the date, miles and where you went'); return; } await st.db.collection('mileage').add({ date: d, miles: Math.round(m * 10) / 10, purpose: p.slice(0, 160), createdAt: new Date().toISOString() }); if (window.toast) window.toast('Trip logged'); };
-    wrap.querySelectorAll('[data-mt-del]').forEach(b => b.onclick = e => { e.stopPropagation(); st.db.collection('mileage').doc(b.dataset.mtDel).delete().catch(() => {}); });
+    wrap.querySelectorAll('[data-mt-del]').forEach(b => b.onclick = e => { e.stopPropagation(); const m = AP.mileage.find(x => x.id === b.dataset.mtDel); st.db.collection('mileage').doc(b.dataset.mtDel).delete().catch(() => {});
+      if (m && m.bookingId) { const cc = apCfg(), mf = { ...(cc.mileFrom || {}) }; delete mf[m.bookingId]; apSave({ mileFrom: mf, pend: { ...(cc.pend || {}), [m.bookingId]: { mi: (cc.venueMiles || {})[venueKey(bk().find(x => x.id === m.bookingId) || {})] || 0, city: '' } } }); } });
+    q('#ssx-am-on').onchange = e => { apSave({ autoMiles: e.target.checked }); if (e.target.checked && !(apCfg().home || {}).lat) setTimeout(() => { const i = document.getElementById('ssx-am-home'); i && i.focus(); }, 50); };
+    q('[data-am-save]').onclick = async e => { e.stopPropagation(); const btn = e.currentTarget, addr = q('#ssx-am-home').value.trim(), f = Math.max(5, Math.min(500, Number(q('#ssx-am-far').value) || 50)), cur = apCfg().home || {};
+      if (addr && normAddr(addr) !== normAddr(cur.address)) { btn.disabled = true; btn.textContent = 'Finding…'; let h = null; try { h = await geoFind(addr); } catch (_) {} btn.disabled = false; btn.textContent = 'Save';
+        if (!h) { if (window.toast) window.toast("Couldn't find that address. Try adding the city and state."); return; }
+        Object.keys(GEO.fail).forEach(k => delete GEO.fail[k]); apSave({ home: { address: addr.slice(0, 200), lat: h.lat, lon: h.lon, city: h.city }, farMiles: f, autoMiles: true }); }
+      else apSave({ farMiles: f, ...(addr ? {} : { home: {} }) });
+      if (window.toast) window.toast('Mileage settings saved'); };
+    wrap.querySelectorAll('[data-pd]').forEach(row => {
+      const b = bk().find(x => x.id === row.dataset.pd); if (!b) return; const p = (apCfg().pend || {})[b.id] || {}, form = row.querySelector('.ssx-pdform');
+      const home = row.querySelector('[data-pd-home]'); if (home) home.onclick = async e => { e.stopPropagation(); const h = apCfg().home || {};
+        if (p.mi) { await logTrip(b, p.mi, { auto: true, from: 'home' }); if (window.toast) window.toast('Trip logged'); return; }
+        try { const d = destOf(b), to = d && await geoFind(d.q); if (!to || !h.lat) throw 0; const one = await driveMiles(h, to); await logTrip(b, one, { auto: true, from: 'home' }); if (window.toast) window.toast('Trip logged'); } catch (_) { if (window.toast) window.toast("Couldn't measure that drive. Enter the miles under Add another trip."); } };
+      row.querySelector('[data-pd-other]').onclick = e => { e.stopPropagation(); form.hidden = !form.hidden; if (!form.hidden) form.querySelector('input').focus(); };
+      row.querySelector('[data-pd-no]').onclick = e => { e.stopPropagation(); const cc = apCfg(), pend = { ...(cc.pend || {}) }; delete pend[b.id]; apSave({ pend, noDrive: { ...cc.noDrive, [b.id]: true } }); };
+      row.querySelector('[data-pd-go]').onclick = async e => { e.stopPropagation(); const btn = e.currentTarget, a = form.querySelector('input').value.trim(); if (!a) { form.querySelector('input').focus(); return; }
+        btn.disabled = true; btn.textContent = 'Measuring…'; try { await measureFrom(b, a); } catch (_) { if (window.toast) window.toast("Couldn't measure that drive. Enter the miles under Add another trip."); } btn.disabled = false; btn.textContent = 'Measure and log'; };
+    });
     wrap.querySelectorAll('[data-rec-pause]').forEach(b => b.onclick = e => { e.stopPropagation(); const r = AP.recurring.find(x => x.id === b.dataset.recPause); if (r) { const { id, ...rest } = r; st.db.collection('recurring').doc(id).set({ ...rest, paused: !r.paused, next: r.paused && r.next < todayStr() ? todayStr() : r.next }).catch(() => {}); } });
     wrap.querySelectorAll('[data-rec-del]').forEach(b => b.onclick = e => { e.stopPropagation(); if (b.dataset.armed) { st.db.collection('recurring').doc(b.dataset.recDel).delete().catch(() => {}); if (window.toast) window.toast('Stopped repeating. Past entries stay in your expenses.'); return; } b.dataset.armed = '1'; b.textContent = 'Stop?'; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = '×'; } }, 3500); });
   }
@@ -1354,6 +1451,7 @@ function appExtras() {
     if (AP.cfg) for (const z of b || []) if (z.requestStatus === 'accepted' && z.reviewedAt && Date.now() - Date.parse(z.reviewedAt) < 20000 && !AP.opened[z.id] && !apCfg().done['confirm:' + z.id]) { AP.opened[z.id] = 1; setTimeout(() => { try { confirmMail(z); apMark('done', 'confirm:' + z.id); } catch (_) {} }, 700); }
     try { renderUpNext(); } catch (e) { console.error(e); }
     try { renderFinCards(); } catch (e) { console.error(e); }
+    autoMiles();
   }
 
   /* ---------- Smooth saving. 
