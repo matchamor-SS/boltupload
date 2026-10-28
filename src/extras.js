@@ -1100,7 +1100,7 @@ function appExtras() {
   const yearR = y => ({ from: `${y}-01-01`, to: `${y}-12-31`, label: String(y), year: y });
   const addMonths = (s, n) => { const d = new Date(s + 'T12:00:00'), day = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + n); d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate())); return isoLocal(d); };
   const bk = () => { try { return S.bookings || []; } catch (_) { return []; } };
-  const stat = b => String(b.status || '').toLowerCase();
+  const stat = b => { let s = b.status; try { s = K(s); } catch (_) {} return String(s || '').toLowerCase(); };
   const bName = b => { try { return bookingName(b); } catch (_) { return b.title || 'your show'; } };
   const person = id => { try { return contact(id) || null; } catch (_) { return null; } };
   // estimated tax due dates for a tax year (weekends move to Monday); California has no September payment
