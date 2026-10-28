@@ -496,3 +496,9 @@ html.ssx-epk-open, html.ssx-epk-open body { overflow: hidden; }
 .ssx-badge { position: absolute; top: 4px; right: 6px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: var(--bad, #B23A3A); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
 html.ssx-rail-min body #tabs.tabs button .ssx-badge { font-size: 11px !important; }
 @media (max-width: 520px) { .ssx-reqkv { grid-template-columns: 1fr; gap: 2px; } .ssx-reqkv dt { margin-top: 6px; } }
+/* ===== Receipts and the tax packet ===== */
+.ssx-rcpt .ssx-row { gap: 8px; }
+.ssx-rcpt .ssx-pill { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ssx-clip { font-size: 12px; font-weight: 400; }
+.ssx-clip.none { color: var(--muted); }
+.ssx-pack { border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 10px; background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
