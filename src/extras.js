@@ -113,7 +113,7 @@ function appExtras() {
   const wait = setInterval(async () => {
     if (!ready()) return;
     clearInterval(wait);
-    speedUp(); submitGuard(); routeProfile();
+    speedUp(); submitGuard(); routeProfile(); hookFinance();
     st.db = await window.claude.use('db');
     if (!st.db) return;
     st.db.doc('settings/notify').onSnapshot(s => { st.prefs = s.exists ? s.data() : {}; render(); queueSoon(); }, () => {});
