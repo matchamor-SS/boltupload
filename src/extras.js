@@ -122,6 +122,7 @@ function appExtras() {
     st.db.doc('settings/bookinglink').onSnapshot(s => { st.link = s.exists ? s.data() : {}; render(); renderKit(); }, () => {});
     st.db.collection('goals').onSnapshot(s => { st.goals = s.docs.map(d => ({ id: d.id, ...d.data() })); renderGoals(); renderHomeGoals(); queueSoon(); }, () => {});
     let lastB = null; setInterval(() => { try { if (S.bookings !== lastB) { lastB = S.bookings; renderGoals(); renderHomeGoals(); renderRequests(); } } catch (_) {} }, 1000);
+    setInterval(() => { try { syncAvail(); } catch (e) { console.error(e); } }, 2000);
     const homeSec = document.querySelector('section[data-view="home"]');
     if (homeSec) new MutationObserver(() => { if (!document.getElementById('ssx-home-goals')) renderHomeGoals(); }).observe(homeSec, { childList: true });
     st.db.doc('notify/status').onSnapshot(s => { st.status = s.exists ? s.data() : null; render(); }, () => {});
@@ -300,7 +301,7 @@ function appExtras() {
           <div class="f"><label for="ssx-late">Latest start</label><select id="ssx-late">${tOpts(L.latest)}</select></div>
         </div>
         <div class="f"><label>Set lengths you offer</label><div class="ssx-chips" id="ssx-lens">${[30, 45, 60, 90, 120, 180, 240].map(n => `<button type="button" class="ssx-chip" data-ssx-len="${n}" aria-pressed="${L.lengths.includes(n)}">${n < 60 ? n + ' min' : n / 60 + ' hr'}</button>`).join('')}</div></div>
-        <div class="f"><label>Dates you're not available</label>${blockCal(L)}          <span class="note">Dates with a Confirmed, Played or Paid show are already closed.</span></div>
+        <div class="f"><label>Dates you're not available</label>${blockCal(L)}          <span class="note">This is the same list as <b>Calendar → Block dates</b>. Shows, holds and Google Calendar plans close dates here on their own (shaded), using your Calendar → Availability settings. The days above match Availability too.</span></div>
       </div>
     </div>`;
     const cut = html.indexOf('<div class="card ssx" id="ssx-link">');
@@ -340,14 +341,14 @@ function appExtras() {
   /* ---------- "Dates you're not available": tap days to block them, or block a range */
   const BC = { month: null, range: false, from: '' };
   function blockCal(L) {
-    const t0 = todayStr(), blocked = new Set((L.blocked || []).filter(d => d >= t0));
+    const t0 = todayStr(), blocked = blockedDays(t0), auto = new Set((L.blocked || []).filter(d => d >= t0 && !blocked.has(d)));
     if (!BC.month) { const d = new Date(); BC.month = new Date(d.getFullYear(), d.getMonth(), 1); }
     const y = BC.month.getFullYear(), mo = BC.month.getMonth(), first = new Date(y, mo, 1).getDay(), dim = new Date(y, mo + 1, 0).getDate();
     const now = new Date(), canPrev = y > now.getFullYear() || mo > now.getMonth();
     let cells = ''; for (let i = 0; i < first; i++) cells += '<span></span>';
     for (let d = 1; d <= dim; d++) {
-      const ds = `${y}-${pad(mo + 1)}-${pad(d)}`, past = ds < t0, on = blocked.has(ds), from = BC.range && BC.from === ds;
-      cells += `<button type="button" class="ssx-bd${on ? ' on' : ''}${from ? ' from' : ''}" data-ssx-bd="${ds}" ${past ? 'disabled' : ''} aria-pressed="${on}" aria-label="${niceDate(ds)}${on ? ', blocked' : ''}">${d}</button>`;
+      const ds = `${y}-${pad(mo + 1)}-${pad(d)}`, past = ds < t0, on = blocked.has(ds), busy = !on && auto.has(ds), from = BC.range && BC.from === ds;
+      cells += `<button type="button" class="ssx-bd${on ? ' on' : ''}${busy ? ' auto' : ''}${from ? ' from' : ''}" data-ssx-bd="${ds}" ${past || busy ? 'disabled' : ''} aria-pressed="${on}" aria-label="${niceDate(ds)}${on ? ', blocked' : busy ? ', closed by a show or calendar event' : ''}" ${busy ? 'title="Closed by a show, hold or calendar event"' : ''}>${d}</button>`;
     }
     // group consecutive blocked days into ranges for the summary
     const list = [...blocked].sort(), ranges = [];
@@ -360,8 +361,8 @@ function appExtras() {
       ${ranges.length ? `<div class="ssx-chips">${ranges.map(r => `<button type="button" class="ssx-chip on" data-ssx-unrange="${r[0]}|${r[1]}" aria-label="Unblock ${esc(label(r))}">${esc(label(r))} ×</button>`).join('')}</div>` : ''}`;
   }
   function wireBlockCal(box, L) {
-    const cur = () => new Set((st.link && st.link.blocked || []).filter(d => d >= todayStr()));
-    const put = set => { saveLink({ blocked: [...set].sort().slice(0, 400) }, true); render(); };
+    const cur = () => blockedDays(todayStr());
+    const put = set => { setBlocked(set).then(() => setTimeout(() => { render(); syncAvail(true); }, 500)); };
     box.querySelectorAll('[data-ssx-bm]').forEach(b => b.onclick = e => { e.stopPropagation(); BC.month = new Date(BC.month.getFullYear(), BC.month.getMonth() + Number(b.dataset.ssxBm), 1); render(); });
     box.querySelectorAll('[data-ssx-range]').forEach(b => b.onclick = e => { e.stopPropagation(); BC.range = !BC.range; BC.from = ''; render(); });
     box.querySelectorAll('[data-ssx-clearblocks]').forEach(b => b.onclick = e => { e.stopPropagation(); put(new Set()); note('link', 'All blocked dates cleared.'); });
@@ -376,6 +377,61 @@ function appExtras() {
       }
       set.has(d) ? set.delete(d) : set.add(d); put(set);
     });
+  }
+
+  /* ---------- One availability everywhere: Calendar → Availability and your booking link share the same
+     days of the week and the same closed dates, so you only ever update one place. */
+  const SY = { days: null, t: 0, migrating: false, blocksRef: null, t0: Date.now() };
+  const calBlocks = () => { try { return S.blocks || []; } catch (_) { return []; } };
+  function blockedDays(from) {
+    const out = new Set();
+    for (const k of calBlocks()) { if (!k.date) continue; const z = k.endDate && k.endDate >= k.date ? k.endDate : k.date; let d = k.date < from ? from : k.date; for (let i = 0; d <= z && i < 800; d = addDays(d, 1), i++) out.add(d); }
+    return out;
+  }
+  // make Calendar's blocked dates (from today on) exactly match `target`, trimming or splitting blocks as needed
+  async function setBlocked(target) {
+    if (!st.db) return; const t0 = todayStr(), cur = blockedDays(t0);
+    const add = [...target].filter(d => d >= t0 && !cur.has(d)).sort(), del = new Set([...cur].filter(d => !target.has(d)));
+    if (del.size) for (const k of calBlocks()) {
+      if (!k.date) continue; const z = k.endDate && k.endDate >= k.date ? k.endDate : k.date; let hit = false;
+      for (let d = k.date < t0 ? t0 : k.date; d <= z && !hit; d = addDays(d, 1)) hit = del.has(d);
+      if (!hit) continue;
+      const keep = []; let run = null;
+      for (let d = k.date, i = 0; d <= z && i < 800; d = addDays(d, 1), i++) { if (d < t0 || !del.has(d)) { if (run && addDays(run[1], 1) === d) run[1] = d; else { run = [d, d]; keep.push(run); } } else run = null; }
+      const { id, ...rest } = k; await st.db.collection('blocks').doc(id).delete().catch(() => {});
+      for (const [a, b] of keep) await st.db.collection('blocks').add({ ...rest, date: a, endDate: b === a ? '' : b }).catch(() => {});
+    }
+    const runs = []; for (const d of add) { const l = runs[runs.length - 1]; if (l && addDays(l[1], 1) === d) l[1] = d; else runs.push([d, d]); }
+    for (const [a, b] of runs) await st.db.collection('blocks').add({ label: 'Not available', date: a, endDate: b === a ? '' : b, createdAt: new Date().toISOString() }).catch(() => {});
+  }
+  // every date the public booking page should show as taken
+  function linkClosed(L) {
+    const t0 = todayStr(), end = addDays(t0, Math.min(730, Number(L.ahead) || 180)), out = blockedDays(t0); let a = null; try { a = AV(); } catch (_) {}
+    if (a && typeof availBusy === 'function') for (let d = t0, i = 0; d <= end && i < 740; d = addDays(d, 1), i++) { try { if (availBusy(d, a)) out.add(d); } catch (_) {} }
+    return [...out].filter(d => d >= t0 && d <= end).sort().slice(0, 400);
+  }
+  function syncAvail(force) {
+    if (!st.db || !st.link || Date.now() - SY.t0 < 4000) return;
+    const L = { ...defLink(), ...st.link }; let av = null; try { av = S.avail; } catch (_) {}
+    let blocksNow = null; try { blocksNow = S.blocks; } catch (_) {}
+    if (blocksNow !== SY.blocksRef) { SY.blocksRef = blocksNow; try { render(); } catch (_) {} }
+    // once: move the booking link's own blocked dates into Calendar → Block dates
+    if (!L.calSync) { if (SY.migrating) return; SY.migrating = true; const t0 = todayStr(), mine = (L.blocked || []).filter(d => d >= t0);
+      setBlocked(new Set([...blockedDays(t0), ...mine])).then(() => saveLink({ calSync: true }, true)).finally(() => { SY.migrating = false; }); return; }
+    // days of the week: one list; whichever side you changed last wins
+    const ad = av && Array.isArray(av.days) ? av.days.join() : null, ld = (L.days || []).join();
+    if (ad !== ld) {
+      const calChanged = SY.days && ad !== SY.days.a, linkChanged = SY.days && ld !== SY.days.l;
+      if (ad !== null && av.days.length && (calChanged || !linkChanged)) saveLink({ days: [...av.days] }, true);
+      else if (L.days && L.days.length) { try { S.avail = { ...AV(), days: [...L.days] }; st.db.doc('settings/availability').set(S.avail).catch(() => {}); if (typeof renderCalendar === 'function') renderCalendar(); } catch (_) {} }
+    }
+    try { SY.days = { a: S.avail && Array.isArray(S.avail.days) ? S.avail.days.join() : null, l: (st.link.days || []).join() }; } catch (_) {}
+    // closed dates on the public page
+    const closed = linkClosed({ ...defLink(), ...st.link });
+    if (closed.join() !== (st.link.blocked || []).join() && (force || Date.now() - SY.t > 3000)) { SY.t = Date.now(); saveLink({ blocked: closed }, true); }
+    // a reminder under Calendar → Availability
+    const sum = document.getElementById('availSummary');
+    if (sum && !document.getElementById('ssx-avnote')) { const n = document.createElement('p'); n.id = 'ssx-avnote'; n.className = 'note'; n.style.margin = '0 0 8px'; n.innerHTML = 'Your <b>booking link</b> uses these same days and closed dates automatically.'; sum.after(n); }
   }
 
   /* ---------- Settings: grouped in the order you use the app, with a section menu */
