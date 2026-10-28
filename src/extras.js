@@ -113,7 +113,7 @@ function appExtras() {
   const wait = setInterval(async () => {
     if (!ready()) return;
     clearInterval(wait);
-    speedUp(); submitGuard(); routeProfile(); hookFinance();
+    speedUp(); submitGuard(); routeProfile(); hookFinance(); hookRequestView();
     st.db = await window.claude.use('db');
     if (!st.db) return;
     hookAutopilot();
@@ -1826,6 +1826,36 @@ function appExtras() {
   /* ---------- Booking requests from your booking link: shown at the top of Bookings to accept or decline */
   const REQ = { seen: null, busy: '' };
   const pendingRequests = () => { let bs = []; try { bs = S.bookings || []; } catch (_) {} return bs.filter(b => b.source === 'booking-link' && !b.requestStatus && String(b.status || '').toLowerCase() === 'lead').sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))); };
+  const isRequest = b => b && b.source === 'booking-link' && !b.requestStatus && String(b.status || '').toLowerCase() === 'lead';
+  async function decideRequest(b, status) {
+    const now = new Date().toISOString(), upd = { status, requestStatus: status === 'lost' ? 'declined' : 'accepted', reviewedAt: now, updatedAt: now, stageAt: { [status]: (b.stageAt || {})[status] || todayStr() } };
+    const ok = typeof window.patch === 'function' ? await window.patch('bookings', b.id, upd) : null;
+    if (!ok) return false;
+    REQ.busy = ''; if (window.toast) window.toast(status === 'lost' ? 'Request declined' : 'Booking accepted and confirmed');
+    try { if (status === 'confirmed' && typeof syncBookingEvent === 'function') syncBookingEvent(b.id, { ...b, ...upd }); } catch (_) {}
+    renderRequests(); return true;
+  }
+  // Accept / Reply / Decline inside the opened booking, until you decide
+  function requestBar(id) {
+    const sh = document.querySelector('#sheetRoot .sheet'); if (!sh) return;
+    sh.querySelectorAll('.ssx-reqbar').forEach(x => x.remove());
+    let b = null; try { b = (S.bookings || []).find(x => x.id === id); } catch (_) {}
+    if (!isRequest(b)) return;
+    const bar = document.createElement('div'); bar.className = 'ssx-reqbar';
+    bar.innerHTML = `<div><b>Booking request</b><p class="note" style="margin:0">Sent through your booking link. Accept to confirm the show, or decline to close it out.</p></div>
+      <div class="ssx-row"><button type="button" class="btn primary small" data-rb-ok>Accept</button><button type="button" class="btn small" data-rb-reply>Reply</button><button type="button" class="btn small" data-rb-no>Decline</button></div>`;
+    const head = sh.querySelector(':scope > .head') || sh.querySelector('.head'); head ? head.after(bar) : sh.prepend(bar);
+    const ok = bar.querySelector('[data-rb-ok]'), no = bar.querySelector('[data-rb-no]'), all = [...bar.querySelectorAll('button')];
+    const go = async status => { all.forEach(x => x.disabled = true); const done = await decideRequest(b, status); if (!done) { all.forEach(x => x.disabled = false); return; } bar.remove(); setTimeout(() => { try { if (document.querySelector('#sheetRoot .sheet')) window.bookingView(id); } catch (_) {} }, 400); };
+    ok.onclick = e => { e.stopPropagation(); go('confirmed'); };
+    no.onclick = e => { e.stopPropagation(); if (!no.dataset.armed) { no.dataset.armed = '1'; no.textContent = 'Tap again to decline'; setTimeout(() => { if (no.isConnected) { delete no.dataset.armed; no.textContent = 'Decline'; } }, 4000); return; } go('lost'); };
+    bar.querySelector('[data-rb-reply]').onclick = e => { e.stopPropagation(); try { composeSheet({ booking: id, to: b.promoterId || b.venueId || '' }); } catch (_) {} };
+  }
+  function hookRequestView() {
+    const bv = window.bookingView; if (typeof bv !== 'function' || bv.__ssxReq) return;
+    const wrapped = function (id) { const out = bv.apply(this, arguments); try { requestBar(id); } catch (err) { console.error(err); } return out; };
+    wrapped.__ssxReq = true; window.bookingView = wrapped;
+  }
   function renderRequests() {
     const sec = document.querySelector('section[data-view="bookings"]'); if (!sec || !st.db) return;
     const list = pendingRequests();
@@ -1852,13 +1882,9 @@ function appExtras() {
       </div>`; }).join('')}</div>`;
     box.querySelectorAll('[data-req]').forEach(item => {
       const id = item.dataset.req, b = list.find(x => x.id === id); if (!b) return;
-      const decide = async (status, label) => {
-        const upd = { status, requestStatus: status === 'lost' ? 'declined' : 'accepted', reviewedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), stageAt: { [status]: (b.stageAt || {})[status] || todayStr() } };
-        const ok = typeof window.patch === 'function' ? await window.patch('bookings', id, upd) : null;
-        if (ok) { REQ.busy = ''; if (window.toast) window.toast(label); try { if (status === 'confirmed' && typeof syncBookingEvent === 'function') syncBookingEvent(id, { ...b, ...upd }); } catch (_) {} renderRequests(); }
-      };
-      item.querySelector('[data-req-ok]').onclick = e => { e.stopPropagation(); decide('confirmed', 'Booking accepted and confirmed'); };
-      item.querySelector('[data-req-no]').onclick = e => { e.stopPropagation(); if (REQ.busy !== 'no:' + id) { REQ.busy = 'no:' + id; renderRequests(); setTimeout(() => { if (REQ.busy === 'no:' + id) { REQ.busy = ''; renderRequests(); } }, 4000); return; } decide('lost', 'Request declined'); };
+      const decide = status => decideRequest(b, status);
+      item.querySelector('[data-req-ok]').onclick = e => { e.stopPropagation(); decide('confirmed'); };
+      item.querySelector('[data-req-no]').onclick = e => { e.stopPropagation(); if (REQ.busy !== 'no:' + id) { REQ.busy = 'no:' + id; renderRequests(); setTimeout(() => { if (REQ.busy === 'no:' + id) { REQ.busy = ''; renderRequests(); } }, 4000); return; } decide('lost'); };
       item.querySelector('[data-req-open]').onclick = e => { e.stopPropagation(); try { bookingView(id); } catch (_) {} };
       item.querySelector('[data-req-reply]').onclick = e => { e.stopPropagation(); try { composeSheet({ booking: id, to: b.promoterId || b.venueId || '' }); } catch (_) {} };
     });
