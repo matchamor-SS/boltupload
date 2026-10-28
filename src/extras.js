@@ -116,7 +116,7 @@ function appExtras() {
     speedUp(); submitGuard(); routeProfile(); hookFinance(); hookRequestView();
     st.db = await window.claude.use('db');
     if (!st.db) return;
-    hookAutopilot();
+    hookAutopilot(); hookLayout();
     st.db.doc('settings/notify').onSnapshot(s => { st.prefs = s.exists ? s.data() : {}; render(); queueSoon(); }, () => {});
         st.db.doc('settings/profile').onSnapshot(() => setTimeout(() => fillProfile(), 0), () => {});
     st.db.doc('settings/bookinglink').onSnapshot(s => { st.link = s.exists ? s.data() : {}; render(); renderKit(); }, () => {});
@@ -1483,7 +1483,70 @@ function appExtras() {
     autoMiles();
   }
 
-  /* ---------- Smooth saving. 
+  /* ---------- Arrange this page: move blocks up or down, or hide them, on Home, Bookings, Calendar, Financials and Kit.
+     Saved to your account (settings/layout), so it follows you to every device. */
+  const byId = id => () => document.getElementById(id);
+  const byH3 = t => sec => [...sec.children].find(c => c.classList.contains('card') && c.querySelector('h3') && String(c.querySelector('h3').textContent || '').trim().toLowerCase().startsWith(t));
+  // [key, label, find(section), shows only when needed]
+  const LAYOUT = {
+    home: { label: 'Home', blocks: [['welcome', 'Getting started', byId('welcome'), 1], ['upnext', 'Up next', byId('ssx-upnext'), 1], ['next', 'Next show', byId('nextShow')], ['season', 'Season goals', sec => sec.querySelector(':scope > .grid')], ['goals', 'Goals', byId('ssx-home-goals'), 1], ['todo', 'To do', byH3('to do')], ['pipeline', 'Pipeline', byH3('pipeline')], ['played', "Where you've played", byH3('where you')]] },
+    bookings: { label: 'Bookings', blocks: [['requests', 'Booking requests', byId('ssx-requests'), 1], ['link', 'Booking link', byId('ssx-bklink')], ['list', 'Your bookings', () => { const f = document.getElementById('bookingFilter'); return f ? [f, f.nextElementSibling] : null; }]] },
+    calendar: { label: 'Calendar', blocks: [['month', 'Month calendar', () => { const c = document.getElementById('cal'); return c && c.closest('.card'); }], ['clash', 'Possible double bookings', byId('clashCard'), 1], ['avail', 'Availability', byH3('availability')]] },
+    money: { label: 'Financials', blocks: [['totals', 'Totals (tap one to filter Transactions)', byId('moneyStats')], ['chart', 'By month chart', byH3('by month')], ['tx', 'Transactions', byId('txCard')], ['tax', 'Taxes', byId('ssx-tax')], ['miles', 'Mileage', byId('ssx-miles')], ['rec', 'Repeating expenses', byId('ssx-rec')]] },
+    kit: { label: 'Kit', blocks: [['link', 'Booking link', byId('ssx-kit')], ['bio', 'Bio', byH3('bio')], ['links', 'Links', byH3('links')], ['promo', 'Promo content', byH3('promo')], ['rider', 'Tech rider', byH3('tech rider')], ['hosp', 'Hospitality rider', byH3('hospitality')], ['notes', 'Other notes', byH3('other notes')]] },
+  };
+  const layOf = tab => ((st.layout || {})[tab]) || {};
+  function layoutOrder(tab) {
+    const def = LAYOUT[tab].blocks.map(b => b[0]), out = (layOf(tab).order || []).filter(k => def.includes(k));
+    def.forEach((k, i) => { if (out.includes(k)) return; const prev = def.slice(0, i).reverse().find(p => out.includes(p)); out.splice(prev ? out.indexOf(prev) + 1 : 0, 0, k); });
+    return out;
+  }
+  const layEls = (tab, k, sec) => { const b = LAYOUT[tab].blocks.find(x => x[0] === k); let r = null; try { r = b[2](sec); } catch (_) {} return (Array.isArray(r) ? r : [r]).filter(Boolean); };
+  function applyLayout(tab) {
+    const sec = document.querySelector(`section[data-view="${tab}"]`); if (!sec || !LAYOUT[tab]) return;
+    const hid = new Set(layOf(tab).hidden || []), known = new Set();
+    layoutOrder(tab).forEach((k, i) => layEls(tab, k, sec).forEach(el => { known.add(el); const o = String(10 + i); if (el.style.order !== o) el.style.order = o; el.classList.toggle('ssx-lay-off', hid.has(k)); }));
+    let bar = sec.querySelector(':scope > .ssx-arrbar');
+    if (!bar) { bar = document.createElement('div'); bar.className = 'ssx-arrbar'; bar.innerHTML = '<button type="button" class="btn small">⇅ Arrange this page</button>'; bar.querySelector('button').onclick = e => { e.stopPropagation(); arrangeSheet(tab); }; sec.appendChild(bar); }
+    [...sec.children].forEach(c => { if (known.has(c) || c.id === 'ssx-fin') return; const o = c.classList.contains('head') ? '-1' : c === bar ? '999' : '500'; if (c.style.order !== o) c.style.order = o; });
+  }
+  function saveLayout(tab, patch) {
+    st.layout = { ...(st.layout || {}), [tab]: { ...layOf(tab), ...patch } };
+    applyLayout(tab); if (st.db) st.db.doc('settings/layout').set(st.layout).catch(() => {});
+  }
+  function arrangeSheet(tab) {
+    const L = LAYOUT[tab]; if (!L || typeof sheet !== 'function') return;
+    sheet(`<h3>Arrange ${esc(L.label)}</h3><p class="note" style="margin:4px 0 10px">Move blocks up or down, or switch off the ones you don't use. Changes save to your account right away.</p><ol class="ssx-arrlist" id="ssx-arrlist"></ol>
+      <div class="actions"><button class="btn" data-lay-reset>Reset to default</button><span class="spacer"></span><button class="btn primary" data-lay-done>Done</button></div>`, root => {
+      const draw = () => {
+        const order = layoutOrder(tab), hid = new Set(layOf(tab).hidden || []), list = root.querySelector('#ssx-arrlist');
+        list.innerHTML = order.map((k, i) => { const b = L.blocks.find(x => x[0] === k); return `<li data-k="${esc(k)}" class="${hid.has(k) ? 'off' : ''}"><span class="ssx-arrname">${esc(b[1])}${b[3] ? '<span class="note">Shows only when there is something to see</span>' : ''}</span>
+          <span class="ssx-epk-mv"><button type="button" data-up aria-label="Move ${esc(b[1])} up" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" data-dn aria-label="Move ${esc(b[1])} down" ${i === order.length - 1 ? 'disabled' : ''}>↓</button></span>
+          <label class="ssx-switch"><input type="checkbox" ${hid.has(k) ? '' : 'checked'} aria-label="Show ${esc(b[1])}"><span></span></label></li>`; }).join('');
+        list.querySelectorAll('li').forEach(li => {
+          const k = li.dataset.k, mv = d => { const o = layoutOrder(tab), i = o.indexOf(k), j = i + d; if (j < 0 || j >= o.length) return; [o[i], o[j]] = [o[j], o[i]]; saveLayout(tab, { order: o }); draw(); const f = root.querySelector(`li[data-k="${k}"] [data-${d < 0 ? 'up' : 'dn'}]`); f && !f.disabled && f.focus(); };
+          li.querySelector('[data-up]').onclick = e => { e.stopPropagation(); mv(-1); };
+          li.querySelector('[data-dn]').onclick = e => { e.stopPropagation(); mv(1); };
+          li.querySelector('input').onchange = e => { const h = new Set(layOf(tab).hidden || []); e.target.checked ? h.delete(k) : h.add(k); saveLayout(tab, { hidden: [...h] }); li.classList.toggle('off', !e.target.checked); };
+        });
+      };
+      draw();
+      root.querySelector('[data-lay-reset]').onclick = e => { e.stopPropagation(); saveLayout(tab, { order: [], hidden: [] }); draw(); };
+      root.querySelector('[data-lay-done]').onclick = e => { e.stopPropagation(); try { close(); } catch (_) {} };
+    });
+  }
+  function hookLayout() {
+    if (window.__ssxLay || !st.db) return; window.__ssxLay = true;
+    const pend = new Set(); let raf = 0;
+    const soon = tab => { pend.add(tab); if (!raf) raf = requestAnimationFrame(() => { raf = 0; [...pend].forEach(t => { try { applyLayout(t); } catch (_) {} }); pend.clear(); }); };
+    Object.keys(LAYOUT).forEach(tab => { const sec = document.querySelector(`section[data-view="${tab}"]`); if (!sec) return; sec.classList.add('ssx-lay'); new MutationObserver(() => soon(tab)).observe(sec, { childList: true, subtree: true }); soon(tab); });
+    st.db.doc('settings/layout').onSnapshot(s => { st.layout = s.exists ? s.data() : {}; Object.keys(LAYOUT).forEach(soon); }, () => {});
+    // the Totals tiles filter Transactions: bring the list into view when it's off screen
+    document.addEventListener('click', e => { const t = e.target.closest && e.target.closest('#moneyStats [data-tx]'); if (!t) return;
+      setTimeout(() => { const c = document.getElementById('txCard'); if (!c || c.classList.contains('ssx-lay-off')) return; const r = c.getBoundingClientRect(); if (r.top > innerHeight * 0.7 || r.top < 0) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80); });
+  }
+
+  /* ---------- Smooth saving.
      1. Every saved change used to redraw all nine pages at once, several times per save (once for the save and again
         when the server echoed it back). With a full season of shows that froze the page for seconds. Now the page
         redraws at most once per frame, only the page you are looking at right away, and the others while the
