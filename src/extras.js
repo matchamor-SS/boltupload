@@ -867,6 +867,221 @@ function appExtras() {
     host.querySelector('[data-ssx-treplay]').onclick = e => { e.stopPropagation(); scrollTo(0, 0); startTour(0); };
   }
 
+  /* ---------- Receipts and the tax packet.
+     Receipts: attach a photo or PDF to any expense. It's saved to your own Google Drive at Business / <year> / Receipts,
+     named "date – what – amount – category" so it sorts and reads well at tax time, and linked to the expense.
+     Tax packet: one download with the tax summary, every transaction, a receipts index, every receipt and invoice file,
+     and a checklist for your preparer. Google access stays at drive.file: the app only ever opens files it created
+     or folders you picked, and the short-lived Google token is used in memory only for the download, never stored. */
+  const RC = { file: null, remove: false };
+  const money2 = n => (Number(n) < 0 ? '-$' : '$') + Math.abs(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const safeName = s => String(s || '').replace(/[\\/:*?"<>|#%\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+  const expOf = id => { try { return (S.expenses || []).find(x => x.id === id) || null; } catch (_) { return null; } };
+  const catLabel = k => { try { const c = (ECATS || []).find(x => x[0] === k); return c ? c[1] : (k || 'Other'); } catch (_) { return k || 'Other'; } };
+  const extOf = (file) => { const m = /\.([a-z0-9]{2,5})$/i.exec(file.name || ''); if (m) return m[1].toLowerCase(); return { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'application/pdf': 'pdf' }[file.type] || 'jpg'; };
+  // phone photos are big: shrink them before upload (keeps receipts readable, uploads fast)
+  async function shrink(file) {
+    if (!/^image\/(jpeg|png|webp)$/i.test(file.type) || file.size < 1.2e6 || typeof createImageBitmap !== 'function') return file;
+    try {
+      const bmp = await createImageBitmap(file), k = Math.min(1, 2400 / Math.max(bmp.width, bmp.height));
+      const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      const out = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.85));
+      return out && out.size < file.size ? new File([out], (file.name || 'receipt').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }) : file;
+    } catch (_) { return file; }
+  }
+  async function receiptsFolder(mcp, yr) {
+    let root = rootOf('biz');
+    if (!root) { await new Promise(res => rootPicker('biz', res, res)); root = rootOf('biz'); if (!root) throw { code: 'quiet' }; }
+    if (!(await folderAlive(mcp, root.id))) { if (!(await askRecreate('biz', 'root', {}))) throw { code: 'quiet' }; root = await replaceRoot(mcp, 'biz'); }
+    const yc = { ...((S.drive || {}).years_biz || {}) }; let yid = yc[yr];
+    if (!yid || !(await folderAlive(mcp, yid))) { yid = (await findOrMakeFolder(mcp, yr, root.id)).id; yc[yr] = yid; S.drive = { ...S.drive, years_biz: yc }; await window.save('settings', 'drive', S.drive); }
+    const rc = { ...((S.drive || {}).receipts || {}) }; let rid = rc[yr];
+    if (!rid || !(await folderAlive(mcp, rid))) { rid = (await findOrMakeFolder(mcp, 'Receipts', yid)).id; rc[yr] = rid; S.drive = { ...S.drive, receipts: rc }; await window.save('settings', 'drive', S.drive); }
+    return { id: rid, yearId: yid };
+  }
+  async function uploadReceipt(id, x, file) {
+    if (window.toast) window.toast('Saving your receipt to Google Drive…');
+    let mcp = null; try { mcp = await driveReady(); } catch (_) {}
+    if (!mcp) { if (window.toast) window.toast('Receipt not saved. Connect Google Drive in Settings, then add it from the expense.'); return; }
+    try {
+      const yr = String(x.date || todayStr()).slice(0, 4), folder = await receiptsFolder(mcp, yr), blob = await shrink(file);
+      const name = `${x.date || todayStr()} – ${safeName(x.desc) || 'Expense'} – ${money2(x.amount)} – ${safeName(catLabel(x.category))}.${extOf(blob)}`;
+      const f = await driveUpload(mcp, folder.id, name, blob.type || 'application/octet-stream', await b64of(blob));
+      await window.patch('expenses', id, { receipt: { id: f.id, url: f.viewUrl || `https://drive.google.com/file/d/${f.id}/view`, name, type: blob.type || '', size: blob.size, at: new Date().toISOString() } });
+      if (window.toast) window.toast('Receipt saved to Drive');
+    } catch (e) { if (!e || e.code !== 'quiet') { try { driveErr(e); } catch (_) { if (window.toast) window.toast("Couldn't save the receipt. Open the expense to try again."); } } }
+  }
+  function receiptUI(e) {
+    const sh = document.querySelector('#sheetRoot .sheet'); if (!sh || !sh.querySelector('#e-desc')) return;
+    const line = sh.querySelector('#e-line'); const box = document.createElement('div'); box.className = 'f ssx-rcpt';
+    const yr = String(e.date || todayStr()).slice(0, 4);
+    const draw = () => {
+      const r = !RC.remove && e.receipt;
+      box.innerHTML = `<label>Receipt <span class="note" style="text-transform:none;letter-spacing:0">(photo or PDF)</span></label>
+        <div class="ssx-row">${RC.file ? `<span class="ssx-pill on">📎 ${esc(RC.file.name || 'Receipt')}</span><button type="button" class="btn small" data-rc-pick>Change</button><button type="button" class="btn small" data-rc-clear>Remove</button>`
+          : r ? `<a class="btn small" href="${esc(r.url)}" target="_blank" rel="noopener">View receipt</a><button type="button" class="btn small" data-rc-pick>Replace</button><button type="button" class="btn small" data-rc-unlink>Remove</button>`
+          : `<button type="button" class="btn small" data-rc-pick>📎 Add receipt</button>${RC.remove ? '<span class="note">Will be removed from this expense when you save. The file stays in your Drive.</span>' : ''}`}</div>
+        <p class="note" style="margin:0">${RC.file ? `Saves to Business / ${esc(yr)} / Receipts in your Google Drive when you tap ${e.id ? 'Save' : 'Log it'}.` : r ? `In Business / ${esc(yr)} / Receipts in your Google Drive.` : 'Snap a photo or pick a file. Keep receipts for anything you deduct, especially $75 and up.'}</p>`;
+      const pick = box.querySelector('[data-rc-pick]'); if (pick) pick.onclick = async ev => {
+        ev.stopPropagation();
+        const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*,application/pdf'; i.style.display = 'none'; document.body.appendChild(i);
+        i.onchange = () => { const f = i.files && i.files[0]; i.remove(); if (!f) return; if (f.size > 15e6) { if (window.toast) window.toast('That file is over 15 MB. Try a photo or a smaller PDF.'); return; } RC.file = f; RC.remove = false; draw(); };
+        i.click();
+      };
+      const clr = box.querySelector('[data-rc-clear]'); if (clr) clr.onclick = ev => { ev.stopPropagation(); RC.file = null; draw(); };
+      const un = box.querySelector('[data-rc-unlink]'); if (un) un.onclick = ev => { ev.stopPropagation(); RC.remove = true; draw(); };
+    };
+    draw(); line ? line.before(box) : sh.querySelector('.actions').before(box);
+  }
+  function hookFinance() {
+    if (window.__ssxFin) return; window.__ssxFin = true;
+    // the expense form gets a Receipt field
+    const ef = window.expenseForm;
+    if (typeof ef === 'function') window.expenseForm = function (e = {}) { RC.file = null; RC.remove = false; const out = ef.apply(this, arguments); try { receiptUI(e || {}); } catch (err) { console.error(err); } return out; };
+    // when the expense form saves, keep (or remove) the receipt link, then upload a newly picked receipt
+    const sv = window.save;
+    if (typeof sv === 'function') window.save = async function (col, id, data) {
+      if (col === 'expenses' && data && typeof data === 'object' && document.getElementById('e-desc')) {
+        if (RC.remove) delete data.receipt;
+        const file = RC.file, meta = { ...data }; RC.file = null; RC.remove = false;
+        const out = await sv.apply(this, arguments);
+        if (out && file) uploadReceipt(out, meta, file);
+        return out;
+      }
+      return sv.apply(this, arguments);
+    };
+    // a paperclip on expenses that have a receipt in Financials
+    const rm = window.renderMoney;
+    if (typeof rm === 'function') window.renderMoney = function () {
+      const out = rm.apply(this, arguments);
+      try { document.querySelectorAll('#txList [data-open-expense]').forEach(row => { const x = expOf(row.dataset.openExpense); const t = row.querySelector('.t'); if (!t || t.querySelector('.ssx-clip')) return; const s = document.createElement('span'); s.className = 'ssx-clip' + (x && x.receipt ? '' : ' none'); s.textContent = x && x.receipt ? ' 📎' : ' · no receipt'; s.title = x && x.receipt ? 'Receipt saved' : 'No receipt yet'; t.appendChild(s); }); } catch (_) {}
+      return out;
+    };
+    // the tax report lists missing receipts too
+    const td = window.taxData;
+    if (typeof td === 'function') window.taxData = function () {
+      const d = td.apply(this, arguments);
+      try {
+        const miss = d.ex.filter(t => !(expOf(t.ref && t.ref.expense) || {}).receipt);
+        const big = miss.filter(t => t.amount >= 75 || t.catKey === 'Travel');
+        d.missing = miss; d.gaps = [...big.map(t => `${t.title} (${fmtD(t.date)}, ${money2(t.amount)}): no receipt attached`), ...miss.filter(t => !big.includes(t)).map(t => `${t.title} (${fmtD(t.date)}, ${money2(t.amount)}): no receipt (under $75, a bank or card statement line is usually enough)`), ...d.gaps];
+      } catch (_) {}
+      return d;
+    };
+    // the tax report gets a "Tax packet" section
+    const ts = window.taxSheet;
+    if (typeof ts === 'function') window.taxSheet = function () {
+      const out = ts.apply(this, arguments);
+      try {
+        const sh = document.querySelector('#sheetRoot .sheet'), act = sh && sh.querySelector('.actions'); if (!act || sh.querySelector('.ssx-pack')) return out;
+        const box = document.createElement('div'); box.className = 'ssx-pack';
+        box.innerHTML = `<div><b>Tax packet</b><p class="note" style="margin:2px 0 0">One download for your tax preparer: this summary, every transaction, a receipts index, all your receipt and invoice files, and a checklist of what to bring.</p></div>
+          <div class="ssx-row"><button type="button" class="btn primary" data-pack-zip>Download tax packet (.zip)</button><button type="button" class="btn" data-pack-drive>Save summary to Google Drive</button></div><p class="note" data-pack-status style="margin:0"></p>`;
+        act.before(box);
+        const status = t => { const p = box.querySelector('[data-pack-status]'); if (p) p.textContent = t; };
+        box.querySelector('[data-pack-zip]').onclick = async ev => { const b = ev.currentTarget; b.disabled = true; try { await packetZip(status); } finally { if (b.isConnected) b.disabled = false; } };
+        box.querySelector('[data-pack-drive]').onclick = async ev => { const b = ev.currentTarget; b.disabled = true; try { await packetToDrive(status); } finally { if (b.isConnected) b.disabled = false; } };
+      } catch (err) { console.error(err); }
+      return out;
+    };
+  }
+
+  /* -- what goes in the packet */
+  function packetParts() {
+    const R = finRange(), d = window.taxData(R), slug = R.year ? String(R.year) : `${R.from}_to_${R.to}`;
+    const p = (() => { try { return S.profile || {}; } catch (_) { return {}; } })();
+    const exps = d.ex.map(t => ({ t, x: expOf(t.ref && t.ref.expense) || {} }));
+    const bookings = (() => { try { return S.bookings || []; } catch (_) { return []; } })();
+    const invs = d.inc.filter(t => t.ref && t.ref.booking).map(t => ({ t, b: bookings.find(b => b.id === t.ref.booking) || {} })).filter(o => o.b.invoice && o.b.invoice.fileId);
+    const owedInvs = (d.owed || []).filter(t => t.ref && t.ref.booking).map(t => ({ t, b: bookings.find(b => b.id === t.ref.booking) || {} })).filter(o => o.b.invoice && o.b.invoice.fileId);
+    const nec = R.year && R.year >= 2026 ? 2000 : 600;
+    const payers1099 = d.byPayer.filter(([, v]) => v.amt >= nec);
+    const idx = [['Date', 'Description', 'Category', 'Schedule C line', 'Amount', 'Business purpose', 'Receipt file in this packet', 'Receipt in Google Drive']];
+    exps.sort((a, b) => String(a.t.date).localeCompare(String(b.t.date))).forEach(({ t, x }) => idx.push([t.date, t.title, t.cat, catLine(t.catKey), t.amount.toFixed(2), t.purpose || '', x.receipt ? 'Receipts/' + safeName(x.receipt.name).slice(0, 120) : 'MISSING', x.receipt ? x.receipt.url : '']));
+    const csv = rows => rows.map(r => r.map(v => { v = String(v ?? ''); return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }).join(',')).join('\r\n');
+    const L = [];
+    L.push(`TAX PACKET · ${R.year ? 'Tax year ' + R.year : R.label}`, `${p.myName || ''}${p.djName ? ' (' + p.djName + ')' : ''}`, `Made ${todayStr()} with Set & Settled. Covers ${R.from} to ${R.to}. Cash basis: income counts on the day it was received.`, '');
+    L.push('WHAT IS IN THIS PACKET', '  01 Tax summary (open in a browser, print or save as PDF): totals by Schedule C line, income by payer, expenses by category.', '  02 Transactions.csv: every income and expense line (opens in Excel or Google Sheets).', '  03 Receipts index.csv: every expense with its receipt file and Google Drive link.', '  Receipts/ and Invoices/: the files themselves.', '');
+    L.push('TOTALS', `  Gross receipts (income received): ${money2(d.gross)}`, `  Expenses: ${money2(d.total)}`, `  Net profit: ${money2(d.net)}`);
+    if (d.meals) L.push(`  Meals are usually 50% deductible: counting half (${money2(d.mealsAdj)}) gives a net of ${money2(d.netAdj)}.`);
+    if (d.owedAmt) L.push(`  Not yet paid at the end of the period (not counted above): ${money2(d.owedAmt)}`);
+    L.push('', 'FORMS 1099 YOU MAY RECEIVE', `  Payers who paid you ${money2(nec)} or more ${R.year ? 'in ' + R.year : 'in this period'} may send a 1099-NEC:`);
+    if (payers1099.length) payers1099.forEach(([n, v]) => L.push(`    - ${n}: ${money2(v.amt)}`)); else L.push('    - none at that amount');
+    L.push('  Payment apps (PayPal, Venmo business accounts, card processors) send a 1099-K only above $20,000 and 200 payments in a year.', '  All of your income is taxable whether or not a 1099 arrives. Check every 1099 you get against the income list in the summary.', '');
+    L.push('BEFORE YOU FILE: FILL THESE IN');
+    const miss = d.missing || [], noPurpose = d.ex.filter(t => !t.purpose);
+    if (!miss.length && !noPurpose.length) L.push('  Nothing missing in the app. Nice.');
+    if (miss.length) { L.push(`  ${miss.length} expense${miss.length === 1 ? '' : 's'} without a receipt:`); miss.slice(0, 40).forEach(t => L.push(`    - ${t.date} ${t.title} ${money2(t.amount)}${t.amount >= 75 ? '  (IRS expects a receipt at $75 and up for travel, meals and gifts; keep one for gear too)' : ''}`)); }
+    if (noPurpose.length) { L.push(`  ${noPurpose.length} expense${noPurpose.length === 1 ? '' : 's'} without a business purpose noted:`); noPurpose.slice(0, 40).forEach(t => L.push(`    - ${t.date} ${t.title} ${money2(t.amount)}`)); }
+    L.push('', 'BRING THESE TOO (the app does not track them)', '  - Estimated tax payments you made: federal Form 1040-ES and California Form 540-ES, with dates and amounts.', '  - Mileage log if you drove to gigs or gear runs: date, where, miles, purpose.', '  - Home studio or office: square footage of the space used only for work, and of the whole home.', '  - Phone and internet: rough percentage used for work.', '  - Health insurance premiums you paid yourself, and retirement contributions (SEP-IRA, Solo 401(k)).', '  - Big gear purchases: your preparer can deduct them all this year or spread them out (depreciation / Section 179).', '  - Any W-2 jobs and other 1099s.', '');
+    L.push('KEEPING RECORDS', '  The IRS generally asks you to keep records and receipts for 3 years after you file; many preparers suggest 7. Your receipts stay in Google Drive under Business / <year> / Receipts.', '');
+    L.push('This packet organizes your records; it is not tax advice. Line numbers refer to the federal IRS Schedule C. California starts from the same federal figures on Form 540 and adjusts some items on Schedule CA.');
+    return { R, d, slug, exps, invs: [...invs, ...owedInvs], idxCsv: csv(idx), readme: L.join('\r\n'), summary: taxHtml(d), txCsv: taxCsv(d) };
+  }
+  const catLine = k => { try { const c = (ECATS || []).find(x => x[0] === k); return c ? c[2] : 'Line 27a Other expenses'; } catch (_) { return ''; } };
+
+  /* -- a plain .zip (no compression), made in the browser */
+  const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  const crc32 = u => { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = CRC[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  function makeZip(files) {
+    const parts = [], central = [], enc = new TextEncoder(), now = new Date(); let off = 0;
+    const tm = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xFFFF, dt = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xFFFF;
+    for (const f of files) {
+      const name = enc.encode(f.name), data = f.data, crc = crc32(data), h = new DataView(new ArrayBuffer(30)), c = new DataView(new ArrayBuffer(46));
+      [[0, 0x04034b50, 4], [4, 20, 2], [6, 0x0800, 2], [8, 0, 2], [10, tm, 2], [12, dt, 2], [14, crc, 4], [18, data.length, 4], [22, data.length, 4], [26, name.length, 2], [28, 0, 2]].forEach(([o, v, n]) => n === 4 ? h.setUint32(o, v, true) : h.setUint16(o, v, true));
+      [[0, 0x02014b50, 4], [4, 20, 2], [6, 20, 2], [8, 0x0800, 2], [10, 0, 2], [12, tm, 2], [14, dt, 2], [16, crc, 4], [20, data.length, 4], [24, data.length, 4], [28, name.length, 2], [30, 0, 2], [32, 0, 2], [34, 0, 2], [36, 0, 2], [38, 0, 4], [42, off, 4]].forEach(([o, v, n]) => n === 4 ? c.setUint32(o, v, true) : c.setUint16(o, v, true));
+      parts.push(new Uint8Array(h.buffer), name, data); central.push(new Uint8Array(c.buffer), name); off += 30 + name.length + data.length;
+    }
+    const size = central.reduce((s, p) => s + p.length, 0), e = new DataView(new ArrayBuffer(22));
+    e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, size, true); e.setUint32(16, off, true);
+    return new Blob([...parts, ...central, new Uint8Array(e.buffer)], { type: 'application/zip' });
+  }
+  async function driveBytes(token, id) {
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media`, { headers: { Authorization: 'Bearer ' + token } });
+    if (!r.ok) throw new Error('drive ' + r.status); return new Uint8Array(await r.arrayBuffer());
+  }
+  async function packetZip(status) {
+    const P = packetParts(), enc = new TextEncoder(), files = [], used = new Set(), problems = [];
+    const add = (name, data) => { let n = name, i = 2; while (used.has(n)) n = name.replace(/(\.[^./]+)?$/, ` (${i++})$1`); used.add(n); files.push({ name: n, data }); };
+    add(`Tax packet ${P.slug}/00 Read me first.txt`, enc.encode(P.readme));
+    add(`Tax packet ${P.slug}/01 Tax summary.html`, enc.encode(P.summary));
+    add(`Tax packet ${P.slug}/02 Transactions.csv`, enc.encode(P.txCsv));
+    add(`Tax packet ${P.slug}/03 Receipts index.csv`, enc.encode(P.idxCsv));
+    const want = [...P.exps.filter(o => o.x.receipt && o.x.receipt.id).map(o => ({ id: o.x.receipt.id, name: `Receipts/${safeName(o.x.receipt.name).slice(0, 120) || o.x.receipt.id}`, what: o.t.title })),
+      ...P.invs.map(o => ({ id: o.b.invoice.fileId, name: `Invoices/${safeName(o.b.invoice.fileName || (o.t.title + ' invoice')).replace(/(\.pdf)?$/i, '.pdf')}`, what: o.t.title + ' invoice' }))];
+    if (want.length) {
+      status(`Getting ${want.length} file${want.length === 1 ? '' : 's'} from your Google Drive…`);
+      let token = ''; try { const mcp = await driveReady(); if (mcp) token = ((await mcp.callTool(GD, 'picker_token', {})).payload || {}).token || ''; } catch (_) {}
+      if (!token) problems.push('Google Drive is not connected, so receipt and invoice files are not included. The Receipts index has their Drive links.');
+      else for (let i = 0; i < want.length; i++) {
+        status(`Getting files from Google Drive… ${i + 1} of ${want.length}`);
+        try { add(`Tax packet ${P.slug}/${want[i].name}`, await driveBytes(token, want[i].id)); } catch (_) { problems.push(`Could not get: ${want[i].what} (it may have been moved or deleted in Drive)`); }
+      }
+      token = '';
+    }
+    if (problems.length) add(`Tax packet ${P.slug}/04 Files that could not be added.txt`, enc.encode(problems.join('\r\n')));
+    status('Making the .zip…');
+    const blob = makeZip(files), dl = await claude.use('downloads');
+    if (!dl) { status("Downloads aren't available right now."); return; }
+    await dl.save({ filename: `Tax packet ${P.slug}.zip`, data: blob });
+    status(`Done: ${files.length} files${problems.length ? `, ${problems.length} could not be added (see the note inside)` : ''}.`);
+    if (window.toast) window.toast('Tax packet saved');
+  }
+  async function packetToDrive(status) {
+    const P = packetParts(); let mcp = null; try { mcp = await driveReady(); } catch (_) {}
+    if (!mcp) { status('Connect Google Drive in Settings → Google account first.'); return; }
+    try {
+      status('Saving to Google Drive…');
+      const yr = P.R.year ? String(P.R.year) : P.R.to.slice(0, 4), base = await receiptsFolder(mcp, yr), folder = await findOrMakeFolder(mcp, `Tax packet ${P.slug}`, base.yearId);
+      const b64 = s => btoa(unescape(encodeURIComponent(s)));
+      for (const [n, m, c] of [['00 Read me first.txt', 'text/plain', P.readme], ['01 Tax summary.html', 'text/html', P.summary], ['02 Transactions.csv', 'text/csv', P.txCsv], ['03 Receipts index.csv', 'text/csv', P.idxCsv]]) await driveUpload(mcp, folder.id, n, m, b64(c));
+      const url = folder.viewUrl || `https://drive.google.com/drive/folders/${folder.id}`;
+      const p = document.querySelector('.ssx-pack [data-pack-status]'); if (p) p.innerHTML = `Saved in Business / ${esc(yr)} / Tax packet ${esc(P.slug)}. <a href="${esc(url)}" target="_blank" rel="noopener">Open in Drive</a>. Receipts stay in Business / ${esc(yr)} / Receipts.`;
+      if (window.toast) window.toast('Tax packet saved to Drive');
+    } catch (e) { if (!e || e.code !== 'quiet') { status("Couldn't save to Google Drive. Try again."); try { driveErr(e); } catch (_) {} } }
+  }
+
   /* ---------- Smooth saving.
      1. Every saved change used to redraw all nine pages at once, several times per save (once for the save and again
         when the server echoed it back). With a full season of shows that froze the page for seconds. Now the page
