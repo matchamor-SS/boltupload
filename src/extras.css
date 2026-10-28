@@ -554,3 +554,8 @@ html.ssx-rail-min body #tabs.tabs button .ssx-badge { font-size: 11px !important
 .ssx-arrname { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; display: flex; flex-direction: column; gap: 2px; }
 .ssx-arrname .note { font-weight: 400; font-size: 12px; margin: 0; }
 .ssx-arrlist .ssx-switch { margin-top: 0; }
+
+/* ===== Mileage total ===== */
+.ssx-milestat { display: flex; flex-wrap: wrap; gap: 10px 36px; margin-top: 8px; }
+.ssx-milestat > div { display: flex; flex-direction: column; gap: 2px; }
+.ssx-milestat b { font-family: var(--display, inherit); font-size: clamp(30px, 4vw, 40px); line-height: 1.05; font-weight: 500; }
