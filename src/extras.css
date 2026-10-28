@@ -528,3 +528,12 @@ html.ssx-rail-min body #tabs.tabs button .ssx-badge { font-size: 11px !important
   .ssx-grid2 { grid-template-columns: 1fr; }
   .ssx-mini > div { flex-wrap: wrap; }
 }
+
+/* ===== Automatic mileage ===== */
+.ssx-am { margin: 10px 0; }
+.ssx-pend { margin: 10px 0; }
+.ssx-pend .ssx-upi { flex-wrap: wrap; }
+.ssx-pdform { flex-basis: 100%; margin: 4px 0 0 36px; }
+.ssx-pdform[hidden] { display: none; }
+.ssx-mini .ssx-pill { font-size: 10px; padding: 1px 6px; vertical-align: middle; }
+@media (max-width: 560px) { .ssx-pdform { margin-left: 0; } }
