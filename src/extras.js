@@ -1249,7 +1249,7 @@ function appExtras() {
   // shows that happened and can be measured automatically
   function autoCandidates() {
     const c = apCfg(), t = todayStr(), y = t.slice(0, 4), logged = new Set(AP.mileage.map(m => m.bookingId).filter(Boolean)), pend = c.pend || {};
-    return bk().filter(b => ['confirmed', 'played', 'paid'].includes(stat(b)) && b.date && b.date < t && String(b.date).startsWith(y) && !logged.has(b.id) && !c.noDrive[b.id] && !pend[b.id] && !failed(b.id) && destOf(b));
+    return bk().filter(b => (['played', 'paid'].includes(stat(b)) || (stat(b) === 'confirmed' && b.date < t)) && b.date && String(b.date).startsWith(y) && !logged.has(b.id) && !c.noDrive[b.id] && !pend[b.id] && !failed(b.id) && destOf(b));
   }
   // confirmed shows still to come: measured ahead so you can see the miles
   function upcomingShows() {
@@ -1321,7 +1321,7 @@ function appExtras() {
     const ly = y - 1, m0 = +t.slice(5, 7), nec = ly >= 2026 ? 2000 : 600;
     let payers = []; if (m0 <= 4) { try { payers = window.taxData(yearR(ly)).byPayer.filter(([, v]) => v.amt >= nec); } catch (_) {} }
     const home = c.home || {}, far = Number(c.farMiles) || 50, pendL = Object.entries(c.pend || {}).map(([id, p]) => [bk().find(b => b.id === id), p]).filter(([b]) => b);
-    const autoOn = !!(c.autoMiles && home.lat), playedN = bk().filter(b => ['confirmed', 'played', 'paid'].includes(stat(b)) && b.date && b.date < t && String(b.date).startsWith(String(y))).length;
+    const autoOn = !!(c.autoMiles && home.lat), playedN = bk().filter(b => (['played', 'paid'].includes(stat(b)) || (stat(b) === 'confirmed' && b.date < t)) && b.date && String(b.date).startsWith(String(y))).length;
     const revL = [...AP.mileage.filter(m => m.review && m.bookingId && String(m.date || '').startsWith(String(y))).map(m => [bk().find(b => b.id === m.bookingId), { mi: (+m.miles || 0) / 2, city: m.review.city, approx: m.review.approx, logged: m.id }]), ...pendL.filter(([b]) => !AP.mileage.some(m => m.bookingId === b.id))].filter(([b]) => b);
     const ml = mileageToLog(), trips = AP.mileage.filter(m => String(m.date || '').startsWith(String(y))).sort((a, b) => String(b.date).localeCompare(String(a.date)));
     wrap.innerHTML = `
