@@ -537,3 +537,7 @@ html.ssx-rail-min body #tabs.tabs button .ssx-badge { font-size: 11px !important
 .ssx-pdform[hidden] { display: none; }
 .ssx-mini .ssx-pill { font-size: 10px; padding: 1px 6px; vertical-align: middle; }
 @media (max-width: 560px) { .ssx-pdform { margin-left: 0; } }
+
+/* ===== Booking request bar inside an opened booking ===== */
+.ssx-reqbar { display: flex; flex-direction: column; gap: 10px; margin: 10px 0 14px; padding: 12px 14px; border: 1px solid var(--accent); border-radius: 14px; background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.ssx-reqbar .ssx-row { margin: 0; }
