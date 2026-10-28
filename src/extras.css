@@ -511,7 +511,7 @@ html.ssx-rail-min body #tabs.tabs button .ssx-badge { font-size: 11px !important
 .ssx-upbt { flex: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .ssx-upx { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; flex: none; }
 .ssx-upx:hover { color: var(--ink); border-color: var(--accent); }
-.ssx-fin { display: flex; flex-direction: column; gap: 14px; margin: 14px 0; }
+.ssx-fin { display: contents; }
 .ssx-fin .card { margin: 0; }
 .ssx-tstats { margin: 10px 0; }
 .ssx-inline { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
