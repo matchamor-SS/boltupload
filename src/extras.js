@@ -1201,7 +1201,7 @@ function appExtras() {
   async function logTrip(b, oneWay, o = {}) {
     const miles = Math.round(oneWay * 2 * 10) / 10, v = person(b.venueId), where = (v && cName(v)) || b.address || b.city || 'the venue';
     const from = o.from ? ` from ${o.from}` : '';
-    await st.db.collection('mileage').doc('m-' + b.id).set({ date: b.date, miles, purpose: `Round trip${from} to ${where} for ${bName(b)}`, bookingId: b.id, auto: !!o.auto, createdAt: new Date().toISOString() });
+    await st.db.collection('mileage').doc('m-' + b.id).set({ date: b.date, miles, purpose: `Round trip${from} to ${where} for ${bName(b)}`, bookingId: b.id, auto: !!o.auto, review: o.review || null, createdAt: new Date().toISOString() });
     const c = apCfg(), k = venueKey(b), pend = { ...(c.pend || {}) }; delete pend[b.id];
     apSave({ pend, ...(k && !o.custom ? { venueMiles: { ...c.venueMiles, [k]: oneWay } } : {}) });
   }
@@ -1258,6 +1258,7 @@ function appExtras() {
   }
   async function autoMiles() {
     const c = apCfg(); if (GEO.busy || !c.autoMiles || !c.home || !c.home.lat || !st.db) return;
+    for (const [id, p] of Object.entries(c.pend || {})) { const b = bk().find(x => x.id === id); if (b && p.mi > 0 && !AP.mileage.some(m => m.bookingId === id)) { try { await logTrip(b, p.mi, { auto: true, from: 'home', review: { city: p.city || '', approx: !!p.approx } }); } catch (_) {} } }
     const past = autoCandidates(), est = c.est || {};
     const ahead = upcomingShows().filter(b => { const d = destOf(b); return d && !failed(b.id) && !(est[b.id] && est[b.id].q === d.q); });
     const list = [...past.map(b => [b, 'past']), ...ahead.map(b => [b, 'ahead'])].slice(0, 4); if (!list.length) return;
@@ -1275,8 +1276,8 @@ function appExtras() {
           }
           if (kind === 'ahead') { apSave({ est: { ...(apCfg().est || {}), [b.id]: { q: d.q, mi: one, city, approx } } }); continue; }
           const far = !start && (approx || one > (Number(cc.farMiles) || 50) || (city && cc.home.city && !sameCity(city, cc.home.city)));
-          if (far) apSave({ pend: { ...(apCfg().pend || {}), [b.id]: { mi: one, city, approx } } });
-          else { await logTrip(b, one, { auto: true, from: start ? start.label || 'your start address' : 'home', custom: !!start }); if (window.toast) window.toast(`Logged ${Math.round(one * 2 * 10) / 10} mi for ${bName(b)}`); }
+          await logTrip(b, one, { auto: true, from: start ? start.label || 'your start address' : 'home', custom: !!start, review: far ? { city, approx: !!approx } : null });
+          if (window.toast) window.toast(`Logged ${Math.round(one * 2 * 10) / 10} mi for ${bName(b)}${far ? ' (check where you drove from)' : ''}`);
         } catch (err) { setFail(b.id, 'error'); console.warn('mileage', err); }
       }
     } finally { GEO.busy = false; }
@@ -1320,7 +1321,8 @@ function appExtras() {
     const ly = y - 1, m0 = +t.slice(5, 7), nec = ly >= 2026 ? 2000 : 600;
     let payers = []; if (m0 <= 4) { try { payers = window.taxData(yearR(ly)).byPayer.filter(([, v]) => v.amt >= nec); } catch (_) {} }
     const home = c.home || {}, far = Number(c.farMiles) || 50, pendL = Object.entries(c.pend || {}).map(([id, p]) => [bk().find(b => b.id === id), p]).filter(([b]) => b);
-    const autoOn = !!(c.autoMiles && home.lat), upc = autoOn ? upcomingShows() : [];
+    const autoOn = !!(c.autoMiles && home.lat), playedN = bk().filter(b => ['confirmed', 'played', 'paid'].includes(stat(b)) && b.date && b.date < t && String(b.date).startsWith(String(y))).length;
+    const revL = [...AP.mileage.filter(m => m.review && m.bookingId && String(m.date || '').startsWith(String(y))).map(m => [bk().find(b => b.id === m.bookingId), { mi: (+m.miles || 0) / 2, city: m.review.city, approx: m.review.approx, logged: m.id }]), ...pendL.filter(([b]) => !AP.mileage.some(m => m.bookingId === b.id))].filter(([b]) => b);
     const ml = mileageToLog(), trips = AP.mileage.filter(m => String(m.date || '').startsWith(String(y))).sort((a, b) => String(b.date).localeCompare(String(a.date)));
     wrap.innerHTML = `
     <div class="card ssx" id="ssx-tax">
@@ -1339,21 +1341,22 @@ function appExtras() {
       <p class="note" style="margin:0">A rough guide, not tax advice: 25–30% of profit covers self-employment tax plus income tax for many performers. Your preparer can fine-tune it.</p>
     </div>
     <div class="card ssx" id="ssx-miles">
-      <div class="ssx-head"><div><h3>Mileage</h3><p class="note">${y}: ${trips.reduce((s, m) => s + (+m.miles || 0), 0).toLocaleString('en-US')} miles · about ${$(tn.mileDed)} deduction at the IRS rate of ${(mileRate(y) * 100).toFixed(1)}¢ a mile${MILE_RATE[y] ? '' : ' (check this year\'s rate)'}.</p></div>
+      <div class="ssx-head"><div><h3>Mileage</h3>
+        <div class="ssx-milestat"><div><span class="eyebrow">${y} business miles</span><b class="num">${(Math.round(trips.reduce((s, m) => s + (+m.miles || 0), 0) * 10) / 10).toLocaleString('en-US')} mi</b></div><div><span class="eyebrow">Deduction (about)</span><b class="num">${$(tn.mileDed)}</b></div></div>
+        <p class="note" style="margin:6px 0 0">${trips.length} trip${trips.length === 1 ? '' : 's'} at the IRS rate of ${(mileRate(y) * 100).toFixed(1)}¢ a mile${MILE_RATE[y] ? '' : ' (check this year\'s rate)'}.${autoOn ? ` Counted automatically from ${playedN} show${playedN === 1 ? '' : 's'} played so far${ml.length ? `; ${ml.length} still need${ml.length === 1 ? 's' : ''} your help below` : ''}.` : ''}</p></div>
         <label class="ssx-switch"><input type="checkbox" id="ssx-am-on" ${c.autoMiles ? 'checked' : ''} aria-label="Count miles automatically"><span></span></label></div>
       <div class="ssx-opt ssx-am">
         <b>Count miles automatically ${c.autoMiles ? (home.lat ? '<span class="ssx-pill on">On</span>' : '<span class="ssx-pill">Needs your home address</span>') : '<span class="ssx-pill">Off</span>'}</b>
-        <p class="note" style="margin:0">After each show, the app measures the drive from your home to the venue and logs the round trip. If a show is in another city or more than ${esc(far)} miles away, it asks where you left from first.</p>
+        <p class="note" style="margin:0">After each show, the app measures the drive from your home to the venue and logs the round trip. If a show is in another city or more than ${esc(far)} miles away, it still counts it from home and asks you to check where you left from.</p>
         <details class="ssx-det" ${home.lat ? '' : 'open'}><summary>Home address and settings</summary>
         <div class="ssx-grid2"><div class="f"><label for="ssx-am-home">Home (starting address)</label><input id="ssx-am-home" autocomplete="street-address" maxlength="200" placeholder="Street, city, state" value="${esc(home.address || '')}"></div>
           <div class="f"><label for="ssx-am-far">Ask me when it's more than (miles one way)</label><input id="ssx-am-far" type="number" min="5" max="500" step="5" inputmode="numeric" value="${esc(far)}"></div></div>
         <div class="ssx-row"><button type="button" class="btn small primary" data-am-save>Save</button>${home.city ? `<span class="note" style="margin:0">Home city: ${esc(home.city)}</span>` : ''}</div>
         <p class="note" style="margin:0">Addresses are looked up with OpenStreetMap to measure the drive; nothing else is shared. Drives from home count when home is your main place of business (a home studio usually qualifies). Your preparer can confirm.</p><p class="note" style="margin:0;font-size:11px">Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · Routes by <a href="https://project-osrm.org" target="_blank" rel="noopener">OSRM</a></p></details>
       </div>
-      ${pendL.length ? `<div class="ssx-uplist ssx-pend"><b>Where did you drive from?</b>${pendL.map(([b, p]) => `<div class="ssx-upi" data-pd="${esc(b.id)}"><span class="ssx-upic">📍</span><span class="ssx-uptx"><b>${esc(bName(b))}</b> · ${esc(niceDate(b.date))}${p.city ? ' · ' + esc(p.city) : ''}${p.mi ? ` · ${p.approx ? 'about ' : ''}${p.mi} mi one way from home` : ''}${p.approx ? ' (measured to the city center)' : ''}</span><span class="ssx-upbt">${p.mi || home.lat ? `<button type="button" class="btn small primary" data-pd-home>From home${p.mi ? ` (${Math.round(p.mi * 2 * 10) / 10} mi)` : ''}</button>` : ''}<button type="button" class="btn small" data-pd-other>Different start</button><button type="button" class="btn small" data-pd-no>Didn't drive</button></span>
+      ${revL.length ? `<div class="ssx-uplist ssx-pend"><b>Check where you drove from</b><p class="note" style="margin:0">These shows were out of town or far away, so they were counted from home. Change any you started from somewhere else.</p>${revL.map(([b, p]) => `<div class="ssx-upi" data-pd="${esc(b.id)}"><span class="ssx-upic">📍</span><span class="ssx-uptx"><b>${esc(bName(b))}</b> · ${esc(niceDate(b.date))}${p.city ? ' · ' + esc(p.city) : ''}${p.mi ? ` · ${p.approx ? 'about ' : ''}${Math.round(p.mi * 2 * 10) / 10} mi round trip from home` : ''}${p.approx ? ' (measured to the city center)' : ''}</span><span class="ssx-upbt">${p.logged ? '<button type="button" class="btn small primary" data-pd-ok>Looks right</button>' : p.mi || home.lat ? `<button type="button" class="btn small primary" data-pd-home>From home${p.mi ? ` (${Math.round(p.mi * 2 * 10) / 10} mi)` : ''}</button>` : ''}<button type="button" class="btn small" data-pd-other>Different start</button><button type="button" class="btn small" data-pd-no>Didn't drive</button></span>
         <div class="ssx-row ssx-pdform" hidden><input data-pd-addr maxlength="200" placeholder="Where you left from (hotel, friend's place…)" aria-label="Starting address" style="flex:1 1 220px"><button type="button" class="btn small primary" data-pd-go>Measure and log</button></div></div>`).join('')}</div>` : ''}
       ${ml.length ? `<div class="ssx-uplist">${ml.slice(0, 6).map(b => { const k = venueKey(b), known = c.venueMiles[k]; return `<div class="ssx-upi" data-ml="${esc(b.id)}"><span class="ssx-upic">🚗</span><span class="ssx-uptx"><b>${esc(bName(b))}</b> · ${esc(niceDate(b.date))}${known ? ` · ${known * 2} mi round trip` : ''}${autoOn ? `<br><span class="note">${!destOf(b) ? 'No address on this booking yet. Add one and the miles count themselves.' : (GEO.fail[b.id] || {}).why === 'noroute' ? 'No driving route found to this address.' : "Couldn't find this address automatically. Check the spelling, or enter the miles."}</span>` : ''}</span><span class="ssx-upbt">${autoOn && !destOf(b) ? '<button type="button" class="btn small" data-ml-addr>Add address</button>' : ''}${known ? `<button type="button" class="btn small primary" data-ml-ok>Log ${known * 2} mi</button>` : `<input type="number" min="0" step="0.1" inputmode="decimal" placeholder="Miles one way" aria-label="Miles one way" style="width:120px" data-ml-in><button type="button" class="btn small primary" data-ml-ok>Log</button>`}<button type="button" class="btn small" data-ml-no>Didn't drive</button></span></div>`; }).join('')}</div>${ml.length > 6 ? `<p class="note" style="margin:0">+ ${ml.length - 6} more</p>` : ''}<p class="note" style="margin:0">Enter the one-way miles once per venue. Next time you play there, it's one tap.</p>` : autoOn ? '' : '<p class="note" style="margin:0">Played shows with a venue or address show up here to log in one tap.</p>'}
-      ${autoOn && upc.length ? `<details class="ssx-det" open><summary>Coming up (${upc.length})</summary><div class="ssx-mini">${upc.slice(0, 12).map(b => { const d = destOf(b), x = (c.est || {})[b.id]; return `<div><span>${esc(niceDate(b.date))} · ${esc(bName(b))}${x && x.city ? ' · ' + esc(x.city) : ''}</span><b class="num">${!d ? '<span class="note">no address</span>' : x && d && x.q === d.q ? `${x.approx ? '~' : ''}${Math.round(x.mi * 2 * 10) / 10} mi` : failed(b.id) ? '<span class="note">not found</span>' : '<span class="note">measuring…</span>'}</b></div>`; }).join('')}</div><p class="note" style="margin:6px 0 0">Round trips from home. Each one is logged after the show${far ? `, or asks you first if it's out of town or over ${esc(far)} miles` : ''}.</p></details>` : ''}
       <details class="ssx-det"><summary>Add another trip (gear runs, rehearsals, meetings)</summary>
         <div class="ssx-grid2"><div class="f"><label for="ssx-mt-d">Date</label><input id="ssx-mt-d" type="date" value="${esc(t)}"></div><div class="f"><label for="ssx-mt-m">Miles (total)</label><input id="ssx-mt-m" type="number" min="0" step="0.1" inputmode="decimal"></div></div>
         <div class="f"><label for="ssx-mt-p">Where and why</label><input id="ssx-mt-p" maxlength="160" placeholder="e.g. Guitar Center for cables"></div><div class="ssx-row"><button type="button" class="btn primary small" data-mt-add>Save trip</button></div></details>
@@ -1389,8 +1392,9 @@ function appExtras() {
       const home = row.querySelector('[data-pd-home]'); if (home) home.onclick = async e => { e.stopPropagation(); const h = apCfg().home || {};
         if (p.mi) { await logTrip(b, p.mi, { auto: true, from: 'home' }); if (window.toast) window.toast('Trip logged'); return; }
         try { const d = destOf(b), to = d && await geoFind(d.q, d.city); if (!to || !h.lat) throw 0; const one = await driveMiles(h, to); await logTrip(b, one, { auto: true, from: 'home' }); if (window.toast) window.toast('Trip logged'); } catch (_) { if (window.toast) window.toast("Couldn't measure that drive. Enter the miles under Add another trip."); } };
+      const okb = row.querySelector('[data-pd-ok]'); if (okb) okb.onclick = e => { e.stopPropagation(); const m = AP.mileage.find(x => x.bookingId === b.id); if (m) { const { id, ...rest } = m; st.db.collection('mileage').doc(id).set({ ...rest, review: null }).catch(() => {}); } };
       row.querySelector('[data-pd-other]').onclick = e => { e.stopPropagation(); form.hidden = !form.hidden; if (!form.hidden) form.querySelector('input').focus(); };
-      row.querySelector('[data-pd-no]').onclick = e => { e.stopPropagation(); const cc = apCfg(), pend = { ...(cc.pend || {}) }; delete pend[b.id]; apSave({ pend, noDrive: { ...cc.noDrive, [b.id]: true } }); };
+      row.querySelector('[data-pd-no]').onclick = e => { e.stopPropagation(); const cc = apCfg(), pend = { ...(cc.pend || {}) }; delete pend[b.id]; apSave({ pend, noDrive: { ...cc.noDrive, [b.id]: true } }); AP.mileage.filter(m => m.bookingId === b.id).forEach(m => st.db.collection('mileage').doc(m.id).delete().catch(() => {})); };
       row.querySelector('[data-pd-go]').onclick = async e => { e.stopPropagation(); const btn = e.currentTarget, a = form.querySelector('input').value.trim(); if (!a) { form.querySelector('input').focus(); return; }
         btn.disabled = true; btn.textContent = 'Measuring…'; try { await measureFrom(b, a); } catch (_) { if (window.toast) window.toast("Couldn't measure that drive. Enter the miles under Add another trip."); } btn.disabled = false; btn.textContent = 'Measure and log'; };
     });
