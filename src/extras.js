@@ -1103,6 +1103,23 @@ function appExtras() {
   const stat = b => { let s = b.status; try { s = K(s); } catch (_) {} return String(s || '').toLowerCase(); };
   const bName = b => { try { return bookingName(b); } catch (_) { return b.title || 'your show'; } };
   const person = id => { try { return contact(id) || null; } catch (_) { return null; } };
+  // a show's miles count only while it's Played or Paid, or Confirmed with its date past (not Lost, not deleted)
+  const countable = b => !!b && (['played', 'paid'].includes(stat(b)) || (stat(b) === 'confirmed' && !!b.date && b.date < todayStr()));
+  const tripOk = m => !m.bookingId || countable(bk().find(b => b.id === m.bookingId));
+  const liveTrips = () => AP.mileage.filter(tripOk);
+  function pruneTrips() {
+    if (!st.db || !bk().length || Date.now() - (AP.t0 || Date.now()) < 5000) return;
+    AP.pruned = AP.pruned || {};
+    for (const m of AP.mileage) {
+      if (!m.bookingId || AP.pruned[m.id]) continue;
+      const b = bk().find(x => x.id === m.bookingId);
+      if (!countable(b)) { AP.pruned[m.id] = 1; st.db.collection('mileage').doc(m.id).delete().catch(() => { delete AP.pruned[m.id]; }); }
+      else if (b.date && m.date !== b.date) { const { id, ...rest } = m; st.db.collection('mileage').doc(id).set({ ...rest, date: b.date }).catch(() => {}); m.date = b.date; }
+    }
+    const pend = { ...(apCfg().pend || {}) }; let ch = false;
+    Object.keys(pend).forEach(id => { if (!countable(bk().find(b => b.id === id))) { delete pend[id]; ch = true; } });
+    if (ch) apSave({ pend });
+  }
   // estimated tax due dates for a tax year (weekends move to Monday); California has no September payment
   const estDates = y => { const adj = d => { const x = new Date(d + 'T12:00:00'), w = x.getDay(); if (w === 6) x.setDate(x.getDate() + 2); if (w === 0) x.setDate(x.getDate() + 1); return isoLocal(x); };
     return [[`${y}-04-15`, 'Q1', 30], [`${y}-06-15`, 'Q2', 40], [`${y}-09-15`, 'Q3', 0], [`${y + 1}-01-15`, 'Q4', 30]].map(([d, q, ca]) => ({ date: adj(d), q, ca, year: y })); };
@@ -1110,7 +1127,7 @@ function appExtras() {
   function taxNumbers(y) {
     let d = null; try { d = window.taxData(yearR(y)); } catch (_) {}
     const c = apCfg(), rate = Math.max(0, Math.min(60, Number(c.taxRate) || 25)) / 100;
-    const miles = AP.mileage.filter(m => String(m.date || '').startsWith(String(y))).reduce((s, m) => s + (+m.miles || 0), 0);
+    const miles = liveTrips().filter(m => String(m.date || '').startsWith(String(y))).reduce((s, m) => s + (+m.miles || 0), 0);
     const mileDed = miles * mileRate(y), net = d ? (d.netAdj ?? d.net) - mileDed : 0;
     const paid = (c.estPayments || []).filter(p => +p.year === y).reduce((s, p) => s + (+p.amount || 0), 0);
     return { d, rate, net, setAside: Math.max(0, net * rate), paid, miles, mileDed };
@@ -1258,7 +1275,7 @@ function appExtras() {
   }
   async function autoMiles() {
     const c = apCfg(); if (GEO.busy || !c.autoMiles || !c.home || !c.home.lat || !st.db) return;
-    for (const [id, p] of Object.entries(c.pend || {})) { const b = bk().find(x => x.id === id); if (b && p.mi > 0 && !AP.mileage.some(m => m.bookingId === id)) { try { await logTrip(b, p.mi, { auto: true, from: 'home', review: { city: p.city || '', approx: !!p.approx } }); } catch (_) {} } }
+    for (const [id, p] of Object.entries(c.pend || {})) { const b = bk().find(x => x.id === id); if (countable(b) && p.mi > 0 && !AP.mileage.some(m => m.bookingId === id)) { try { await logTrip(b, p.mi, { auto: true, from: 'home', review: { city: p.city || '', approx: !!p.approx } }); } catch (_) {} } }
     const past = autoCandidates(), est = c.est || {};
     const ahead = upcomingShows().filter(b => { const d = destOf(b); return d && !failed(b.id) && !(est[b.id] && est[b.id].q === d.q); });
     const list = [...past.map(b => [b, 'past']), ...ahead.map(b => [b, 'ahead'])].slice(0, 4); if (!list.length) return;
@@ -1322,8 +1339,8 @@ function appExtras() {
     let payers = []; if (m0 <= 4) { try { payers = window.taxData(yearR(ly)).byPayer.filter(([, v]) => v.amt >= nec); } catch (_) {} }
     const home = c.home || {}, far = Number(c.farMiles) || 50, pendL = Object.entries(c.pend || {}).map(([id, p]) => [bk().find(b => b.id === id), p]).filter(([b]) => b);
     const autoOn = !!(c.autoMiles && home.lat), playedN = bk().filter(b => (['played', 'paid'].includes(stat(b)) || (stat(b) === 'confirmed' && b.date < t)) && b.date && String(b.date).startsWith(String(y))).length;
-    const revL = [...AP.mileage.filter(m => m.review && m.bookingId && String(m.date || '').startsWith(String(y))).map(m => [bk().find(b => b.id === m.bookingId), { mi: (+m.miles || 0) / 2, city: m.review.city, approx: m.review.approx, logged: m.id }]), ...pendL.filter(([b]) => !AP.mileage.some(m => m.bookingId === b.id))].filter(([b]) => b);
-    const ml = mileageToLog(), trips = AP.mileage.filter(m => String(m.date || '').startsWith(String(y))).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    const revL = [...liveTrips().filter(m => m.review && m.bookingId && String(m.date || '').startsWith(String(y))).map(m => [bk().find(b => b.id === m.bookingId), { mi: (+m.miles || 0) / 2, city: m.review.city, approx: m.review.approx, logged: m.id }]), ...pendL.filter(([b]) => !AP.mileage.some(m => m.bookingId === b.id))].filter(([b]) => b);
+    const ml = mileageToLog(), trips = liveTrips().filter(m => String(m.date || '').startsWith(String(y))).sort((a, b) => String(b.date).localeCompare(String(a.date)));
     wrap.innerHTML = `
     <div class="card ssx" id="ssx-tax">
       <div class="ssx-head"><div><h3>Taxes</h3><p class="note">What to set aside from your ${y} profit, and your estimated payments. Self-employed people usually pay four times a year.</p></div></div>
@@ -1419,7 +1436,7 @@ function appExtras() {
   /* -- for the tax packet */
   function apPacket(R) {
     const y = R.year || +String(R.to).slice(0, 4), c = apCfg();
-    const trips = AP.mileage.filter(m => String(m.date || '') >= R.from && String(m.date || '') <= R.to).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const trips = liveTrips().filter(m => String(m.date || '') >= R.from && String(m.date || '') <= R.to).sort((a, b) => String(a.date).localeCompare(String(b.date)));
     const miles = trips.reduce((s, m) => s + (+m.miles || 0), 0), pays = (c.estPayments || []).filter(p => +p.year === y);
     const lines = ['', 'TRACKED IN THE APP'];
     lines.push(`  Mileage: ${miles.toLocaleString('en-US')} business miles in ${trips.length} trip${trips.length === 1 ? '' : 's'}${MILE_RATE[y] ? `, about $${Math.round(miles * MILE_RATE[y]).toLocaleString('en-US')} at the IRS standard rate of ${(MILE_RATE[y] * 100).toFixed(1)} cents` : ''}. Log in "05 Mileage log.csv". Your preparer will choose standard mileage or actual car costs.`);
@@ -1453,7 +1470,7 @@ function appExtras() {
     st.db.doc('settings/vendors').onSnapshot(s => { AP.vendors = s.exists ? s.data() : {}; }, () => {});
     st.db.collection('mileage').onSnapshot(s => { AP.mileage = s.docs.map(d => ({ id: d.id, ...d.data() })); apTick(true); }, () => {});
     st.db.collection('recurring').onSnapshot(s => { AP.recurring = s.docs.map(d => ({ id: d.id, ...d.data() })); runRecurring(); apTick(true); }, () => {});
-    setInterval(() => apTick(false), 1000);
+    setInterval(() => apTick(false), 1000); AP.t0 = Date.now(); setInterval(pruneTrips, 3000);
     setInterval(runRecurring, 6 * 3600 * 1000); document.addEventListener('visibilitychange', () => { if (!document.hidden) runRecurring(); });
     // expense form: vendor memory + "Repeats"
     const ef = window.expenseForm;
