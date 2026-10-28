@@ -5,7 +5,7 @@ export const CSP = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: blob: https://*.supabase.co https://*.googleusercontent.com https://*.gstatic.com https://*.google.com",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.googleapis.com",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.googleapis.com https://nominatim.openstreetmap.org https://router.project-osrm.org",
   "frame-src https://docs.google.com https://drive.google.com https://accounts.google.com https://content.googleapis.com",
   "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'", "upgrade-insecure-requests",
 ].join('; ');
