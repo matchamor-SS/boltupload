@@ -1676,7 +1676,7 @@ function appExtras() {
       }
     }
     const dp = dupPairs(); if (dp.length && !skip('dups:' + dp.map(x => x[2]).join(',')))
-      out.push({ k: 'dups:' + dp.map(x => x[2]).join(','), at: t, icon: '👥', text: `${dp.length} ${dp.length === 1 ? 'person looks' : 'people look'} like ${dp.length === 1 ? 'a duplicate' : 'duplicates'} in People. Merge them so history and mileage stay together.`, btn: 'Review', snooze: 14, go: () => { try { goTab('contacts'); } catch (_) {} } });
+      out.push({ k: 'dups:' + dp.map(x => x[2]).join(','), at: t, icon: '👥', text: `${dp.length} ${dp.length === 1 ? 'contact' : 'contacts'} in People to tidy up: ${dp.some(x => x[3] === 'link') ? 'people to connect to their collective or venue' : ''}${dp.some(x => x[3] === 'link') && dp.some(x => x[3] === 'dup') ? ', and ' : ''}${dp.some(x => x[3] === 'dup') ? 'possible duplicates' : ''}.`, btn: 'Review', snooze: 14, go: () => { try { goTab('contacts'); } catch (_) {} } });
     return out;
   }
 
@@ -1739,52 +1739,93 @@ function appExtras() {
     });
   }
 
-  // -- 7) hold an open date for a venue, straight from the calendar
+  // -- 7) hold a date for any venue or promoter (new or returning), straight from the calendar
   function holdButton(ds) {
     const sh = document.querySelector('#sheetRoot .sheet'); if (!sh || !ds || ds < todayStr()) return;
-    let busy = false; try { busy = availBusy(ds); } catch (_) {} if (busy) return;
     const acts = sh.querySelector('.actions'); if (!acts || acts.querySelector('[data-ssx-hold]')) return;
-    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn'; btn.dataset.ssxHold = '1'; btn.textContent = 'Hold for a venue…';
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn'; btn.dataset.ssxHold = '1'; btn.textContent = 'Hold this date…';
     acts.insertBefore(btn, acts.lastElementChild); btn.onclick = () => holdSheet(ds);
   }
   function holdSheet(ds) {
     let cs = []; try { cs = S.contacts || []; } catch (_) {}
     const by = type => cs.filter(c => c.type === type).sort((a, b) => String(cName(a)).localeCompare(String(cName(b))));
     const og = (label, list) => list.length ? `<optgroup label="${label}">${list.map(c => `<option value="${esc(c.id)}">${esc(cName(c))}</option>`).join('')}</optgroup>` : '';
-    const pk = stageKey('pitched');
-    sheet(`<h3>Hold ${esc(niceDate(ds))}</h3><p class="note" style="margin:4px 0 10px">Saves this date as <b>${esc(stageName(pk))}</b> so it closes on your booking link, then opens your pitch email to review.</p>
-      <div class="f"><label for="ssx-hv">Venue or promoter</label><select id="ssx-hv"><option value="">Pick one…</option>${og('Venues', by('venue'))}${og('Promoters', by('promoter'))}</select></div>
-      ${!by('venue').length && !by('promoter').length ? '<p class="note">Add a venue or promoter in People first.</p>' : ''}
-      <div class="actions"><button class="btn" data-cancel>Back</button><button class="btn primary" data-hold>Hold and write pitch</button></div>`, root => {
-      root.querySelector('[data-cancel]').onclick = () => { try { window.daySheet(ds); } catch (_) { try { close(); } catch (__) {} } };
-      root.querySelector('[data-hold]').onclick = async e => {
-        const id = root.querySelector('#ssx-hv').value; if (!id) { if (window.toast) window.toast('Pick a venue or promoter'); return; }
-        e.currentTarget.disabled = true;
-        const c = person(id) || {}, t = todayStr(), now = new Date().toISOString();
-        const data = { title: cName(c) || 'Hold', date: ds, status: pk, stageAt: { [pk]: t }, city: c.city || '', [c.type === 'promoter' ? 'promoterId' : 'venueId']: id, createdAt: now, updatedAt: now };
-        const nid = await window.save('bookings', null, data); if (!nid) { e.currentTarget.disabled = false; return; }
+    const pk = stageKey('pitched'), firm = bk().filter(b => b.date === ds && ['confirmed', 'played', 'paid'].includes(stat(b)));
+    sheet(`<h3>Hold ${esc(niceDate(ds))}</h3><p class="note" style="margin:4px 0 10px">Saves the date as <b>${esc(stageName(pk))}</b> so it closes on your booking link. Works for new and returning venues and promoters.</p>
+      ${firm.length ? `<p class="warn" style="margin:0 0 10px">You already have ${esc(firm.map(bName).join(', '))} on this date.</p>` : ''}
+      <div class="f"><label for="ssx-hv">Who is it with?</label><select id="ssx-hv"><option value="__new__">+ Someone new</option>${og('Venues', by('venue'))}${og('Promoters', by('promoter'))}</select></div>
+      <div id="ssx-hnew">
+        <div class="f"><label>They are a</label><div class="ssx-chips" id="ssx-htype"><button type="button" class="ssx-chip" data-ht="venue" aria-pressed="true">Venue</button><button type="button" class="ssx-chip" data-ht="promoter" aria-pressed="false">Promoter / collective</button></div></div>
+        <div class="f"><label for="ssx-hname">Name</label><input id="ssx-hname" maxlength="120" placeholder="e.g. The Casbah"></div>
+        <div class="ssx-grid2"><div class="f"><label for="ssx-hemail">Email (optional)</label><input id="ssx-hemail" type="email" maxlength="160" autocomplete="off" placeholder="booking@venue.com"></div>
+          <div class="f"><label for="ssx-hcity">City (optional)</label><input id="ssx-hcity" maxlength="80"></div></div>
+        <p class="note" style="margin:0">They're added to People, so next time they're in the list.</p>
+      </div>
+      <div class="f"><label for="ssx-htitle">Show name (optional)</label><input id="ssx-htitle" maxlength="120" placeholder="Leave blank to use their name"></div>
+      <label class="ssx-check"><input type="checkbox" id="ssx-hpitch" checked> Open a pitch email after</label>
+      <div class="actions"><button class="btn" data-cancel>Back</button><button class="btn primary" data-hold>Hold date</button></div>`, root => {
+      const q = s => root.querySelector(s), sel = q('#ssx-hv'), nw = q('#ssx-hnew'); let type = 'venue';
+      if (by('venue').length || by('promoter').length) { sel.value = (by('venue')[0] || by('promoter')[0]).id; }
+      const sync = () => { nw.hidden = sel.value !== '__new__'; if (!nw.hidden) setTimeout(() => q('#ssx-hname').focus(), 30); };
+      sel.onchange = sync; sync();
+      root.querySelectorAll('[data-ht]').forEach(b => b.onclick = () => { type = b.dataset.ht; root.querySelectorAll('[data-ht]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); q('#ssx-hname').placeholder = type === 'venue' ? 'e.g. The Casbah' : 'e.g. Afternoon Umbrella Friends'; });
+      q('[data-cancel]').onclick = () => { try { window.daySheet(ds); } catch (_) { try { close(); } catch (__) {} } };
+      q('[data-hold]').onclick = async e => {
+        const btn = e.currentTarget, now = new Date().toISOString(), t = todayStr(); let id = sel.value, c = null;
+        if (id === '__new__') {
+          const name = q('#ssx-hname').value.trim(), email = q('#ssx-hemail').value.trim(), city = q('#ssx-hcity').value.trim();
+          if (!name) { if (window.toast) window.toast('Add their name'); q('#ssx-hname').focus(); return; }
+          if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { if (window.toast) window.toast('Check the email address'); q('#ssx-hemail').focus(); return; }
+          btn.disabled = true;
+          c = { type, name: name.slice(0, 120), email: email.slice(0, 160), city: city.slice(0, 80), ...(type === 'promoter' ? { pkind: 'person' } : {}), createdAt: now };
+          id = await window.save('contacts', null, c); if (!id) { btn.disabled = false; return; }
+          c = { ...c, id };
+        } else { c = person(id) || {}; btn.disabled = true; }
+        const title = q('#ssx-htitle').value.trim() || cName(c) || 'Hold', pitch = q('#ssx-hpitch').checked;
+        const data = { title: title.slice(0, 120), date: ds, status: pk, stageAt: { [pk]: t }, city: c.city || '', [c.type === 'promoter' ? 'promoterId' : 'venueId']: id, createdAt: now, updatedAt: now };
+        const nid = await window.save('bookings', null, data); if (!nid) { btn.disabled = false; return; }
         try { close(); } catch (_) {}
-        if (window.toast) window.toast(`Held ${niceDate(ds)} for ${cName(c)}`);
-        let n = 0; const open = () => { const b = bk().find(x => x.id === nid); if (!b && n++ < 20) return setTimeout(open, 200);
+        if (window.toast) window.toast(`Held ${niceDate(ds)} for ${cName(c) || title}`);
+        let n = 0; const after = () => { const b = bk().find(x => x.id === nid); if (!b && n++ < 20) return setTimeout(after, 200);
           try { syncBookingEvent(nid, { ...data, id: nid }); } catch (_) {}
+          if (!pitch) return;
           const to = c.bookingContactId || id, first = String(cName(person(c.bookingContactId) || c) || '').split(' ')[0];
-          try { (S.templates || []).some(x => x.id === 'venue-pitch') ? useTemplate('venue-pitch', nid) : composeSheet({ booking: nid, to, subject: `Booking inquiry: ${niceDate(ds)}`, body: `Hi ${first || 'there'},\n\nI'd love to play ${cName(c)} on ${niceDate(ds)}. I'm holding the date for you for now. Let me know if it works and I'll send everything you need.\n\nThanks,\n${myName()}` }); } catch (_) {} };
-        setTimeout(open, 300);
+          try { (S.templates || []).some(x => x.id === 'venue-pitch') ? useTemplate('venue-pitch', nid) : composeSheet({ booking: nid, to, subject: `Booking inquiry: ${niceDate(ds)}`, body: `Hi ${first || 'there'},\n\nI'd love to play ${cName(c) || 'for you'} on ${niceDate(ds)}. I'm holding the date for you for now. Let me know if it works and I'll send everything you need.\n\nThanks,\n${myName()}` }); } catch (_) {} };
+        setTimeout(after, 300);
       };
     });
   }
-
-  // -- 8) duplicate people: same email, or same name and type
+  // -- 8) duplicate people. A collective and the person who runs it can share an email: that's a link, not a duplicate.
   const normName = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const kindOf = c => c.type === 'promoter' ? (c.pkind === 'collective' ? 'collective' : 'person') : (c.type || 'other');
+  const cids = p => [...new Set([...(p.collectiveIds || []), p.collectiveId].filter(Boolean))];
+  function linked(a, b) {
+    const one = (x, y) => cids(x).includes(y.id) || x.mainContactId === y.id || x.bookingContactId === y.id || x.runBy === y.id
+      || (x.memberIds || []).includes(y.id) || (x.venueIds || []).includes(y.id) || (x.promoterIds || []).includes(y.id);
+    return one(a, b) || one(b, a);
+  }
+  // [a, b, key, 'dup' | 'link']  ('link' = a collective or venue and a person who share an email but aren't connected yet)
   function dupPairs() {
     let cs = []; try { cs = S.contacts || []; } catch (_) {}
     const nd = apCfg().notDup || {}, out = [];
     for (let i = 0; i < cs.length && out.length < 20; i++) for (let j = i + 1; j < cs.length && out.length < 20; j++) {
-      const a = cs[i], b = cs[j], k = [a.id, b.id].sort().join('|'); if (nd[k]) continue;
+      const a = cs[i], b = cs[j], k = [a.id, b.id].sort().join('|'); if (nd[k] || linked(a, b)) continue;
       const ea = String(a.email || '').trim().toLowerCase(), eb = String(b.email || '').trim().toLowerCase(), na = normName(cName(a)), nb = normName(cName(b));
-      if ((ea && ea === eb) || (na.length > 2 && na === nb && (a.type || '') === (b.type || ''))) out.push([a, b, k]);
+      const sameEmail = !!ea && ea === eb, sameName = na.length > 2 && na === nb, ka = kindOf(a), kb = kindOf(b);
+      if (ka === kb && (sameEmail || sameName)) out.push([a, b, k, 'dup']);
+      else if (sameEmail && [ka, kb].includes('person') && ([ka, kb].includes('collective') || [ka, kb].includes('venue'))) out.push(ka === 'person' ? [b, a, k, 'link'] : [a, b, k, 'link']);
     }
     return out;
+  }
+  // connect a person to the collective or venue they run, instead of merging them
+  async function linkContacts(org, p) {
+    if (!st.db) return;
+    if (kindOf(org) === 'collective') {
+      if (!org.mainContactId) await window.patch('contacts', org.id, { mainContactId: p.id });
+      await window.patch('contacts', p.id, { collectiveIds: [...new Set([...cids(p), org.id])] });
+    } else if (!org.bookingContactId) await window.patch('contacts', org.id, { bookingContactId: p.id });
+    else await window.patch('contacts', p.id, { venueIds: [...new Set([...(p.venueIds || []), org.id])] });
+    if (window.toast) window.toast(`Connected ${cName(p)} to ${cName(org)}`);
   }
   async function mergeContacts(a, b) {
     if (!st.db) return;
@@ -1814,15 +1855,17 @@ function appExtras() {
     if (!list.length) { if (box) box.remove(); return; }
     if (!box) { box = document.createElement('div'); box.id = 'ssx-dups'; box.className = 'card ssx ssx-kitcard'; const head = sec.querySelector(':scope > .head'); head ? head.after(box) : sec.prepend(box); }
     const line = c => `<b>${esc(cName(c) || 'No name')}</b>${c.email ? ` · ${esc(c.email)}` : ''}${c.city ? ` · ${esc(c.city)}` : ''}`;
-    box.innerHTML = `<div class="ssx-head"><div><h3>Possible duplicates <span class="ssx-pill on">${list.length}</span></h3><p class="note">Same email or same name. Merging keeps every show, payment and note, and joins them under one person.</p></div></div>
-      <div class="ssx-uplist">${list.map(([a, b, k]) => `<div class="ssx-upi" data-dup="${esc(k)}"><span class="ssx-upic">👥</span><span class="ssx-uptx">${line(a)}<br>${line(b)}</span><span class="ssx-upbt"><button type="button" class="btn small primary" data-dup-go>Merge</button><button type="button" class="btn small" data-dup-no>Not the same</button></span></div>`).join('')}</div>`;
+    const dups = list.filter(x => x[3] === 'dup'), links = list.filter(x => x[3] === 'link');
+    box.innerHTML = `<div class="ssx-head"><div><h3>Tidy up People <span class="ssx-pill on">${list.length}</span></h3><p class="note">A collective or venue and the person who runs it can share an email. Connect them so both stay, and each keeps its own shows.</p></div></div>
+      ${links.length ? `<div class="ssx-uplist"><b>Connect</b>${links.map(([org, p, k]) => `<div class="ssx-upi" data-dup="${esc(k)}"><span class="ssx-upic">🔗</span><span class="ssx-uptx"><b>${esc(cName(p))}</b> looks like the ${kindOf(org) === 'collective' ? 'person who runs' : 'booking contact for'} <b>${esc(cName(org))}</b> (same email).</span><span class="ssx-upbt"><button type="button" class="btn small primary" data-dup-link>Connect them</button><button type="button" class="btn small" data-dup-no>Not related</button></span></div>`).join('')}</div>` : ''}
+      ${dups.length ? `<div class="ssx-uplist"><b>Possible duplicates</b><p class="note" style="margin:0">Same kind of contact with the same email or name. Merging keeps every show, payment and note under one.</p>${dups.map(([a, b, k]) => `<div class="ssx-upi" data-dup="${esc(k)}"><span class="ssx-upic">👥</span><span class="ssx-uptx">${line(a)}<br>${line(b)}</span><span class="ssx-upbt"><button type="button" class="btn small primary" data-dup-go>Merge</button><button type="button" class="btn small" data-dup-no>Not the same</button></span></div>`).join('')}</div>` : ''}`;
     box.querySelectorAll('[data-dup]').forEach(row => {
       const pair = list.find(x => x[2] === row.dataset.dup); if (!pair) return;
-      row.querySelector('[data-dup-go]').onclick = async e => { e.stopPropagation(); e.currentTarget.disabled = true; e.currentTarget.textContent = 'Merging…'; try { await mergeContacts(pair[0], pair[1]); } catch (err) { console.error(err); if (window.toast) window.toast("Couldn't merge. Try again."); } };
+      const go = row.querySelector('[data-dup-go]'); if (go) go.onclick = async e => { e.stopPropagation(); e.currentTarget.disabled = true; e.currentTarget.textContent = 'Merging…'; try { await mergeContacts(pair[0], pair[1]); } catch (err) { console.error(err); if (window.toast) window.toast("Couldn't merge. Try again."); } };
+      const ln = row.querySelector('[data-dup-link]'); if (ln) ln.onclick = async e => { e.stopPropagation(); e.currentTarget.disabled = true; try { await linkContacts(pair[0], pair[1]); } catch (err) { console.error(err); if (window.toast) window.toast("Couldn't connect them. Try again."); } };
       row.querySelector('[data-dup-no]').onclick = e => { e.stopPropagation(); apMark('notDup', pair[2]); setTimeout(renderDups, 100); };
     });
   }
-
   function hookEase() {
     if (window.__ssxEase || !st.db) return; window.__ssxEase = true;
     // Undo for stage changes
