@@ -642,3 +642,18 @@ html body .btn.primary::before { z-index: -1; background: linear-gradient(110deg
 .ssx-tdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .ssx-tdays span { text-align: center; padding: 5px 0; border-radius: 8px; border: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 .ssx-tdays .on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+/* Header buttons: beat the older rule, keep Pride's own gradient */
+html:root section[data-view]>.head .btn.primary{background:linear-gradient(110deg,var(--ga),var(--gm) 50%,var(--gb));border-color:transparent;color:var(--accent-ink)}
+
+/* Phones: give to-do text the full row */
+@media (max-width: 560px){
+  .trow{flex-wrap:wrap}
+  .trow .main{flex:1 1 calc(100% - 44px);min-width:0}
+  .trow .duepill{margin:0 0 0 36px}
+}
+
+/* Phones: stop iPhone zoom on fields, larger month arrows */
+@media (max-width: 767px){
+  input:not([type=checkbox]):not([type=radio]):not([type=file]),select,textarea,.ssx-tokedit{font-size:16px!important}
+  #calPrev,#calNext{min-width:40px;min-height:40px}
+}
