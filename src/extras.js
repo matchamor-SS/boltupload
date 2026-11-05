@@ -817,6 +817,7 @@ speedUp(); submitGuard(); routeProfile(); hookFinance(); hookRequestView(); phon
     { tab: 'calendar', target: '#availEdit', title: 'Edit availability', body: 'Set the days you play and tap any date to block it. This is the same list as your booking link, so a change in one place shows up in the other.', action: ['Open Edit availability', () => { const b = document.getElementById('availEdit'), p = document.getElementById('availPanel'); if (b && p && p.hidden) b.click(); }] },
     { tab: 'tasks', target: '#newTask', title: 'Never miss a step', body: 'Contracts, deposits, promo posts and set prep, sorted by due date. Anything past its due date is marked overdue, and your reminders will nudge you to finish it.' },
     { tab: 'kit', target: '#ssx-kit', title: 'Your Kit', body: 'Bio, photos, mixes, socials and riders in one spot, with your booking link ready to copy. Copy your whole press info into an email in one tap.' },
+    { tab: 'kit', target: '#ssx-hist', title: 'Your show history', body: 'Add the shows you played before Set & Settled, one at a time or by importing a list. Your history fills your EPK and stays out of your bookings and money.', action: ['Import shows', () => nhImport()] },
     { tab: 'kit', target: '#ssx-epk-btn', title: 'Create an EPK', body: 'Turn your Kit and shows into a designed press kit. Pick colors, Light or Dark, and which sections to include, move them around, edit any text, then download a PDF to send to venues.', action: ['Create my EPK', () => openEPK()] },
     { tab: 'contacts', target: '[data-new="contact"]', title: 'Your people', body: 'Promoters, venues, photographers and collaborators. Open anyone to keep notes, see your shows together and reach out with one tap. Tidy up People helps you connect or merge contacts when something looks doubled up.' },
     { tab: 'comms', target: '[data-new="template"]', title: 'Emails and templates', body: 'Start from friendly templates for pitches, confirmations and thank-yous, or save your own. Fill-ins like the venue and date show as bubbles and complete themselves from any show. Minimize an email to keep it in the corner, then tap + to reopen it or × to discard it.' },
@@ -2150,6 +2151,7 @@ speedUp(); submitGuard(); routeProfile(); hookFinance(); hookRequestView(); phon
     wrap('contactForm', c => { if (c && c.id) ntMount('contact', c.id, false, ntBeforeActions); });
     wrap('renderAvail', ntAvailPanel); ntAvailPanel();
     setInterval(() => { try { ntTourTick(); } catch (e) { console.error(e); } }, 100);
+    nhStart();
   }
   // moves a merged-away contact's notes onto the one being kept
   async function ntMerge(keep, drop) {
@@ -2204,6 +2206,200 @@ speedUp(); submitGuard(); routeProfile(); hookFinance(); hookRequestView(); phon
       const gap=t.bottom-c.top+12,room=t.top-72;
       if(gap>4&&room>4)scrollBy(0,Math.min(gap,room));
     },200);
+  }
+  /* ---------- Show history: past shows kept apart from Bookings, so they never touch money, tasks, mileage or reminders.
+     Add them one at a time or import a list. The EPK and its stats use them together with shows played in the app. */
+  const NH = { sig: null };
+  const nhPast = () => { try { return S.pastShows || []; } catch (_) { return []; } };
+  const nhKey = s => `${s.date}|${String(s.venue || s.title || '').trim().toLowerCase()}`;
+  function nhShows() {
+    const t0 = todayStr(); let bks = []; try { bks = S.bookings || []; } catch (_) {}
+    const played = bks.filter(b => b.date && b.date <= t0 && ['played', 'paid'].includes(String(b.status).toLowerCase())).map(b => { const venue = b.venueId && typeof contactName === 'function' ? contactName(b.venueId) || '' : ''; return { id: b.id, kind: 'booking', date: b.date, title: b.title || venue || 'Show', venue, city: b.city || '' }; });
+    const seen = new Set(played.map(nhKey));
+    const past = nhPast().filter(s => s.date && !seen.has(nhKey(s))).map(s => ({ ...s, kind: 'past', title: s.title || s.venue || 'Show' }));
+    return [...played, ...past].sort((a, b) => b.date.localeCompare(a.date));
+  }
+  const nhWhere = s => [s.title !== s.venue ? s.venue : '', s.city].filter(Boolean).join(' · ');
+  const nhStats = list => ({ shows: list.length, cities: new Set(list.map(s => String(s.city || '').trim().toLowerCase()).filter(Boolean)).size, venues: new Set(list.map(s => String(s.venue || '').trim().toLowerCase()).filter(Boolean)).size });
+  const nhParts = iso => { const d = new Date(iso + 'T12:00:00'); return { day: d.getDate(), mon: d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(), year: d.getFullYear() }; };
+  const nhLabel = s => { const p = nhParts(s.date), name = p.mon[0] + p.mon.slice(1).toLowerCase(); return s.approx ? `${name} ${p.year}` : `${name} ${p.day}, ${p.year}`; };
+  // -- reading a pasted list or CSV
+  const NH_MON = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  function nhDate(text) {
+    const t = String(text || '').trim().replace(/^(mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)[a-z]*\.?,?\s+/i, '').replace(/(\d)(st|nd|rd|th)\b/gi, '$1'); let m, y, mo, d = 1, approx = false;
+    const mon = s => NH_MON.indexOf(String(s).slice(0, 3).toLowerCase()) + 1;
+    if ((m = t.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/))) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+    else if ((m = t.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4}|\d{2})$/))) { mo = +m[1]; d = +m[2]; y = +m[3] + (m[3].length === 2 ? 2000 : 0); }
+    else if ((m = t.match(/^([a-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})$/i))) { mo = mon(m[1]); d = +m[2]; y = +m[3]; }
+    else if ((m = t.match(/^(\d{1,2})\s+([a-z]{3,9})\.?,?\s+(\d{4})$/i))) { d = +m[1]; mo = mon(m[2]); y = +m[3]; }
+    else if ((m = t.match(/^([a-z]{3,9})\.?,?\s+(\d{4})$/i))) { mo = mon(m[1]); y = +m[2]; approx = true; }
+    else if ((m = t.match(/^(\d{1,2})[-/](\d{4})$/))) { mo = +m[1]; y = +m[2]; approx = true; }
+    else return null;
+    const test = new Date(y, mo - 1, d); if (!mo || y < 1950 || test.getMonth() !== mo - 1 || test.getDate() !== d) return null;
+    return { date: `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`, approx };
+  }
+  function nhCells(line) {
+    if (line.includes('\t')) return line.split('\t');
+    if (line.includes('|')) return line.split('|');
+    if (/\s[-–—·]\s/.test(line)) return line.split(/\s[-–—·]\s/);
+    const out = []; let cur = '', q = false;
+    for (let i = 0; i < line.length; i++) { const ch = line[i]; if (ch === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q; } else if (ch === ',' && !q) { out.push(cur); cur = ''; } else cur += ch; }
+    out.push(cur); return out;
+  }
+  function nhRead(text) {
+    const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim()).slice(0, 1001); let cols = null; const rows = [], bad = [];
+    const head = nhCells(lines[0] || '').map(x => x.trim().toLowerCase());
+    if (head.some(x => /^(show )?date$|^when$/.test(x)) && head.length > 1) {
+      const at = re => head.findIndex(x => re.test(x));
+      cols = { date: at(/date|when/), title: at(/event|show|title|gig|name/), venue: at(/venue|club|location|place|where/), city: at(/city|town/), state: at(/^state$|province|country/) }; lines.shift();
+    }
+    for (const line of lines) {
+      let c = nhCells(line).map(x => x.trim()), parsed = null, title = '', venue = '', city = '';
+      if (cols) {
+        parsed = nhDate(c[cols.date]); title = c[cols.title] || ''; venue = c[cols.venue] || ''; city = [c[cols.city], c[cols.state]].filter(Boolean).join(', ');
+      } else {
+        for (let i = 0; i < c.length && !parsed; i++) {
+          if ((parsed = nhDate(c[i]))) c.splice(i, 1);
+          else if (c[i + 1] && (parsed = nhDate(`${c[i]}, ${c[i + 1]}`))) c.splice(i, 2);
+        }
+        c = c.filter(Boolean);
+        if (c.length >= 3) [title, venue, city] = c; else [venue, city] = c;
+      }
+      if (!parsed || !(title || venue)) { bad.push(line.trim()); continue; }
+      rows.push({ ...parsed, title: title || '', venue: venue || '', city: city || '' });
+    }
+    return { rows, bad };
+  }
+  // -- Kit card and sheets
+  function nhCard() {
+    const sec = document.querySelector('section[data-view="kit"]'); if (!sec || !st.db) return;
+    const all = nhShows(), stat = nhStats(all), sig = JSON.stringify(all.slice(0, 4).map(s => [s.id, s.date, s.title, s.city])) + all.length;
+    let box = document.getElementById('ssx-hist');
+    if (!box) { box = document.createElement('div'); box.id = 'ssx-hist'; box.className = 'card ssx ssx-kitcard'; const a = document.getElementById('ssx-kit'); a ? a.after(box) : sec.appendChild(box); NH.sig = null; }
+    if (NH.sig === sig) return; NH.sig = sig;
+    box.innerHTML = `<div class="ssx-head"><div><h3>Show history</h3><p class="note">${all.length ? `${stat.shows} show${stat.shows === 1 ? '' : 's'} · ${stat.venues} venue${stat.venues === 1 ? '' : 's'} · ${stat.cities} cit${stat.cities === 1 ? 'y' : 'ies'}. Your EPK uses this list.` : 'Add the shows you played before Set & Settled, so your EPK tells your whole story. They stay out of your bookings and money.'}</p></div></div>
+      ${all.length ? `<div class="ssx-hlist">${all.slice(0, 4).map(s => `<div class="ssx-hrow"><span class="ssx-hdate">${esc(nhLabel(s))}</span><span class="ssx-hmain"><b>${esc(s.title)}</b><span class="note">${esc(nhWhere(s))}</span></span></div>`).join('')}</div>` : ''}
+      <div class="ssx-row"><button type="button" class="btn primary small" data-nh-import>Import shows</button><button type="button" class="btn small" data-nh-add>Add a show</button>${all.length ? `<button type="button" class="btn small" data-nh-all>See all ${all.length}</button>` : ''}</div>`;
+    box.querySelector('[data-nh-import]').onclick = () => nhImport();
+    box.querySelector('[data-nh-add]').onclick = () => nhForm({});
+    const more = box.querySelector('[data-nh-all]'); if (more) more.onclick = nhList;
+  }
+  function nhForm(s) {
+    const isNew = !s.id;
+    sheet(`<h3>${isNew ? 'Add a past show' : 'Edit past show'}</h3><p class="note" style="margin:0">For shows you played before using Set & Settled. It only appears in your history and EPK.</p>
+      ${field('nh-date', 'Date', s.date, 'date', `data-k="date" max="${todayStr()}"`)}${field('nh-title', 'Event name (optional)', s.title, 'text', 'data-k="title" placeholder="e.g. Summer Block Party"')}
+      <div class="frow">${field('nh-venue', 'Venue', s.venue, 'text', 'data-k="venue"')}${field('nh-city', 'City', s.city, 'text', 'data-k="city"')}</div>
+      <div class="actions">${isNew ? '' : delBtn()}<button class="btn" data-cancel>Cancel</button><button class="btn primary" data-save>Save</button></div>`, root => {
+      root.querySelector('[data-cancel]').onclick = close;
+      armDelete(root, async () => { await remove('pastShows', s.id); close(); });
+      root.querySelector('[data-save]').onclick = async () => {
+        const v = formVals(root); if (!v.date) { toast('Pick a date'); return; } if (v.date > todayStr()) { toast('Add upcoming shows in Bookings'); return; } if (!v.title && !v.venue) { toast('Add a venue or event name'); return; }
+        if (await window.save('pastShows', s.id || null, { ...v, approx: !!(s.approx && s.date === v.date) })) { close(); toast('Show saved'); }
+      };
+    });
+  }
+  function nhList() {
+    const all = nhShows(), years = [...new Set(all.map(s => s.date.slice(0, 4)))];
+    sheet(`<h3>Show history</h3><div class="ssx-row"><button type="button" class="btn primary small" data-nh-import>Import shows</button><button type="button" class="btn small" data-nh-add>Add a show</button></div>
+      ${years.map(y => `<div class="ssx-hyear"><span class="eyebrow">${y}</span><div class="ssx-nshows">${all.filter(s => s.date.startsWith(y)).map(s => `<button type="button" data-nh-open="${esc(s.kind)}:${esc(s.id)}"><span><b>${esc(s.title)}</b>${nhWhere(s) ? `<br><span class="note">${esc(nhWhere(s))}</span>` : ''}</span><span class="note">${esc(nhLabel(s).replace(/, \d{4}$/, ''))}</span></button>`).join('')}</div></div>`).join('')}
+      <div class="actions"><button class="btn" data-cancel>Done</button></div>`, root => {
+      root.querySelector('[data-cancel]').onclick = close; root.querySelector('[data-nh-import]').onclick = () => nhImport(); root.querySelector('[data-nh-add]').onclick = () => nhForm({});
+      root.querySelectorAll('[data-nh-open]').forEach(b => { b.onclick = () => { const i = b.dataset.nhOpen.indexOf(':'), kind = b.dataset.nhOpen.slice(0, i), id = b.dataset.nhOpen.slice(i + 1); if (kind === 'booking') window.bookingView(id); else nhForm(nhPast().find(x => x.id === id) || {}); }; });
+    });
+  }
+  function nhImport(text) {
+    sheet(`<h3>Import shows</h3><p class="note" style="margin:0">Paste your list or choose a CSV file. Put each show on its own line. You'll check everything before it's added.</p>
+      <div class="f"><label for="nh-text">Your shows</label><textarea id="nh-text" style="min-height:150px" placeholder="3/14/2025, Summer Block Party, The Casbah, San Diego&#10;June 7 2024 - Soda Bar - San Diego&#10;Oct 2023, Observatory, Santa Ana">${esc(text || '')}</textarea>
+      <span class="note">Each line needs a date plus a venue or event. You can copy rows straight from Google Sheets or Excel. If you only know the month, "Oct 2023" works.</span></div>
+      <div class="f"><label for="nh-file">Or choose a file</label><input id="nh-file" type="file" accept=".csv,.tsv,.txt,text/csv,text/plain"><span class="note">CSV or text files. For an Excel file, save it as CSV first or copy and paste the rows.</span></div>
+      <div class="actions"><button class="btn" data-cancel>Cancel</button><button class="btn primary" data-go>Check my list</button></div>`, root => {
+      const ta = root.querySelector('#nh-text'); root.querySelector('[data-cancel]').onclick = close;
+      root.querySelector('#nh-file').onchange = async e => { const f = e.target.files[0]; if (!f) return; if (f.size > 1048576) { toast('That file is too large. Try one under 1 MB.'); return; } ta.value = await f.text(); };
+      root.querySelector('[data-go]').onclick = () => { const r = nhRead(ta.value); if (!r.rows.length && !r.bad.length) { toast('Add at least one show'); return; } nhReview(ta.value, r); };
+    });
+  }
+  function nhReview(text, { rows, bad }) {
+    const t0 = todayStr(), have = new Set(nhShows().map(nhKey)), inList = new Set();
+    rows.forEach(r => { const k = nhKey(r); r.skip = r.date > t0 ? 'Upcoming, add it in Bookings' : have.has(k) || inList.has(k) ? 'Already in your history' : ''; inList.add(k); });
+    const good = () => rows.filter((r, i) => document.querySelector(`[data-nh-row="${i}"]`)?.checked).length;
+    sheet(`<h3>Check your shows</h3><p class="note" style="margin:0">${rows.length} show${rows.length === 1 ? '' : 's'} found. Untick any you don't want.</p>
+      <div class="ssx-nshows ssx-hcheck">${rows.map((r, i) => `<label><input type="checkbox" data-nh-row="${i}" ${r.skip ? 'disabled' : 'checked'}><span class="ssx-hmain"><b>${esc(r.title || r.venue)}</b><span class="note">${esc(nhLabel(r))}${nhWhere({ ...r, title: r.title || r.venue }) ? ' · ' + esc(nhWhere({ ...r, title: r.title || r.venue })) : ''}${r.skip ? ' · ' + esc(r.skip) : ''}</span></span></label>`).join('')}</div>
+      ${bad.length ? `<div class="f"><label>Couldn't read ${bad.length} line${bad.length === 1 ? '' : 's'}</label><div class="ssx-hbad">${bad.slice(0, 20).map(esc).join('<br>')}</div><span class="note">Go back to fix these, or add them one at a time.</span></div>` : ''}
+      <div class="actions"><button class="btn" data-back>Back</button><button class="btn primary" data-add>Add shows</button></div>`, root => {
+      const add = root.querySelector('[data-add]'), label = () => { const n = good(); add.textContent = `Add ${n} show${n === 1 ? '' : 's'}`; add.disabled = !n; };
+      root.querySelectorAll('[data-nh-row]').forEach(c => { c.onchange = label; }); label();
+      root.querySelector('[data-back]').onclick = () => nhImport(text);
+      add.onclick = async () => {
+        const picks = rows.filter((r, i) => root.querySelector(`[data-nh-row="${i}"]`).checked), ids = []; add.disabled = true;
+        for (let i = 0; i < picks.length; i += 8) {
+          add.textContent = `Adding ${Math.min(i + 8, picks.length)} of ${picks.length}…`;
+          const got = await Promise.all(picks.slice(i, i + 8).map(({ skip, ...r }) => window.save('pastShows', null, r))); ids.push(...got.filter(Boolean));
+        }
+        closeAll(); toast(`Added ${ids.length} show${ids.length === 1 ? '' : 's'}`, async () => { for (const id of ids) await st.db.collection('pastShows').doc(id).delete().catch(() => {}); toast('Import undone'); });
+      };
+    });
+  }
+  // -- EPK: stats and shows are built here so they always include your full history
+  function nhEpk(k, c, T, place) {
+    const label = (key, def) => `<div class="epk-ed epk-label" contenteditable="true" spellcheck="true" data-epk-k="lbl_${key}" data-ph="${esc(def)}" style="color:${T.solid}">${esc((c.text || {})['lbl_' + key] ?? def)}</div>`;
+    const badge = s => { const p = nhParts(s.date); return `<span class="epk-date${s.approx ? ' mo' : ''}" style="border-color:${T.line}"><b>${s.approx ? p.mon : p.day}</b><span style="color:${T.solid}">${s.approx ? p.year : `${p.mon} ${p.year}`}</span></span>`; };
+    const row = s => `<div class="epk-show" style="border-color:${T.line}">${badge(s)}<span><b style="font-weight:500">${esc(s.title)}</b><br><span style="color:${T.muted};font-size:12.5px">${esc(nhWhere(s))}</span></span></div>`;
+    let bks = []; try { bks = S.bookings || []; } catch (_) {}
+    const t0 = todayStr(), up = bks.filter(b => b.date && b.date >= t0 && String(b.status).toLowerCase() === 'confirmed').sort((a, b) => a.date.localeCompare(b.date)), all = nhShows();
+    if (k === 'stats') {
+      const s = { ...nhStats(all), upcoming: up.length }, list = [['shows', 'Shows played'], ['cities', 'Cities'], ['venues', 'Venues'], ['upcoming', 'Upcoming']].filter(([x]) => s[x]);
+      if (list.length) place('stats', 'full', `<div class="epk-stats" style="border-color:${T.line}">${list.map(([x, l]) => `<div><b style="color:${T.solid}">${s[x]}</b><span style="color:${T.muted}">${l}</span></div>`).join('')}</div>`);
+      return;
+    }
+    if (k === 'upcoming') {
+      if (up.length) place('upcoming', 'half', `${label('upcoming', 'Upcoming')}<div class="epk-rows">${up.slice(0, 5).map(b => { const venue = b.venueId && typeof contactName === 'function' ? contactName(b.venueId) || '' : ''; return row({ date: b.date, title: b.title || venue || 'Show', venue, city: b.city || '' }); }).join('')}</div>`);
+      return;
+    }
+    if (!all.length) return;
+    const view = c.showsView || 'recent';
+    if (view === 'recent') { place('played', 'half', `${label('played', 'Show history')}<div class="epk-rows">${all.slice(0, 8).map(row).join('')}</div>`); return; }
+    if (view === 'venues') {
+      const cities = {}; all.forEach(s => { const v = s.venue || s.title, n = s.city || 'Other'; (cities[n] = cities[n] || {})[v] = (cities[n][v] || 0) + 1; });
+      const names = Object.keys(cities).sort((a, b) => (a === 'Other') - (b === 'Other') || Object.keys(cities[b]).length - Object.keys(cities[a]).length || a.localeCompare(b));
+      for (let i = 0; i < names.length; i += 16) place('played', 'full', `${i ? '' : label('played', "Where I've played")}<div class="epk-vgrid">${names.slice(i, i + 16).map(n => `<div class="epk-vcity" style="border-color:${T.line}"><b style="color:${T.solid}">${esc(n)}</b><span>${Object.keys(cities[n]).sort().map(v => esc(v) + (cities[n][v] > 1 ? ` ×${cities[n][v]}` : '')).join(' · ')}</span></div>`).join('')}</div>`);
+      return;
+    }
+    let first = true;
+    for (const y of [...new Set(all.map(s => s.date.slice(0, 4)))]) {
+      const list = all.filter(s => s.date.startsWith(y));
+      for (let i = 0; i < list.length; i += 24) {
+        place('played', 'full', `${first ? label('played', 'Show history') : ''}<div class="epk-year" style="border-color:${T.line}"><b>${y}</b><span style="color:${T.muted}">${i ? 'continued' : `${list.length} show${list.length === 1 ? '' : 's'}`}</span></div><div class="epk-hrows">${list.slice(i, i + 24).map(s => { const p = nhParts(s.date), name = p.mon[0] + p.mon.slice(1).toLowerCase(); return `<div class="epk-hrow"><span style="color:${T.solid}">${s.approx ? name : `${name} ${p.day}`}</span><span><b>${esc(s.title)}</b>${nhWhere(s) ? `<i style="color:${T.muted}">${esc(nhWhere(s))}</i>` : ''}</span></div>`; }).join('')}</div>`);
+        first = false;
+      }
+    }
+  }
+  // lone half-width blocks widen, full pages stretch to their bottom edge, and a page with only Booking gets a closing layout
+  function nhEpkTidy(stage) {
+    const pages = [...stage.querySelectorAll('.epk-page')];
+    pages.forEach((pg, i) => {
+      const kids = [...pg.querySelector('.epk-body').children]; let open = null;
+      kids.forEach(b => { if (b.classList.contains('half')) { if (open) open = null; else open = b; } else if (open) { open.classList.replace('half', 'full'); open = null; } });
+      if (open) open.classList.replace('half', 'full');
+      pg.classList.toggle('epk-solo', kids.length === 1 && kids[0].dataset.blk === 'booking');
+      pg.classList.toggle('epk-fill', i < pages.length - 1 && kids.length > 1);
+    });
+  }
+  function nhEpkBar() {
+    const bar = EPK.el && EPK.el.querySelector('.ssx-epk-opts'), sec = bar && bar.querySelector('.ssx-epk-sec'); if (!sec) return;
+    const view = EPK.cfg.showsView || 'recent', row = document.createElement('div'); row.className = 'ssx-epk-row';
+    row.innerHTML = `<span class="ssx-epk-k">Show history</span>${[['recent', 'Latest 8'], ['year', 'All, by year'], ['venues', 'Venues by city']].map(([k, n]) => `<button type="button" class="ssx-chip" data-nh-view="${k}" aria-pressed="${view === k}">${n}</button>`).join('')}<button type="button" class="ssx-chip" data-nh-more>+ Add past shows</button>`;
+    sec.before(row);
+    row.querySelectorAll('[data-nh-view]').forEach(b => { b.onclick = () => { EPK.cfg.showsView = b.dataset.nhView; epkSave(); epkRender(); }; });
+    row.querySelector('[data-nh-more]').onclick = () => { closeEPK(); window.goTab('kit'); nhImport(); };
+  }
+  function nhStart() {
+    st.db.collection('pastShows').onSnapshot(s => { S.pastShows = s.docs.map(d => ({ id: d.id, ...d.data() })); nhCard(); }, e => console.error(e));
+    const pb = EPK_BLOCKS.findIndex(b => b[0] === 'played'), ub = EPK_BLOCKS.findIndex(b => b[0] === 'upcoming');
+    if (pb >= 0) EPK_BLOCKS[pb][1] = 'Show history';
+    if (pb > ub && ub >= 0) { const [x] = EPK_BLOCKS.splice(pb, 1); EPK_BLOCKS.splice(ub, 0, x); }
+    if (LAYOUT.kit && !LAYOUT.kit.blocks.some(b => b[0] === 'history')) LAYOUT.kit.blocks.splice(1, 0, ['history', 'Show history', byId('ssx-hist')]);
+    ntTourDemo['Your show history'] = '<div class="ssx-nit"><div class="ssx-tshow"><b>42 shows · 11 venues · 6 cities</b></div><div class="ssx-nmeta"><span>Mar 14, 2025 · The Lantern Room · San Diego</span></div><div class="ssx-nmeta"><span class="ssx-tfake">Import shows</span><span>Add a show</span></div></div>';
+    setInterval(() => { try { nhCard(); } catch (e) { console.error(e); } }, 1500);
   }
   /* ---------- Smooth saving.
      1. Every saved change used to redraw all nine pages at once, several times per save (once for the save and again
@@ -2433,28 +2629,23 @@ speedUp(); submitGuard(); routeProfile(); hookFinance(); hookRequestView(); phon
       stage.appendChild(pg); body = pg.querySelector('.epk-body');
     };
     newPage();
+    const nhPlace = (k2, cls, html) => { const el = document.createElement('div'); el.className = 'epk-blk ' + cls; el.dataset.blk = k2; el.innerHTML = html; body.appendChild(el); if (el.getBoundingClientRect().bottom > body.getBoundingClientRect().bottom - 4 && body.children.length > 1) { el.remove(); newPage(); body.appendChild(el); } };
     for (const k of c.order) {
+      if (['stats', 'played', 'upcoming'].includes(k)) { if (c.show[k]) nhEpk(k, c, T, nhPlace); continue; }
       const def = EPK_BLOCKS.find(b => b[0] === k); if (!def || !c.show[k] || !B[k]) continue;
       const el = document.createElement('div'); el.className = 'epk-blk ' + def[2]; el.dataset.blk = k; el.innerHTML = B[k];
       const slot = () => body.parentElement.querySelector('.epk-endslot');
       const overflows = () => { const lc = body.lastElementChild; return !!lc && lc.getBoundingClientRect().bottom > body.getBoundingClientRect().bottom - 4; };
-      if (k === 'booking') {
-        // booking sits at the bottom of its page as a closing panel
-        el.classList.add('epk-pinned'); slot().appendChild(el);
-        if (overflows()) { el.remove(); newPage(); slot().appendChild(el); }
-        continue;
-      }
       body.appendChild(el); epkFitName(el);
       if (overflows() && body.children.length > 1) { el.remove(); newPage(); body.appendChild(el); }
     }
-    // a page that only holds the booking panel becomes a closing page
-    stage.querySelectorAll('.epk-page').forEach(pg => { if (!pg.querySelector('.epk-body').children.length && pg.querySelector('.epk-pinned')) pg.classList.add('epk-closing'); });
+        nhEpkTidy(stage);
     const pages = stage.querySelectorAll('.epk-page'), two = x => String(x).padStart(2, '0');
     pages.forEach((p, i) => { const pn = p.querySelector('.epk-pn'); if (pn) pn.textContent = `${two(i + 1)} / ${two(pages.length)}`; });
     stage.querySelectorAll('[data-epk-k]').forEach(el => el.addEventListener('input', () => { EPK.cfg.text[el.dataset.epkK] = el.innerText.replace(/\n+$/, '').slice(0, 4000); if (el.dataset.epkK === 'name') epkFitName(stage); epkSave(); }));
     stage.querySelectorAll('h1.epk-name').forEach(h => h.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); h.blur(); } }));
     stage.querySelectorAll('img').forEach(img => img.onerror = () => img.remove());
-    epkFit(); epkBar();
+    epkFit(); epkBar(); nhEpkBar();
   }
   const epkSave = () => { clearTimeout(EPK.saveT); EPK.saveT = setTimeout(() => { if (st.db) st.db.doc('settings/epk').set(EPK.cfg).catch(() => {}); }, 600); };
   function epkFit() { const s = EPK.el && EPK.el.querySelector('.ssx-epk-pages'); if (!s) return; const z = Math.min(1, (EPK.el.querySelector('.ssx-epk-stage').clientWidth - 32) / 816); s.style.zoom = String(z); }
