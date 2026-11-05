@@ -657,3 +657,42 @@ html:root section[data-view]>.head .btn.primary{background:linear-gradient(110de
   input:not([type=checkbox]):not([type=radio]):not([type=file]),select,textarea,.ssx-tokedit{font-size:16px!important}
   #calPrev,#calNext{min-width:40px;min-height:40px}
 }
+
+/* ===== Show history card and import */
+.ssx-hlist { display: flex; flex-direction: column; margin: 10px 0 12px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.ssx-hrow { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--line); min-width: 0; }
+.ssx-hrow:first-child { border-top: 0; }
+.ssx-hdate { flex: none; width: 92px; font-size: 13px; color: var(--muted); }
+.ssx-hmain { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+.ssx-hmain .note { margin: 0; font-size: 12.5px; }
+.ssx-hyear { display: flex; flex-direction: column; gap: 6px; }
+.ssx-hcheck { max-height: 46vh; overflow-y: auto; }
+.ssx-hcheck label { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--line); cursor: pointer; }
+.ssx-hcheck label:first-child { border-top: 0; }
+.ssx-hcheck input { flex: none; width: 20px; height: 20px; accent-color: var(--accent); }
+.ssx-hbad { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+
+/* ===== EPK: clearer dates, flowing layout */
+.epk-page .epk-date { width: 60px; height: 58px; gap: 4px; padding: 0; letter-spacing: 0; line-height: 1; box-sizing: border-box; }
+.epk-page .epk-date b { font-size: 25px; line-height: 1; font-variant-numeric: lining-nums; }
+.epk-page .epk-date span { font-size: 9px; letter-spacing: .05em; line-height: 1; white-space: nowrap; }
+.epk-page .epk-date.mo b { font-family: "DM Mono", monospace; font-size: 15px; letter-spacing: .06em; }
+.epk-page .epk-show { padding: 8px 0; }
+.epk-page .epk-blk.full .epk-rows { columns: 2; column-gap: 44px; }
+.epk-page .epk-rows .epk-show { break-inside: avoid; }
+.epk-page .epk-year { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 6px; margin-bottom: 8px; border-bottom: 1px solid; }
+.epk-page .epk-year b { font-family: "Cormorant Garamond", Georgia, serif; font-size: 26px; font-weight: 500; line-height: 1; font-variant-numeric: lining-nums; }
+.epk-page .epk-year span { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+.epk-page .epk-hrows { columns: 2; column-gap: 44px; }
+.epk-page .epk-hrow { display: flex; gap: 12px; break-inside: avoid; padding: 4px 0; font-size: 12.5px; line-height: 1.35; }
+.epk-page .epk-hrow > span:first-child { flex: none; width: 52px; font-family: "DM Mono", monospace; font-size: 10.5px; line-height: 1.6; }
+.epk-page .epk-hrow > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.epk-page .epk-hrow b { font-weight: 500; display: block; }
+.epk-page .epk-hrow i { font-style: normal; font-size: 11.5px; display: block; }
+.epk-page .epk-vgrid { columns: 2; column-gap: 44px; }
+.epk-page .epk-vcity { break-inside: avoid; padding: 8px 0; border-bottom: 1px solid; font-size: 13px; line-height: 1.5; }
+.epk-page .epk-vcity b { display: block; font-family: "DM Mono", monospace; font-size: 10.5px; font-weight: 400; letter-spacing: .14em; text-transform: uppercase; margin-bottom: 3px; }
+.epk-page.epk-fill .epk-body { align-content: space-between; }
+.epk-page.epk-solo .epk-body { align-content: center; }
+.epk-page.epk-solo .epk-book { padding: 40px 40px 34px; gap: 26px; }
+.epk-page.epk-solo .epk-book [data-epk-k="bookTitle"] { font-size: 54px !important; }
