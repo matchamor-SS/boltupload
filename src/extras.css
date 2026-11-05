@@ -717,5 +717,7 @@ html:root body #ss-auth .ss-auth-intro h1:before { content: "" !important; displ
 @media (max-width: 700px) { html:root body #ss-auth .ss-auth-intro h1:before { width: 124px; height: 124px; margin-bottom: 14px; } }
 html:root body header.top .brand .ssx-mono { display: block; flex: none; width: 42px; height: 42px; border-radius: 50%; font-size: 0 !important; color: transparent !important; -webkit-text-fill-color: transparent; background: url("/logo-dark.svg") center / cover no-repeat !important; -webkit-background-clip: border-box !important; background-clip: border-box !important; box-shadow: 0 0 0 1px rgba(176, 141, 87, .45); }
 html:root[data-mode="light"] body header.top .brand .ssx-mono { background-image: url("/logo-light.svg") !important; }
-html body .ssx-tour-spot { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent), 0 0 24px 6px var(--glow), 0 0 0 9999px rgba(18, 22, 15, .62); }
-html[data-mode="dark"] body .ssx-tour-spot { background: rgba(255, 255, 255, .05); border-color: var(--ink); box-shadow: 0 0 0 4px var(--accent), 0 0 30px 8px var(--glow), 0 0 0 9999px rgba(0, 0, 0, .78); }
+html body .ssx-tour-spot, html[data-mode="dark"] body .ssx-tour-spot { opacity: 0; box-shadow: none; border: 0; background: none; }
+html body .ssx-tour-on { outline: 3px solid var(--accent) !important; outline-offset: 4px; box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 22%, transparent), 0 0 28px 10px var(--glow) !important; }
+html[data-mode="dark"] body .ssx-tour-on { outline-color: var(--ink) !important; box-shadow: 0 0 0 8px var(--accent), 0 0 34px 14px var(--glow) !important; }
+html body #tabs.ssx-tour-on { outline-offset: -5px; box-shadow: none !important; }
