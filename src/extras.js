@@ -1997,14 +1997,14 @@ function appExtras() {
     if (!input || input.__ssxPlace) return; input.__ssxPlace = true; input.setAttribute('autocomplete', 'off');
     const wrap = input.parentElement; wrap.classList.add('ssx-placewrap');
     const box = document.createElement('div'); box.className = 'ssx-place'; box.hidden = true; box.setAttribute('role', 'listbox'); input.after(box);
-    let t = 0, items = [], at = -1, seq = 0;
+    let t = 0, items = [], at = -1, seq = 0, picked = '';
     const hide = () => { box.hidden = true; at = -1; };
     const draw = () => { box.innerHTML = items.map((p, i) => `<button type="button" class="ssx-placeopt${i === at ? ' on' : ''}" role="option" data-i="${i}"><b>${esc(kind === 'addr' ? (p.addr || p.name) : (p.name || p.addr))}</b>${kind === 'addr' ? (p.name && p.addr && p.name !== p.addr ? `<span>${esc(p.name)}</span>` : '') : (p.addr ? `<span>${esc(p.addr)}</span>` : '')}</button>`).join('') + '<span class="ssx-placeattr">Places from OpenStreetMap</span>'; box.hidden = !items.length;
       box.querySelectorAll('[data-i]').forEach(b => b.onmousedown = ev => { ev.preventDefault(); pick(items[+b.dataset.i]); }); };
-    const pick = async p => { hide(); if (!p) return; input.value = kind === 'addr' ? (p.addr || p.name) : (p.name || input.value); input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true }));
+    const pick = async p => { hide(); if (!p) return; clearTimeout(t); seq++; items = []; input.value = kind === 'addr' ? (p.addr || p.name) : (p.name || input.value); picked = input.value; input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true }));
       try { if (p.addr && p.lat) { const g = { ...(apCfg().geo || {}) }; g[normAddr(p.addr)] = { lat: p.lat, lon: p.lon, city: p.city }; AP.cfg = { ...apCfg(), geo: g }; } } catch (_) {}
       try { await onPick(p); } catch (_) {} };
-    input.addEventListener('input', () => { clearTimeout(t); const q = input.value.trim(); if (q.length < 3) { items = []; hide(); return; }
+    input.addEventListener('input', () => { clearTimeout(t); if (picked && input.value === picked) { hide(); return; } picked = ''; const q = input.value.trim(); if (q.length < 3) { items = []; hide(); return; }
       t = setTimeout(async () => { const my = ++seq; try { const r = await placeSearch(q, kind); if (my !== seq || document.activeElement !== input) return; items = r; at = -1; draw(); } catch (_) { hide(); } }, 320); });
     input.addEventListener('keydown', e => { if (box.hidden) return;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); at = (at + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length; draw(); }
