@@ -116,7 +116,7 @@ function appExtras() {
     speedUp(); submitGuard(); routeProfile(); hookFinance(); hookRequestView();
     st.db = await window.claude.use('db');
     if (!st.db) return;
-    hookAutopilot(); hookLayout(); hookEase(); hookForms();
+    hookAutopilot(); hookLayout(); hookEase(); hookForms(); hookNotes();
     st.db.doc('settings/notify').onSnapshot(s => { st.prefs = s.exists ? s.data() : {}; render(); queueSoon(); }, () => {});
         st.db.doc('settings/profile').onSnapshot(() => setTimeout(() => fillProfile(), 0), () => {});
     st.db.doc('settings/bookinglink').onSnapshot(s => { st.link = s.exists ? s.data() : {}; render(); renderKit(); }, () => {});
@@ -1850,6 +1850,7 @@ function appExtras() {
       ['venueIds', 'promoterIds', 'memberIds', 'collectiveIds'].forEach(f => { if (Array.isArray(n[f]) && n[f].includes(drop.id)) { n[f] = [...new Set(n[f].map(swap))]; ch = true; } });
       if (ch) { const { id, ...d } = n; await st.db.collection('contacts').doc(id).set(d).catch(() => {}); } }
     for (const i of inc) if (i.sourceId === drop.id) { const { id, ...d } = i; await st.db.collection('income').doc(id).set({ ...d, sourceId: keep.id }).catch(() => {}); }
+    await ntMerge(keep, drop);
     await st.db.collection('contacts').doc(drop.id).delete().catch(() => {});
     if (window.toast) window.toast(`Merged into ${cName(keep) || 'one contact'}`);
   }
@@ -2030,6 +2031,122 @@ function appExtras() {
     setInterval(scan, 2000); scan();
   }
 
+  /* ---------- Notes: dated notes on every booking, person and venue. A note on a show also appears on the
+     people connected to it, and notes on a person also appear on their shows. Plus the Edit availability panel. */
+  const NTS = { draft: {}, month: null, done: false };
+  const ntAll = () => { try { return S.notes || []; } catch (_) { return []; } };
+  const ntDay = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
+  const ntNewest = l => [...l].sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+  const ntKey = (kind, id) => `${kind}:${id}`;
+  const ntField = kind => kind === 'booking' ? 'bookingId' : 'contactId';
+  const ntShows = cid => { let l = []; try { l = S.bookings || []; } catch (_) {} return l.filter(b => [b.venueId, b.promoterId, b.mediaId, b.contactPersonId].includes(cid)).sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))); };
+  const ntRec = (kind, id) => { try { return (kind === 'booking' ? S.bookings : S.contacts).find(x => x.id === id); } catch (_) { return null; } };
+  function ntLinked(kind, id) {
+    const rec = ntRec(kind, id); if (!rec) return [];
+    if (kind === 'booking') {
+      const ids = [...new Set([rec.venueId, rec.promoterId, rec.contactPersonId, rec.mediaId].filter(Boolean))];
+      return ntAll().filter(n => ids.includes(n.contactId)).map(n => ({ n, from: cName(contact(n.contactId)) || 'Contact', open: () => reachSheet(n.contactId) }));
+    }
+    const shows = ntShows(id);
+    return ntAll().filter(n => shows.some(b => b.id === n.bookingId)).map(n => { const b = shows.find(x => x.id === n.bookingId); return { n, from: showName(b), open: () => window.bookingView(b.id) }; });
+  }
+  function ntDraw(box) {
+    const list = box.querySelector('.ssx-nlist'); if (!list || list.querySelector('.ssx-nedit')) return;
+    const { kind, id, pin } = box.dataset, rec = ntRec(kind, id);
+    const own = ntNewest(ntAll().filter(n => n[ntField(kind)] === id)), more = ntLinked(kind, id).sort((a, b) => String(b.n.at || '').localeCompare(String(a.n.at || '')));
+    const shows = kind === 'contact' ? ntShows(id) : [];
+    list.innerHTML = `${pin && rec && rec.notes ? `<div class="ssx-nit ssx-npin"><p>${esc(rec.notes)}</p><div class="ssx-nmeta"><span>Pinned note</span><button type="button" data-nt-pin>Edit</button></div></div>` : ''}
+      ${own.map(n => `<div class="ssx-nit" data-nt="${esc(n.id)}"><p>${esc(n.text)}</p><div class="ssx-nmeta"><span>${esc(ntDay(n.at))}${n.editedAt ? ' · edited' : ''}</span><button type="button" data-nt-edit>Edit</button><button type="button" data-nt-del>Delete</button></div></div>`).join('')}
+      ${!own.length && !(pin && rec && rec.notes) ? `<p class="note" style="margin:0">Nothing yet. Add what you'll want to remember next time.</p>` : ''}
+      ${more.length ? `<span class="eyebrow">${kind === 'booking' ? 'From the people on this show' : 'From shows together'}</span>${more.map((m, i) => `<div class="ssx-nit"><p>${esc(m.n.text)}</p><div class="ssx-nmeta"><span>${esc(ntDay(m.n.at))}</span><button type="button" data-nt-from="${i}">${esc(m.from)}</button></div></div>`).join('')}` : ''}
+      ${shows.length ? `<span class="eyebrow">Shows together · ${shows.length}</span><div class="ssx-nshows">${shows.slice(0, 6).map(b => `<button type="button" data-nt-show="${esc(b.id)}"><span>${esc(showName(b))}</span><span class="note">${esc(b.date ? fmtD(b.date) : 'No date')}</span></button>`).join('')}</div>` : ''}`;
+    const pinBtn = list.querySelector('[data-nt-pin]'); if (pinBtn) pinBtn.onclick = () => { const r = ntRec(kind, id); if (r) (kind === 'booking' ? bookingForm : contactForm)(r); };
+    list.querySelectorAll('[data-nt-from]').forEach(b => { b.onclick = () => more[+b.dataset.ntFrom].open(); });
+    list.querySelectorAll('[data-nt-show]').forEach(b => { b.onclick = () => window.bookingView(b.dataset.ntShow); });
+    list.querySelectorAll('[data-nt]').forEach(row => {
+      const n = own.find(x => x.id === row.dataset.nt); if (!n) return;
+      row.querySelector('[data-nt-edit]').onclick = () => {
+        row.classList.add('ssx-nedit');
+        row.innerHTML = `<textarea aria-label="Edit note" maxlength="4000">${esc(n.text)}</textarea><div class="ssx-nmeta"><button type="button" data-nt-save>Save</button><button type="button" data-nt-cancel>Cancel</button></div>`;
+        const ta = row.querySelector('textarea'); ta.focus();
+        row.querySelector('[data-nt-cancel]').onclick = () => { row.classList.remove('ssx-nedit'); ntDraw(box); };
+        row.querySelector('[data-nt-save]').onclick = async () => {
+          const text = ta.value.trim(); if (!text) return;
+          const { id: nid, ...data } = n, next = { ...data, text, editedAt: new Date().toISOString() };
+          if (await window.save('notes', nid, next)) { if (S.notes) S.notes = S.notes.map(x => x.id === nid ? { id: nid, ...next } : x); row.classList.remove('ssx-nedit'); ntDraw(box); }
+        };
+      };
+      row.querySelector('[data-nt-del]').onclick = async () => {
+        const { id: nid, ...data } = n;
+        try { await st.db.collection('notes').doc(nid).delete(); } catch (_) { if (window.toast) window.toast("Couldn't delete that note. Try again."); return; }
+        if (S.notes) S.notes = S.notes.filter(x => x.id !== nid);
+        ntRefresh();
+        if (window.toast) window.toast('Note deleted', async () => { if (await window.save('notes', nid, data)) { if (S.notes && !S.notes.some(x => x.id === nid)) S.notes = [...S.notes, { id: nid, ...data }]; ntRefresh(); } });
+      };
+    });
+  }
+  const ntRefresh = () => document.querySelectorAll('.ssx-notes').forEach(ntDraw);
+  function ntMount(kind, id, pin, place) {
+    const sh = document.querySelector('#sheetRoot .sheet'); if (!sh || !id) return;
+    const key = ntKey(kind, id), box = document.createElement('div');
+    box.className = 'ssx-notes'; box.dataset.kind = kind; box.dataset.id = id; if (pin) box.dataset.pin = '1';
+    box.innerHTML = `<div class="eyebrow">Notes</div><div class="ssx-nadd"><textarea aria-label="Add a note" maxlength="4000" placeholder="${kind === 'booking' ? 'Load-in, sound, who you spoke to, how the night went…' : 'What they like, who to ask for, how you met…'}"></textarea><button type="button" class="btn small primary" data-nt-add>Add note</button></div><div class="ssx-nlist"></div>`;
+    const ta = box.querySelector('textarea'); ta.value = NTS.draft[key] || ''; ta.oninput = () => { NTS.draft[key] = ta.value; };
+    const add = async () => {
+      const text = ta.value.trim(); if (!text) { ta.focus(); return; }
+      const data = { text, at: new Date().toISOString(), [ntField(kind)]: id }, btn = box.querySelector('[data-nt-add]'); btn.disabled = true;
+      const nid = await window.save('notes', null, data); btn.disabled = false; if (!nid) return;
+      if (!ntAll().some(x => x.id === nid)) S.notes = [...ntAll(), { id: nid, ...data }];
+      ta.value = ''; delete NTS.draft[key]; ntRefresh();
+    };
+    box.querySelector('[data-nt-add]').onclick = add;
+    ta.onkeydown = e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); add(); } };
+    place(sh, box); ntDraw(box);
+  }
+  const ntBeforeActions = (sh, box) => { const a = [...sh.querySelectorAll(':scope > .actions')].pop(); a ? a.before(box) : sh.appendChild(box); };
+  // the Edit availability panel on Calendar: tap days to block them. Same list as Settings → Booking link.
+  function ntAvailPanel() {
+    const btn = document.getElementById('availEdit'), p = document.getElementById('availPanel'); if (!btn || !p) return;
+    btn.textContent = p.hidden ? 'Edit availability' : 'Done';
+    const hint = document.querySelector('#openDates .note'); if (hint && hint.textContent.includes('under Filters')) hint.textContent = hint.textContent.replace('under Filters', 'under Edit availability');
+    if (p.hidden) return;
+    if (!NTS.month) { const n = new Date(); NTS.month = new Date(n.getFullYear(), n.getMonth(), 1); }
+    const t0 = todayStr(), blocked = blockedDays(t0), auto = new Set(((st.link && st.link.blocked) || []).filter(d => d >= t0 && !blocked.has(d)));
+    const y = NTS.month.getFullYear(), mo = NTS.month.getMonth(), now = new Date(), canBack = y > now.getFullYear() || (y === now.getFullYear() && mo > now.getMonth());
+    let cells = '<span></span>'.repeat(new Date(y, mo, 1).getDay());
+    for (let d = 1, last = new Date(y, mo + 1, 0).getDate(); d <= last; d++) {
+      const ds = `${y}-${String(mo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`, on = blocked.has(ds), busy = !on && auto.has(ds);
+      cells += `<button type="button" class="ssx-bd${on ? ' on' : ''}${busy ? ' auto' : ''}" data-nt-bd="${ds}" ${ds < t0 || busy ? 'disabled' : ''} aria-pressed="${on}" aria-label="${esc(niceDate(ds))}${on ? ', blocked' : busy ? ', closed by a show or calendar event' : ''}">${d}</button>`;
+    }
+    const box = document.createElement('div'); box.className = 'grp';
+    box.innerHTML = `<span class="eyebrow">Dates you're not available</span><p class="note" style="margin:0">Tap a day to block or unblock it. This is the same list as Settings → Booking link, so it stays matched in both places.</p>
+      <div class="ssx-cal"><div class="ssx-calh"><button type="button" class="ssx-calnav" data-nt-bm="-1" ${canBack ? '' : 'disabled'} aria-label="Previous month">‹</button><b>${esc(NTS.month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }))}</b><button type="button" class="ssx-calnav" data-nt-bm="1" aria-label="Next month">›</button></div>
+      <div class="ssx-dow">${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(x => `<span>${x}</span>`).join('')}</div><div class="ssx-grid">${cells}</div></div>
+      <div class="ssx-row"><button type="button" class="btn small" data-nt-trip>Block a trip…</button><button type="button" class="btn small" data-nt-link>Booking link settings</button></div>`;
+    const acts = [...p.querySelectorAll(':scope > .actions')].pop(); acts ? acts.before(box) : p.appendChild(box);
+    box.querySelectorAll('[data-nt-bm]').forEach(b => { b.onclick = () => { NTS.month = new Date(y, mo + Number(b.dataset.ntBm), 1); renderCalendar(); }; });
+    box.querySelectorAll('[data-nt-bd]').forEach(b => { b.onclick = () => { const set = blockedDays(todayStr()), d = b.dataset.ntBd; set.has(d) ? set.delete(d) : set.add(d); setBlocked(set).then(() => setTimeout(() => { renderCalendar(); syncAvail(true); }, 500)); }; });
+    box.querySelector('[data-nt-trip]').onclick = () => blockForm({ date: todayStr() });
+    box.querySelector('[data-nt-link]').onclick = () => window.ssShowSettings('bookings', 'ssx-link');
+  }
+  function hookNotes() {
+    if (NTS.done || !st.db) return; NTS.done = true;
+    st.db.collection('notes').onSnapshot(s => { S.notes = s.docs.map(d => ({ id: d.id, ...d.data() })); ntRefresh(); }, e => console.error(e));
+    const wrap = (name, after) => { const fn = window[name]; if (typeof fn !== 'function') return; window[name] = function (...a) { const r = fn.apply(this, a); try { after(...a); } catch (e) { console.error(e); } return r; }; };
+    wrap('bookingView', id => ntMount('booking', id, true, (sh, box) => {
+      const dl = sh.querySelector('dl.kv'); if (!dl) { ntBeforeActions(sh, box); return; }
+      const dt = [...dl.querySelectorAll('dt')].find(x => x.textContent.trim() === 'Notes'); if (dt) { dt.nextElementSibling.remove(); dt.remove(); }
+      dl.after(box);
+    }));
+    wrap('reachSheet', id => ntMount('contact', id, true, ntBeforeActions));
+    wrap('contactForm', c => { if (c && c.id) ntMount('contact', c.id, false, ntBeforeActions); });
+    wrap('renderAvail', ntAvailPanel); ntAvailPanel();
+  }
+  // moves a merged-away contact's notes onto the one being kept
+  async function ntMerge(keep, drop) {
+    for (const n of ntAll()) if (n.contactId === drop.id) { const { id, ...d } = n; await st.db.collection('notes').doc(id).set({ ...d, contactId: keep.id }).catch(() => {}); }
+    if (drop.notes && keep.notes && drop.notes !== keep.notes) await st.db.collection('notes').add({ text: drop.notes, at: new Date().toISOString(), contactId: keep.id }).catch(() => {});
+  }
   /* ---------- Smooth saving.
      1. Every saved change used to redraw all nine pages at once, several times per save (once for the save and again
         when the server echoed it back). With a full season of shows that froze the page for seconds. Now the page
