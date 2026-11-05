@@ -2433,6 +2433,40 @@ function appExtras() {
     const s = document.querySelector('#tabs [data-tab="money"] svg');
     if (s) s.innerHTML = '<circle cx="14" cy="14" r="12" fill="color-mix(in srgb, var(--accent) 22%, transparent)"/><path d="M6.2 10.6 A8.6 8.6 0 0 1 10.6 6.2" fill="none" stroke="var(--accent-2)" stroke-width="1.8" stroke-linecap="round"/><path d="M18.4 10.3 Q17.2 8.7 14 8.7 Q10 8.7 10 11.3 Q10 13.4 14 14 Q18 14.6 18 16.8 Q18 19.3 14 19.3 Q10.8 19.3 9.6 17.7 M14 6 V22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>';
   }
+    /* ---------- Install offer: invites phone users to add the app to their home screen. */
+  ;(function installOffer() {
+    const KEY = 'ssx-install-later', WAIT = 30 * 864e5;
+    let promptEvent = null, card = null, ready = 0;
+    const installed = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const phone = () => matchMedia('(max-width:860px) and (pointer:coarse)').matches;
+    const snoozed = () => { try { return Date.now() - Number(localStorage.getItem(KEY) || 0) < WAIT; } catch (_) { return false; } };
+    const close = () => { if (card) { card.remove(); card = null; } };
+    const snooze = () => { try { localStorage.setItem(KEY, String(Date.now())); } catch (_) {} close(); };
+    const shown = el => !!el && el.getClientRects().length > 0;
+    const appReady = () => !document.documentElement.classList.contains('ss-locked') && !shown(document.getElementById('ss-auth')) && shown(document.querySelector('.tabs')) && !new URLSearchParams(location.search).get('book') && !document.querySelector('.ssx-tour,.ssx-tour-offer');
+    const draw = steps => {
+      if (!card) { card = document.createElement('div'); card.className = 'ssx-install'; card.setAttribute('role', 'region'); card.setAttribute('aria-label', 'Add Set & Settled to your phone'); document.body.appendChild(card); }
+      card.innerHTML = steps
+        ? `<h3>Add it to your Home Screen</h3><ol><li>Tap <b>Share</b>. If you don't see it, tap <b>•••</b> first.</li><li>Tap <b>Add to Home Screen</b>, then <b>Add</b>.</li><li>Open it from your Home Screen and sign in once more.</li></ol><div class="ssx-install-act"><button type="button" class="btn primary small" data-ins-later>Got it</button></div>`
+        : `<h3>Keep Set & Settled on your phone</h3><p>Open it in one tap, full screen, just like an app.</p><div class="ssx-install-act"><button type="button" class="btn small" data-ins-later>Not now</button><button type="button" class="btn primary small" data-ins-add>${promptEvent ? 'Add to my phone' : 'Show me how'}</button></div>`;
+      card.querySelector('[data-ins-later]').onclick = snooze;
+      const add = card.querySelector('[data-ins-add]');
+      if (add) add.onclick = async () => {
+        if (!promptEvent) { draw(true); return; }
+        const ev = promptEvent; promptEvent = null;
+        try { await ev.prompt(); const c = await ev.userChoice; if (c && c.outcome === 'accepted') close(); else snooze(); } catch (_) { snooze(); }
+      };
+    };
+    window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); promptEvent = e; });
+    window.addEventListener('appinstalled', () => { promptEvent = null; close(); });
+    setInterval(() => {
+      if (installed() || snoozed() || !phone() || !(promptEvent || isIOS() || card)) { close(); ready = 0; return; }
+      if (!appReady()) { if (card) card.hidden = true; ready = 0; return; }
+      if (++ready < 3) return;
+      if (card) card.hidden = false; else draw(false);
+    }, 3000);
+  })();
   /* ---------- Smooth saving.
      1. Every saved change used to redraw all nine pages at once, several times per save (once for the save and again
         when the server echoed it back). With a full season of shows that froze the page for seconds. Now the page
