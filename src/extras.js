@@ -2220,11 +2220,12 @@ function appExtras() {
     }
     ntTourEnter(title);
     const el = wrap && wrap.classList.contains('in') && step && step.target ? [...document.querySelectorAll(step.target)].find(x => { const r = x.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) : null;
+    if (NTOUR.on !== el) { if (NTOUR.on) NTOUR.on.classList.remove('ssx-tour-on'); NTOUR.on = el; }
+    if (el) el.classList.add('ssx-tour-on');
     if (!el) { if (NTOUR.spot) { NTOUR.spot.remove(); NTOUR.spot = null; } return; }
     if (!NTOUR.spot) { NTOUR.spot = document.createElement('div'); NTOUR.spot.className = 'ssx-tour-spot'; NTOUR.spot.setAttribute('aria-hidden', 'true'); document.body.appendChild(NTOUR.spot); }
     const r = el.getBoundingClientRect(), pad = 6, top = Math.max(4, r.top - pad), left = Math.max(4, r.left - pad), bottom = Math.min(innerHeight - 4, r.bottom + pad), right = Math.min(innerWidth - 4, r.right + pad);
     NTOUR.spot.style.cssText = `top:${top}px;left:${left}px;width:${Math.max(0, right - left)}px;height:${Math.max(0, bottom - top)}px;`;
-    ntTourFollow(step, el, card);
     ntTourFollow(step, el, card);
   }
     /* ---------- Tax packet button and phone tour fit. ---------- */
