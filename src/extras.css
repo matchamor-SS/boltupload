@@ -696,3 +696,13 @@ html:root section[data-view]>.head .btn.primary{background:linear-gradient(110de
 .epk-page.epk-solo .epk-body { align-content: center; }
 .epk-page.epk-solo .epk-book { padding: 40px 40px 34px; gap: 26px; }
 .epk-page.epk-solo .epk-book [data-epk-k="bookTitle"] { font-size: 54px !important; }
+
+/* ===== Add past shows */
+.ssx-hentry { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--soft); }
+.ssx-hrow .ssx-hact { flex: none; display: flex; gap: 10px; margin-left: auto; }
+.ssx-hact button { background: none; border: 0; padding: 8px 0; min-height: 36px; color: var(--muted); font: inherit; font-size: 13px; text-decoration: underline; cursor: pointer; }
+.ssx-hact button:hover { color: var(--ink); }
+.ssx-hfile { display: flex; flex-direction: column; gap: 6px; padding-top: 12px; border-top: 1px solid var(--line); }
+.ssx-hfile .note { margin: 0; }
+.ssx-hfile label.btn { cursor: pointer; }
+.ssx-hfile .ssx-hidefile { position: absolute; width: 1px; height: 1px; opacity: 0; }
