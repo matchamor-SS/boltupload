@@ -113,7 +113,7 @@ function appExtras() {
   const wait = setInterval(async () => {
     if (!ready()) return;
     clearInterval(wait);
-    speedUp(); submitGuard(); routeProfile(); hookFinance(); hookRequestView();
+speedUp(); submitGuard(); routeProfile(); hookFinance(); hookRequestView(); phoneFixes();
     st.db = await window.claude.use('db');
     if (!st.db) return;
     hookAutopilot(); hookLayout(); hookEase(); hookForms(); hookNotes();
