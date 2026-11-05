@@ -2173,6 +2173,42 @@ function appExtras() {
     'Your people': '<div class="ssx-nit"><div class="ssx-tshow"><b>The Lantern Room</b><span class="pill">Venue</span></div><div class="ssx-tnote"><p>Pays by Zelle within a week. Ask for Riley.</p><div class="ssx-nmeta"><span>Oct 12, 2026</span></div></div><div class="ssx-nmeta"><span>Shows together · 2</span><span class="ssx-tfake">Contact</span></div></div>',
     'Emails and templates': '<div class="ssx-nit"><p>Hi <span class="ssx-tok">Promoter name</span>, I loved playing <span class="ssx-tok">Venue</span> on <span class="ssx-tok">Show date</span>.</p></div>',
   };
+  /* Tour targets: each step points at the section it talks about. With several listed, the first one showing wins, so a hidden block falls through to the next. */
+  const ntTourTargets = {
+    'Your menu': '#tabs',
+    'Every show in one list': '.card:has(#bookingList)',
+    'Notes on every show': '#bookingList:not(:has(.row)), #bookingList .row',
+    'Edit availability': '.card:has(#availEdit)',
+    'Never miss a step': '.card:has(#tList)',
+    'Your Kit': '.card:has(#kitBio), .card:has(#linkList), .card:has(#kitFiles), .card:has(#kitRider)',
+    'Your people': '.card:has(#contactList)',
+    'Emails and templates': '#tplFilter + .card',
+    'Financials': '#moneyStats, #txCard',
+  };
+  TOUR.forEach(s => { if (ntTourTargets[s.title]) s.target = ntTourTargets[s.title]; });
+  function ntTourEnter(title) {
+    if (!title || NTOUR.title === title) return;
+    NTOUR.title = title; NTOUR.until = Date.now() + 2500;
+    if (title === 'Emails and templates') { const b = document.querySelector('#commSeg [data-cmode="tpl"]'); if (b) b.click(); }
+  }
+  function ntTourFollow(step, el, card) {
+    /* Pages can finish drawing after the tour scrolls, so keep the target in view for a moment. */
+    const nav = step.tab === 'settings' && document.querySelector('section[data-view="settings"] .ssg-nav');
+    const min = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ss-top')) || 72) + (nav ? nav.offsetHeight : 0);
+    let r = el.getBoundingClientRect();
+    if (!el.closest('#tabs, header') && Date.now() < NTOUR.until && (r.top < min - 2 || r.top > innerHeight - 60 || (innerWidth >= 700 && r.bottom > innerHeight - 8 && r.top > min + 24))) {
+      scrollTo({ top: Math.max(0, r.top + scrollY - min - 20), behavior: 'instant' });
+      r = el.getBoundingClientRect();
+    }
+    if (innerWidth < 700 || !card) return;
+    /* On a computer, the card sits in whichever corner covers the least of the target. */
+    const c = card.getBoundingClientRect(), tabs = document.getElementById('tabs').getBoundingClientRect();
+    const l = (tabs.left === 0 && tabs.width < 300 ? tabs.right : 0) + 24, t = min + 12, x = innerWidth - c.width - 24, y = innerHeight - c.height - 24;
+    const spots = { br: [x, y], bl: [l, y], tr: [x, t], tl: [l, t] };
+    const cover = ([a, b]) => Math.max(0, Math.min(a + c.width, r.right + 6) - Math.max(a, r.left - 6)) * Math.max(0, Math.min(b + c.height, r.bottom + 6) - Math.max(b, r.top - 6));
+    const best = Object.keys(spots).reduce((p, k) => (cover(spots[k]) < cover(spots[p]) - 1 ? k : p), 'br');
+    Object.assign(card.style, { left: best[1] === 'l' ? `${l}px` : 'auto', right: best[1] === 'r' ? '24px' : 'auto', top: best[0] === 't' ? `${t}px` : 'auto', bottom: best[0] === 'b' ? '24px' : 'auto' });
+  }
   function ntTourTick() {
     const wrap = document.querySelector('.ssx-tour'), card = wrap && wrap.querySelector('.ssx-tour-card'), h = card && card.querySelector('h3');
     const title = h && h.firstChild ? h.firstChild.textContent : '', step = title ? TOUR.find(s => s.title === title) : null;
@@ -2182,11 +2218,14 @@ function appExtras() {
       if (icon) { const s = document.createElement('span'); s.className = 'ssx-tour-ic'; s.setAttribute('aria-hidden', 'true'); s.innerHTML = icon.innerHTML; h.classList.add('ssx-tour-h'); h.appendChild(s); }
       if (ntTourDemo[title]) { const d = document.createElement('div'); d.className = 'ssx-tdemo'; d.innerHTML = `<span class="eyebrow">Example</span>${ntTourDemo[title]}`; const p = card.querySelector('p'); if (p) p.after(d); }
     }
+    ntTourEnter(title);
     const el = wrap && wrap.classList.contains('in') && step && step.target ? [...document.querySelectorAll(step.target)].find(x => { const r = x.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) : null;
     if (!el) { if (NTOUR.spot) { NTOUR.spot.remove(); NTOUR.spot = null; } return; }
     if (!NTOUR.spot) { NTOUR.spot = document.createElement('div'); NTOUR.spot.className = 'ssx-tour-spot'; NTOUR.spot.setAttribute('aria-hidden', 'true'); document.body.appendChild(NTOUR.spot); }
     const r = el.getBoundingClientRect(), pad = 6, top = Math.max(4, r.top - pad), left = Math.max(4, r.left - pad), bottom = Math.min(innerHeight - 4, r.bottom + pad), right = Math.min(innerWidth - 4, r.right + pad);
     NTOUR.spot.style.cssText = `top:${top}px;left:${left}px;width:${Math.max(0, right - left)}px;height:${Math.max(0, bottom - top)}px;`;
+    ntTourFollow(step, el, card);
+    ntTourFollow(step, el, card);
   }
     /* ---------- Tax packet button and phone tour fit. ---------- */
   function phoneFixes(){
