@@ -815,7 +815,7 @@ function appExtras() {
     { tab: 'bookings', target: '#bookingFilter', title: 'Notes on every show', body: 'Open any show and add a note right there: load-in, sound, who you spoke to, how the night went. Each note is dated, and it also appears on the venue and people connected to that show.' },
     { tab: 'calendar', target: '#cal', title: 'See your month', body: 'All your shows on one calendar, along with your Google Calendar plans. Tap an open day and choose Hold this date to save it for a venue or promoter.' },
     { tab: 'calendar', target: '#availEdit', title: 'Edit availability', body: 'Set the days you play and tap any date to block it. This is the same list as your booking link, so a change in one place shows up in the other.', action: ['Open Edit availability', () => { const b = document.getElementById('availEdit'), p = document.getElementById('availPanel'); if (b && p && p.hidden) b.click(); }] },
-    { tab: 'tasks', target: '#newTask', title: 'Never miss a step', body: 'Contracts, deposits, promo posts and set prep, sorted by due date. Due dates never land in the past, and Reminders can nudge you when things are due.' },
+    { tab: 'tasks', target: '#newTask', title: 'Never miss a step', body: 'Contracts, deposits, promo posts and set prep, sorted by due date. Anything past its due date is marked overdue, and your reminders will nudge you to finish it.' },
     { tab: 'kit', target: '#ssx-kit', title: 'Your Kit', body: 'Bio, photos, mixes, socials and riders in one spot, with your booking link ready to copy. Copy your whole press info into an email in one tap.' },
     { tab: 'kit', target: '#ssx-epk-btn', title: 'Create an EPK', body: 'Turn your Kit and shows into a designed press kit. Pick colors, Light or Dark, and which sections to include, move them around, edit any text, then download a PDF to send to venues.', action: ['Create my EPK', () => openEPK()] },
     { tab: 'contacts', target: '[data-new="contact"]', title: 'Your people', body: 'Promoters, venues, photographers and collaborators. Open anyone to keep notes, see your shows together and reach out with one tap. Tidy up People helps you connect or merge contacts when something looks doubled up.' },
@@ -929,7 +929,7 @@ function appExtras() {
   window.ssStartTour = () => startTour(0);
   function renderTourCard() {
     const host = document.getElementById('ssx-host-tour'); if (!host || host.firstChild) return;
-    host.innerHTML = `<div class="card ssx" id="ssx-tourcard"><div class="ssx-head"><div><h3>App tour</h3><p class="note">A 2-minute walk through everything Set & Settled can do, and help setting up the basics.</p></div></div><div class="ssx-row"><button type="button" class="btn primary small" data-ssx-treplay>Take the tour</button></div></div>`;
+    host.innerHTML = `<div class="card ssx" id="ssx-tourcard"><div class="ssx-head"><div><h3>App tour</h3><p class="note">A 5-minute walk througheverything Set & Settled can do, and help setting up the basics.</p></div></div><div class="ssx-row"><button type="button" class="btn primary small" data-ssx-treplay>Take the tour</button></div></div>`;
     host.querySelector('[data-ssx-treplay]').onclick = e => { e.stopPropagation(); scrollTo(0, 0); startTour(0); };
   }
 
@@ -2149,11 +2149,42 @@ function appExtras() {
     wrap('reachSheet', id => ntMount('contact', id, true, ntBeforeActions));
     wrap('contactForm', c => { if (c && c.id) ntMount('contact', c.id, false, ntBeforeActions); });
     wrap('renderAvail', ntAvailPanel); ntAvailPanel();
+    setInterval(() => { try { ntTourTick(); } catch (e) { console.error(e); } }, 100);
   }
   // moves a merged-away contact's notes onto the one being kept
   async function ntMerge(keep, drop) {
     for (const n of ntAll()) if (n.contactId === drop.id) { const { id, ...d } = n; await st.db.collection('notes').doc(id).set({ ...d, contactId: keep.id }).catch(() => {}); }
     if (drop.notes && keep.notes && drop.notes !== keep.notes) await st.db.collection('notes').add({ text: drop.notes, at: new Date().toISOString(), contactId: keep.id }).catch(() => {});
+  }
+  /* ---------- Tour extras: a spotlight on what each step describes, the real button beside the title, and mock examples. */
+  const NTOUR = { spot: null };
+  const ntTourIcon = { 'Your menu': '#ssx-railbtn', 'Find anything': '#ssx-search' };
+  const ntDemoShow = '<div class="ssx-tshow"><b>Moonlight Rooftop</b><span class="pill s-confirmed">Confirmed</span></div>';
+  const ntTourDemo = {
+    'Up next': '<div class="ssx-nit"><p>The Lantern Room show is done. Send your invoice?</p><div class="ssx-nmeta"><span class="ssx-tfake">Review</span><span>Later</span></div></div>',
+    'Every show in one list': '<div class="ssx-nit">' + ntDemoShow + '<div class="ssx-nmeta"><span>Lead → Pitched → <b>Confirmed</b> → Played → Paid</span></div><div class="ssx-nmeta"><span>☐ Send the contract · due Friday</span></div></div>',
+    'Booking requests': '<div class="ssx-nit"><div class="ssx-tshow"><b>Riley, The Lantern Room</b><span class="pill s-lead">Lead</span></div><p>Saturday, 9 PM, 2-hour set</p><div class="ssx-nmeta"><span class="ssx-tfake">Accept</span><span>Reply</span><span>Decline</span></div></div>',
+    'Notes on every show': '<div class="ssx-nit">' + ntDemoShow + '<div class="ssx-tnote"><p>Sound check at 7. Ask for Tomás at the door.</p><div class="ssx-nmeta"><span>Nov 5, 2026</span><span>Edit</span><span>Delete</span></div></div><span class="eyebrow">From the people on this show</span><div class="ssx-tnote"><p>Load in through the alley.</p><div class="ssx-nmeta"><span>Oct 12, 2026 · The Lantern Room</span></div></div></div>',
+    'See your month': '<div class="ssx-nit"><b>Saturday, Dec 12</b><p>Open</p><div class="ssx-nmeta"><span class="ssx-tfake">Hold this date…</span></div></div>',
+    'Edit availability': '<div class="ssx-nit"><span class="eyebrow">Days of the week</span><div class="ssx-tdays"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span class="on">F</span><span class="on">S</span></div><div class="ssx-nmeta"><span>Blocked: Dec 24 – 26 ×</span></div></div>',
+    'Never miss a step': '<div class="ssx-nit"><p>☐ Send the contract</p><div class="ssx-nmeta"><span class="ssx-tlate">Overdue · was due Tuesday</span></div></div>',
+    'Your people': '<div class="ssx-nit"><div class="ssx-tshow"><b>The Lantern Room</b><span class="pill">Venue</span></div><div class="ssx-tnote"><p>Pays by Zelle within a week. Ask for Riley.</p><div class="ssx-nmeta"><span>Oct 12, 2026</span></div></div><div class="ssx-nmeta"><span>Shows together · 2</span><span class="ssx-tfake">Contact</span></div></div>',
+    'Emails and templates': '<div class="ssx-nit"><p>Hi <span class="ssx-tok">Promoter name</span>, I loved playing <span class="ssx-tok">Venue</span> on <span class="ssx-tok">Show date</span>.</p></div>',
+  };
+  function ntTourTick() {
+    const wrap = document.querySelector('.ssx-tour'), card = wrap && wrap.querySelector('.ssx-tour-card'), h = card && card.querySelector('h3');
+    const title = h && h.firstChild ? h.firstChild.textContent : '', step = title ? TOUR.find(s => s.title === title) : null;
+    if (h && !h.dataset.ntDone) {
+      h.dataset.ntDone = '1';
+      const icon = ntTourIcon[title] && document.querySelector(ntTourIcon[title]);
+      if (icon) { const s = document.createElement('span'); s.className = 'ssx-tour-ic'; s.setAttribute('aria-hidden', 'true'); s.innerHTML = icon.innerHTML; h.classList.add('ssx-tour-h'); h.appendChild(s); }
+      if (ntTourDemo[title]) { const d = document.createElement('div'); d.className = 'ssx-tdemo'; d.innerHTML = `<span class="eyebrow">Example</span>${ntTourDemo[title]}`; const p = card.querySelector('p'); if (p) p.after(d); }
+    }
+    const el = wrap && wrap.classList.contains('in') && step && step.target ? [...document.querySelectorAll(step.target)].find(x => { const r = x.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) : null;
+    if (!el) { if (NTOUR.spot) { NTOUR.spot.remove(); NTOUR.spot = null; } return; }
+    if (!NTOUR.spot) { NTOUR.spot = document.createElement('div'); NTOUR.spot.className = 'ssx-tour-spot'; NTOUR.spot.setAttribute('aria-hidden', 'true'); document.body.appendChild(NTOUR.spot); }
+    const r = el.getBoundingClientRect(), pad = 6, top = Math.max(4, r.top - pad), left = Math.max(4, r.left - pad), bottom = Math.min(innerHeight - 4, r.bottom + pad), right = Math.min(innerWidth - 4, r.right + pad);
+    NTOUR.spot.style.cssText = `top:${top}px;left:${left}px;width:${Math.max(0, right - left)}px;height:${Math.max(0, bottom - top)}px;`;
   }
   /* ---------- Smooth saving.
      1. Every saved change used to redraw all nine pages at once, several times per save (once for the save and again
