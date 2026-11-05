@@ -614,3 +614,31 @@ html.ssx-rail-min body #tabs.tabs button .ssx-badge { font-size: 11px !important
 .ssx-nshows .note { flex: none; }
 #availPanel .ssx-cal { width: 100%; box-sizing: border-box; }
 #availPanel .ssx-row .btn { min-height: 40px; }
+
+/* ===== Header buttons match the brand, and the motion stays behind the words */
+section[data-view] > .head .btn.primary { background: linear-gradient(110deg, var(--ga), var(--gm) 50%, var(--gb)); border-color: transparent; color: var(--accent-ink); }
+html:root[data-palette="pride"] section[data-view] > .head .btn.primary { background: linear-gradient(110deg, rgb(181,72,72), rgb(184,115,47) 22%, rgb(127,122,34) 42%, rgb(63,138,90) 60%, rgb(63,100,168) 80%, rgb(122,76,147)); color: #fff; }
+html:root[data-palette="pride"][data-mode="dark"] section[data-view] > .head .btn.primary { background: linear-gradient(110deg, rgb(143,58,58), rgb(147,89,42) 22%, rgb(106,102,32) 42%, rgb(53,111,74) 60%, rgb(52,79,135) 80%, rgb(98,62,119)); }
+html body .btn.primary { isolation: isolate; }
+html body .btn.primary::before { z-index: -1; background: linear-gradient(110deg, transparent 15%, rgba(255,255,255,.42) 50%, transparent 85%); }
+@media (hover: hover) and (pointer: fine) { html body .btn.primary:hover::before { transform: translate(100%); } }
+.ssx-linkbox .ssx-copybtn { justify-content: center; text-align: center; }
+#kitBio, #kitRider, #kitHosp, #kitNotes { margin-top: 12px; }
+
+/* ===== Tour spotlight, button icons and mock examples */
+.ssx-tour-spot { position: fixed; z-index: 300; pointer-events: none; border-radius: 14px; border: 2px solid var(--accent); box-shadow: 0 0 0 9999px rgba(18,22,15,.6), 0 0 18px 2px var(--glow); transition: top .18s ease, left .18s ease, width .18s ease, height .18s ease; }
+.ssx-tour-card .ssx-tour-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ssx-tour-ic { flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--line); background: var(--soft); color: var(--ink); }
+.ssx-tour-ic svg { width: 18px; height: 18px; }
+.ssx-tdemo { display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+.ssx-tdemo .ssx-nit { display: flex; flex-direction: column; gap: 6px; background: var(--soft); }
+.ssx-tshow { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.ssx-tshow b { min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+.ssx-tnote { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--surface); }
+.ssx-tnote p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+.ssx-tdemo .ssx-nmeta { margin-top: 2px; }
+.ssx-tfake { padding: 3px 10px; border-radius: 999px; background: linear-gradient(110deg, var(--ga), var(--gm) 50%, var(--gb)); color: var(--accent-ink); font-weight: 600; }
+.ssx-tlate { color: var(--bad, #B23A3A); font-weight: 600; }
+.ssx-tdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.ssx-tdays span { text-align: center; padding: 5px 0; border-radius: 8px; border: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.ssx-tdays .on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
