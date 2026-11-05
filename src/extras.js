@@ -2186,6 +2186,25 @@ function appExtras() {
     const r = el.getBoundingClientRect(), pad = 6, top = Math.max(4, r.top - pad), left = Math.max(4, r.left - pad), bottom = Math.min(innerHeight - 4, r.bottom + pad), right = Math.min(innerWidth - 4, r.right + pad);
     NTOUR.spot.style.cssText = `top:${top}px;left:${left}px;width:${Math.max(0, right - left)}px;height:${Math.max(0, bottom - top)}px;`;
   }
+    /* ---------- Tax packet button and phone tour fit. ---------- */
+  function phoneFixes(){
+    const taxBtn=document.getElementById("taxBtn");
+    if(taxBtn)taxBtn.onclick=()=>window.taxSheet();
+    const body=document.body;
+    setInterval(()=>{
+      const card=innerWidth<700&&document.querySelector(".ssx-tour .ssx-tour-card");
+      if(!card){
+        if(body.dataset.ssxTourPad){body.style.paddingBottom="";delete body.dataset.ssxTourPad}
+        return;
+      }
+      const spot=document.querySelector(".ssx-tour-spot");
+      if(!spot||getComputedStyle(spot).display==="none")return;
+      if(!body.dataset.ssxTourPad){body.dataset.ssxTourPad="1";body.style.paddingBottom="70vh"}
+      const t=spot.getBoundingClientRect(),c=card.getBoundingClientRect();
+      const gap=t.bottom-c.top+12,room=t.top-72;
+      if(gap>4&&room>4)scrollBy(0,Math.min(gap,room));
+    },200);
+  }
   /* ---------- Smooth saving.
      1. Every saved change used to redraw all nine pages at once, several times per save (once for the save and again
         when the server echoed it back). With a full season of shows that froze the page for seconds. Now the page
