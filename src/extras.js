@@ -817,7 +817,7 @@ function appExtras() {
     { tab: 'calendar', target: '#availEdit', title: 'Edit availability', body: 'Set the days you play and tap any date to block it. This is the same list as your booking link, so a change in one place shows up in the other.', action: ['Open Edit availability', () => { const b = document.getElementById('availEdit'), p = document.getElementById('availPanel'); if (b && p && p.hidden) b.click(); }] },
     { tab: 'tasks', target: '#newTask', title: 'Never miss a step', body: 'Contracts, deposits, promo posts and set prep, sorted by due date. Anything past its due date is marked overdue, and your reminders will nudge you to finish it.' },
     { tab: 'kit', target: '#ssx-kit', title: 'Your Kit', body: 'Bio, photos, mixes, socials and riders in one spot, with your booking link ready to copy. Copy your whole press info into an email in one tap.' },
-    { tab: 'kit', target: '#ssx-hist', title: 'Your show history', body: 'Add the shows you played before Set & Settled, one at a time or by importing a list. Your history fills your EPK and stays out of your bookings and money.', action: ['Import shows', () => nhImport()] },
+    { tab: 'kit', target: '#ssx-hist', title: 'Your show history', body: 'Add the shows you played before Set & Settled, one at a time or with our template. Your history fills your EPK and stays out of your bookings and money.', action: ['Add past shows', () => nhImport()] },
     { tab: 'kit', target: '#ssx-epk-btn', title: 'Create an EPK', body: 'Turn your Kit and shows into a designed press kit. Pick colors, Light or Dark, and which sections to include, move them around, edit any text, then download a PDF to send to venues.', action: ['Create my EPK', () => openEPK()] },
     { tab: 'contacts', target: '[data-new="contact"]', title: 'Your people', body: 'Promoters, venues, photographers and collaborators. Open anyone to keep notes, see your shows together and reach out with one tap. Tidy up People helps you connect or merge contacts when something looks doubled up.' },
     { tab: 'comms', target: '[data-new="template"]', title: 'Emails and templates', body: 'Start from friendly templates for pitches, confirmations and thank-yous, or save your own. Fill-ins like the venue and date show as bubbles and complete themselves from any show. Minimize an email to keep it in the corner, then tap + to reopen it or × to discard it.' },
@@ -2277,11 +2277,10 @@ function appExtras() {
     let box = document.getElementById('ssx-hist');
     if (!box) { box = document.createElement('div'); box.id = 'ssx-hist'; box.className = 'card ssx ssx-kitcard'; const a = document.getElementById('ssx-kit'); a ? a.after(box) : sec.appendChild(box); NH.sig = null; }
     if (NH.sig === sig) return; NH.sig = sig;
-    box.innerHTML = `<div class="ssx-head"><div><h3>Show history</h3><p class="note">${all.length ? `${stat.shows} show${stat.shows === 1 ? '' : 's'} · ${stat.venues} venue${stat.venues === 1 ? '' : 's'} · ${stat.cities} cit${stat.cities === 1 ? 'y' : 'ies'}. Your EPK uses this list.` : 'Add the shows you played before Set & Settled, so your EPK tells your whole story. They stay out of your bookings and money.'}</p></div></div>
+    box.innerHTML = `<div class="ssx-head"><div><h3>Show history</h3><p class="note">${all.length ? `${stat.shows} show${stat.shows === 1 ? '' : 's'} · ${stat.venues} venue${stat.venues === 1 ? '' : 's'} · ${stat.cities} cit${stat.cities === 1 ? 'y' : 'ies'}. Your EPK uses this list.` : 'Add the shows you played before Set & Settled, one at a time or with our template. They fill your EPK and stay out of your bookings and money.'}</p></div></div>
       ${all.length ? `<div class="ssx-hlist">${all.slice(0, 4).map(s => `<div class="ssx-hrow"><span class="ssx-hdate">${esc(nhLabel(s))}</span><span class="ssx-hmain"><b>${esc(s.title)}</b><span class="note">${esc(nhWhere(s))}</span></span></div>`).join('')}</div>` : ''}
-      <div class="ssx-row"><button type="button" class="btn primary small" data-nh-import>Import shows</button><button type="button" class="btn small" data-nh-add>Add a show</button>${all.length ? `<button type="button" class="btn small" data-nh-all>See all ${all.length}</button>` : ''}</div>`;
+      <div class="ssx-row"><button type="button" class="btn primary small" data-nh-import>Add past shows</button>${all.length ? `<button type="button" class="btn small" data-nh-all>See all ${all.length}</button>` : ''}</div>`;
     box.querySelector('[data-nh-import]').onclick = () => nhImport();
-    box.querySelector('[data-nh-add]').onclick = () => nhForm({});
     const more = box.querySelector('[data-nh-all]'); if (more) more.onclick = nhList;
   }
   function nhForm(s) {
@@ -2300,42 +2299,70 @@ function appExtras() {
   }
   function nhList() {
     const all = nhShows(), years = [...new Set(all.map(s => s.date.slice(0, 4)))];
-    sheet(`<h3>Show history</h3><div class="ssx-row"><button type="button" class="btn primary small" data-nh-import>Import shows</button><button type="button" class="btn small" data-nh-add>Add a show</button></div>
+    sheet(`<h3>Show history</h3><div class="ssx-row"><button type="button" class="btn primary small" data-nh-import>Add past shows</button></div>
       ${years.map(y => `<div class="ssx-hyear"><span class="eyebrow">${y}</span><div class="ssx-nshows">${all.filter(s => s.date.startsWith(y)).map(s => `<button type="button" data-nh-open="${esc(s.kind)}:${esc(s.id)}"><span><b>${esc(s.title)}</b>${nhWhere(s) ? `<br><span class="note">${esc(nhWhere(s))}</span>` : ''}</span><span class="note">${esc(nhLabel(s).replace(/, \d{4}$/, ''))}</span></button>`).join('')}</div></div>`).join('')}
       <div class="actions"><button class="btn" data-cancel>Done</button></div>`, root => {
-      root.querySelector('[data-cancel]').onclick = close; root.querySelector('[data-nh-import]').onclick = () => nhImport(); root.querySelector('[data-nh-add]').onclick = () => nhForm({});
+      root.querySelector('[data-cancel]').onclick = close; root.querySelector('[data-nh-import]').onclick = () => nhImport();
       root.querySelectorAll('[data-nh-open]').forEach(b => { b.onclick = () => { const i = b.dataset.nhOpen.indexOf(':'), kind = b.dataset.nhOpen.slice(0, i), id = b.dataset.nhOpen.slice(i + 1); if (kind === 'booking') window.bookingView(id); else nhForm(nhPast().find(x => x.id === id) || {}); }; });
     });
   }
-  function nhImport(text) {
-    sheet(`<h3>Import shows</h3><p class="note" style="margin:0">Paste your list or choose a CSV file. Put each show on its own line. You'll check everything before it's added.</p>
-      <div class="f"><label for="nh-text">Your shows</label><textarea id="nh-text" style="min-height:150px" placeholder="3/14/2025, Summer Block Party, The Casbah, San Diego&#10;June 7 2024 - Soda Bar - San Diego&#10;Oct 2023, Observatory, Santa Ana">${esc(text || '')}</textarea>
-      <span class="note">Each line needs a date plus a venue or event. You can copy rows straight from Google Sheets or Excel. If you only know the month, "Oct 2023" works.</span></div>
-      <div class="f"><label for="nh-file">Or choose a file</label><input id="nh-file" type="file" accept=".csv,.tsv,.txt,text/csv,text/plain"><span class="note">CSV or text files. For an Excel file, save it as CSV first or copy and paste the rows.</span></div>
-      <div class="actions"><button class="btn" data-cancel>Cancel</button><button class="btn primary" data-go>Check my list</button></div>`, root => {
-      const ta = root.querySelector('#nh-text'); root.querySelector('[data-cancel]').onclick = close;
-      root.querySelector('#nh-file').onchange = async e => { const f = e.target.files[0]; if (!f) return; if (f.size > 1048576) { toast('That file is too large. Try one under 1 MB.'); return; } ta.value = await f.text(); };
-      root.querySelector('[data-go]').onclick = () => { const r = nhRead(ta.value); if (!r.rows.length && !r.bad.length) { toast('Add at least one show'); return; } nhReview(ta.value, r); };
+  const NH_TEMPLATE = 'Date,Event name,Venue,City\r\n3/14/2025,Example Block Party,Example Venue,San Diego\r\n';
+  function nhTemplate() {
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + NH_TEMPLATE], { type: 'text/csv;charset=utf-8' })), a = document.createElement('a');
+    a.href = url; a.download = 'set-and-settled-show-history-template.csv'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+  const nhDraft = () => { if (!NH.draft) { NH.draft = []; NH.bad = []; } return NH.draft; };
+  function nhImport() { nhBuild(nhDraft().length ? null : -1); }
+  function nhBuild(edit) {
+    const list = nhDraft(), bad = NH.bad || [], cur = edit >= 0 ? list[edit] : {}, open = edit !== null;
+    sheet(`<h3>Add past shows</h3><p class="note" style="margin:0">Add each show below, or fill in our template if you have a lot of them. You'll check everything before it's saved.</p>
+      ${list.length ? `<div class="ssx-hlist">${list.map((r, i) => `<div class="ssx-hrow"><span class="ssx-hdate">${esc(nhLabel(r))}</span><span class="ssx-hmain"><b>${esc(r.title || r.venue)}</b><span class="note">${esc(nhWhere({ ...r, title: r.title || r.venue }))}</span></span><span class="ssx-hact"><button type="button" data-nh-edit="${i}" aria-label="Edit ${esc(r.title || r.venue)}">Edit</button><button type="button" data-nh-rem="${i}" aria-label="Remove ${esc(r.title || r.venue)}">Remove</button></span></div>`).join('')}</div>` : ''}
+      ${open ? `<div class="ssx-hentry"><span class="eyebrow">${edit >= 0 ? 'Edit this show' : list.length ? 'Another show' : 'Your first show'}</span>
+        ${field('nh-date', 'Date', cur.date, 'date', `max="${todayStr()}"`)}${field('nh-title', 'Event name (optional)', cur.title, 'text', 'placeholder="e.g. Summer Block Party"')}
+        <div class="frow">${field('nh-venue', 'Venue', cur.venue, 'text', '')}${field('nh-city', 'City', cur.city, 'text', '')}</div>
+        <div class="ssx-row"><button type="button" class="btn primary small" data-nh-ok>${edit >= 0 ? 'Update show' : 'Save show to list'}</button>${edit >= 0 || list.length ? '<button type="button" class="btn small" data-nh-stop>Cancel</button>' : ''}</div></div>` : '<div class="ssx-row"><button type="button" class="btn small" data-nh-more>+ Add another show</button></div>'}
+      ${bad.length ? `<div class="f"><label>Couldn't read ${bad.length} row${bad.length === 1 ? '' : 's'}</label><div class="ssx-hbad">${bad.slice(0, 20).map(esc).join('<br>')}</div><span class="note">Each row needs a date plus a venue or event. Add these above, or fix your file and upload it again.</span></div>` : ''}
+      <div class="ssx-hfile"><b>Have a lot of shows?</b><span class="note">Download the template, fill it in with Excel or Google Sheets, save it as a CSV, then upload it here.</span>
+        <div class="ssx-row"><button type="button" class="btn small" data-nh-tpl>Download template</button><label class="btn small" for="nh-file">Upload filled template</label><input id="nh-file" class="ssx-hidefile" type="file" accept=".csv,.tsv,.txt,text/csv,text/plain"></div></div>
+      <div class="actions"><button class="btn" data-cancel>Close</button><button class="btn primary" data-go ${list.length ? '' : 'disabled'}>Check my shows${list.length ? ` (${list.length})` : ''}</button></div>`, root => {
+      const q = s => root.querySelector(s);
+      q('[data-cancel]').onclick = close; q('[data-nh-tpl]').onclick = nhTemplate;
+      q('[data-go]').onclick = () => { if (open && (q('#nh-date').value || q('#nh-venue').value.trim() || q('#nh-title').value.trim())) { toast('Save or cancel the show you have open first'); return; } nhReview(); };
+      const more = q('[data-nh-more]'); if (more) more.onclick = () => nhBuild(-1);
+      const stop = q('[data-nh-stop]'); if (stop) stop.onclick = () => nhBuild(null);
+      root.querySelectorAll('[data-nh-edit]').forEach(b => { b.onclick = () => nhBuild(+b.dataset.nhEdit); });
+      root.querySelectorAll('[data-nh-rem]').forEach(b => { b.onclick = () => { const i = +b.dataset.nhRem, [gone] = list.splice(i, 1); nhBuild(list.length ? null : -1); toast('Show removed', () => { list.splice(i, 0, gone); nhBuild(null); }); }; });
+      const ok = q('[data-nh-ok]');
+      if (ok) { q('#nh-date').focus(); ok.onclick = () => {
+        const date = q('#nh-date').value, title = q('#nh-title').value.trim(), venue = q('#nh-venue').value.trim(), city = q('#nh-city').value.trim();
+        if (!date) { toast('Pick the date of the show'); return; } if (date > todayStr()) { toast('Add upcoming shows in Bookings'); return; } if (!title && !venue) { toast('Add a venue or event name'); return; }
+        const row = { date, title, venue, city, approx: !!(cur.approx && cur.date === date) };
+        if (edit >= 0) list[edit] = row; else list.push(row);
+        nhBuild(null);
+      }; }
+      q('#nh-file').onchange = async e => {
+        const f = e.target.files[0]; if (!f) return; if (/\.xlsx?$/i.test(f.name)) { toast('Save your file as a CSV first, then upload it'); return; } if (f.size > 1048576) { toast('That file is too large. Try one under 1 MB.'); return; }
+        const r = nhRead(await f.text()), rows = r.rows.filter(x => x.venue !== 'Example Venue'); list.push(...rows); NH.bad = r.bad;
+        nhBuild(list.length ? null : -1); toast(rows.length ? `Added ${rows.length} show${rows.length === 1 ? '' : 's'} from your file` : 'No shows found in that file yet');
+      };
     });
   }
-  function nhReview(text, { rows, bad }) {
-    const t0 = todayStr(), have = new Set(nhShows().map(nhKey)), inList = new Set();
+  function nhReview() {
+    const rows = nhDraft(), t0 = todayStr(), have = new Set(nhShows().map(nhKey)), inList = new Set();
     rows.forEach(r => { const k = nhKey(r); r.skip = r.date > t0 ? 'Upcoming, add it in Bookings' : have.has(k) || inList.has(k) ? 'Already in your history' : ''; inList.add(k); });
-    const good = () => rows.filter((r, i) => document.querySelector(`[data-nh-row="${i}"]`)?.checked).length;
-    sheet(`<h3>Check your shows</h3><p class="note" style="margin:0">${rows.length} show${rows.length === 1 ? '' : 's'} found. Untick any you don't want.</p>
+    sheet(`<h3>Check my shows</h3><p class="note" style="margin:0">Does this look right? Untick any show you don't want to add.</p>
       <div class="ssx-nshows ssx-hcheck">${rows.map((r, i) => `<label><input type="checkbox" data-nh-row="${i}" ${r.skip ? 'disabled' : 'checked'}><span class="ssx-hmain"><b>${esc(r.title || r.venue)}</b><span class="note">${esc(nhLabel(r))}${nhWhere({ ...r, title: r.title || r.venue }) ? ' · ' + esc(nhWhere({ ...r, title: r.title || r.venue })) : ''}${r.skip ? ' · ' + esc(r.skip) : ''}</span></span></label>`).join('')}</div>
-      ${bad.length ? `<div class="f"><label>Couldn't read ${bad.length} line${bad.length === 1 ? '' : 's'}</label><div class="ssx-hbad">${bad.slice(0, 20).map(esc).join('<br>')}</div><span class="note">Go back to fix these, or add them one at a time.</span></div>` : ''}
-      <div class="actions"><button class="btn" data-back>Back</button><button class="btn primary" data-add>Add shows</button></div>`, root => {
-      const add = root.querySelector('[data-add]'), label = () => { const n = good(); add.textContent = `Add ${n} show${n === 1 ? '' : 's'}`; add.disabled = !n; };
+      <div class="actions"><button class="btn" data-back>Go back and edit</button><button class="btn primary" data-add>Add shows</button></div>`, root => {
+      const add = root.querySelector('[data-add]'), picked = () => rows.filter((r, i) => root.querySelector(`[data-nh-row="${i}"]`).checked), label = () => { const n = picked().length; add.textContent = n ? `Add ${n} show${n === 1 ? '' : 's'} to my history` : 'Add shows'; add.disabled = !n; };
       root.querySelectorAll('[data-nh-row]').forEach(c => { c.onchange = label; }); label();
-      root.querySelector('[data-back]').onclick = () => nhImport(text);
+      root.querySelector('[data-back]').onclick = () => nhBuild(null);
       add.onclick = async () => {
-        const picks = rows.filter((r, i) => root.querySelector(`[data-nh-row="${i}"]`).checked), ids = []; add.disabled = true;
+        const picks = picked(), ids = []; add.disabled = true;
         for (let i = 0; i < picks.length; i += 8) {
           add.textContent = `Adding ${Math.min(i + 8, picks.length)} of ${picks.length}…`;
           const got = await Promise.all(picks.slice(i, i + 8).map(({ skip, ...r }) => window.save('pastShows', null, r))); ids.push(...got.filter(Boolean));
         }
-        closeAll(); toast(`Added ${ids.length} show${ids.length === 1 ? '' : 's'}`, async () => { for (const id of ids) await st.db.collection('pastShows').doc(id).delete().catch(() => {}); toast('Import undone'); });
+        NH.draft = []; NH.bad = []; closeAll(); toast(`Added ${ids.length} show${ids.length === 1 ? '' : 's'}`, async () => { for (const id of ids) await st.db.collection('pastShows').doc(id).delete().catch(() => {}); toast('Import undone'); });
       };
     });
   }
@@ -2398,7 +2425,7 @@ function appExtras() {
     if (pb >= 0) EPK_BLOCKS[pb][1] = 'Show history';
     if (pb > ub && ub >= 0) { const [x] = EPK_BLOCKS.splice(pb, 1); EPK_BLOCKS.splice(ub, 0, x); }
     if (LAYOUT.kit && !LAYOUT.kit.blocks.some(b => b[0] === 'history')) LAYOUT.kit.blocks.splice(1, 0, ['history', 'Show history', byId('ssx-hist')]);
-    ntTourDemo['Your show history'] = '<div class="ssx-nit"><div class="ssx-tshow"><b>42 shows · 11 venues · 6 cities</b></div><div class="ssx-nmeta"><span>Mar 14, 2025 · The Lantern Room · San Diego</span></div><div class="ssx-nmeta"><span class="ssx-tfake">Import shows</span><span>Add a show</span></div></div>';
+    ntTourDemo['Your show history'] = '<div class="ssx-nit"><div class="ssx-tshow"><b>42 shows · 11 venues · 6 cities</b></div><div class="ssx-nmeta"><span>Mar 14, 2025 · The Lantern Room · San Diego</span></div><div class="ssx-nmeta"><span class="ssx-tfake">Add past shows</span></div></div>';
     setInterval(() => { try { nhCard(); } catch (e) { console.error(e); } }, 1500);
   }
   /* ---------- Financials tab icon: one coin with a dollar sign. */
