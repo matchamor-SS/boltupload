@@ -116,7 +116,7 @@ function appExtras() {
     speedUp(); submitGuard(); routeProfile(); hookFinance(); hookRequestView();
     st.db = await window.claude.use('db');
     if (!st.db) return;
-    hookAutopilot(); hookLayout(); hookEase();
+    hookAutopilot(); hookLayout(); hookEase(); hookForms();
     st.db.doc('settings/notify').onSnapshot(s => { st.prefs = s.exists ? s.data() : {}; render(); queueSoon(); }, () => {});
         st.db.doc('settings/profile').onSnapshot(() => setTimeout(() => fillProfile(), 0), () => {});
     st.db.doc('settings/bookinglink').onSnapshot(s => { st.link = s.exists ? s.data() : {}; render(); renderKit(); }, () => {});
@@ -1196,7 +1196,7 @@ function appExtras() {
     try { composeSheet({ booking: b.id, to: (who || {}).id || '', subject, body: body.replace('{first}', (who && (cName(who) || '').split(' ')[0]) || 'there') }); } catch (_) {}
   }
   const confirmMail = b => tplOr('stage-confirmed', b, `Confirmed: ${bName(b)}${b.date ? ' on ' + niceDate(b.date) : ''}`, `Hi {first},\n\nThank you, I'm locked in for ${bName(b)}${b.date ? ' on ' + niceDate(b.date) : ''}.${+b.fee ? ` Fee: $${Number(b.fee).toLocaleString('en-US')}.` : ''}\n\nCould you send over the set time, load-in time and address, and the contract or anything you need signed?\n\nLooking forward to it,\n${myName()}`);
-  const thanksMail = b => tplOr('stage-played', b, `Thank you for ${bName(b)}`, `Hi {first},\n\nThank you for having me at ${bName(b)}. I had a great time and would love to come back.${b.driveUrl ? `\n\nPhotos and video will be here: ${b.driveUrl}` : ''}\n\nLet me know if you have other dates coming up.\n\nThanks again,\n${myName()}`);
+  const thanksMail = b => tplOr('stage-played', b, `Thank you for ${bName(b)}`, `Hi {first},\n\nThank you for having me at ${bName(b)}. I had the best time, and I really appreciate you and the whole team.${b.driveUrl ? `\n\nPhotos and video will be here: ${b.driveUrl}` : ''}\n\nThanks again for a great night!\n\nWarmly,\n${myName()}`);
   /* -- what should happen next */
   function upNext() {
     const c = apCfg(), t = todayStr(), out = [], skip = k => c.dismissed[k] || c.done[k] || (c.snooze[k] && c.snooze[k] > t);
@@ -1669,6 +1669,10 @@ function appExtras() {
     const out = [];
     for (const b of bk()) {
       if (isRequest(b) && !skip('ack:' + b.id)) out.push({ k: 'ack:' + b.id, at: String(b.createdAt || t).slice(0, 10), icon: '💬', text: `New booking request: <b>${esc(bName(b))}</b>${b.date ? ' on ' + esc(niceDate(b.date)) : ''}. Send a quick "got it" so they know you saw it.`, btn: 'Write reply', mark: true, go: () => ackMail(b) });
+      const paidOn = b.paidDate || (b.stageAt || {})[stageKey('paid')] || '', sincePaid = paidOn ? daysBetween(String(paidOn).slice(0, 10), t) : null;
+      if (stat(b) === 'paid' && sincePaid !== null && sincePaid >= 30 && sincePaid <= 120 && !skip('rebook:' + b.id)
+        && !bk().some(x => x.id !== b.id && x.date && x.date >= t && !['lost'].includes(stat(x)) && ((b.venueId && x.venueId === b.venueId) || (b.promoterId && x.promoterId === b.promoterId))))
+        out.push({ k: 'rebook:' + b.id, at: addDays(String(paidOn).slice(0, 10), 30), icon: '🔁', text: `It's been a month since <b>${esc(bName(b))}</b>. A friendly check-in is a great way to land the next date.`, btn: 'Write it', mark: true, go: () => tplOr('rebook', b, `Would love to come back to ${bName(b)}`, `Hi {first},\n\nHope things have been great since ${bName(b)}! I've been thinking about that night and would love to come back.\n\nIf you have any dates coming up, just let me know. Happy to make it work.\n\nWarmly,\n${myName()}`) });
       const since = b.date ? daysBetween(b.date, t) : null;
       if (stat(b) === 'played' && +b.fee > 0 && since !== null && since >= 2 && since <= 90 && !skip('paidq:' + b.id)) {
         const pk = stageKey('paid');
@@ -1913,6 +1917,117 @@ function appExtras() {
       if (b !== EZ.bRef || AP.cfg !== EZ.cfgRef) { EZ.bRef = b; EZ.cfgRef = AP.cfg; EZ.cRef = c; autoStages(); renderDups(); }
       else if (c !== EZ.cRef) { EZ.cRef = c; renderDups(); }
       autoStages(); } catch (e) { console.error(e); } }, 1500);
+  }
+
+  /* ---------- Friendlier forms: fill-ins show as bubbles, tasks are easy to tap, and places fill themselves in. */
+
+  // -- Fill-ins as bubbles: {{venue}} shows as a "Venue name" pill in templates and the email window
+  const fillLabels = () => { const m = {}; try { FILLINS.forEach(([, items]) => items.forEach(([k, l]) => { m[k] = l; })); } catch (_) {} return m; };
+  const TOK = { forms: new WeakMap() };
+  function tokenEditor(field, multi) {
+    if (!field || field.__ssxTok) return null; field.__ssxTok = true;
+    const L = fillLabels(), ed = document.createElement('div');
+    ed.className = 'ssx-tokedit' + (multi ? ' multi' : ''); ed.contentEditable = 'true'; ed.spellcheck = true;
+    ed.setAttribute('role', 'textbox'); if (multi) ed.setAttribute('aria-multiline', 'true');
+    const lab = field.id && document.querySelector(`label[for="${field.id}"]`); if (lab) { ed.setAttribute('aria-label', lab.textContent.trim()); lab.addEventListener('click', e => { e.preventDefault(); ed.focus(); }); }
+    if (multi) ed.style.minHeight = field.style.minHeight || '200px';
+    field.classList.add('ssx-tokhide'); field.tabIndex = -1; field.after(ed);
+    const pill = k => `<span class="ssx-tok" contenteditable="false" data-tok="${esc(k)}">${esc(L[k] || String(k).replace(/_/g, ' '))}</span>`;
+    let last = null, range = null;
+    const render = () => { last = field.value; ed.innerHTML = esc(field.value).replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi, (_, k) => pill(k)).replace(/\n/g, '<br>') + (multi ? '<br data-fill="1">' : ''); };
+    const toText = () => { let out = '';
+      const walk = n => { for (const c of n.childNodes) {
+        if (c.nodeType === 3) out += c.nodeValue.replace(/\u200b/g, '');
+        else if (c.nodeName === 'BR') { if (!c.dataset.fill) out += '\n'; }
+        else if (c.dataset && c.dataset.tok) out += `{{${c.dataset.tok}}}`;
+        else { if (/^(DIV|P)$/.test(c.nodeName) && out && !out.endsWith('\n')) out += '\n'; walk(c); } } };
+      walk(ed); return multi ? out : out.replace(/\n/g, ' '); };
+    const sync = () => { const v = toText(); if (v !== field.value) { field.value = v; field.dispatchEvent(new Event('input', { bubbles: true })); } last = field.value; };
+    const keep = () => { const s = getSelection(); if (s.rangeCount && ed.contains(s.anchorNode)) range = s.getRangeAt(0).cloneRange(); };
+    ed.addEventListener('input', () => { sync(); keep(); });
+    ['keyup', 'mouseup', 'focus'].forEach(ev => ed.addEventListener(ev, keep));
+    ed.addEventListener('focus', () => { const f = field.closest('.sheet'); if (f) TOK.forms.set(f, api); field.dispatchEvent(new Event('focus')); });
+    ed.addEventListener('blur', () => { sync(); if (/\{\{\s*[a-z0-9_]+\s*\}\}/i.test(toText()) && [...ed.childNodes].some(n => n.nodeType === 3 && /\{\{/.test(n.nodeValue))) render(); });
+    ed.addEventListener('keydown', e => { if (e.key !== 'Enter') return; e.preventDefault(); if (multi && !document.execCommand('insertLineBreak')) { const s = getSelection(); if (s.rangeCount) { const r = s.getRangeAt(0), br = document.createElement('br'); r.deleteContents(); r.insertNode(br); r.setStartAfter(br); s.removeAllRanges(); s.addRange(r); } } sync(); });
+    ed.addEventListener('paste', e => { e.preventDefault(); const t = (e.clipboardData || window.clipboardData).getData('text/plain'); document.execCommand('insertText', false, multi ? t : t.replace(/\s*\n\s*/g, ' ')); sync(); });
+    const api = { field, ed, insert(k) {
+      ed.focus(); const s = getSelection(); let r = range && ed.contains(range.startContainer) ? range : null;
+      if (!r) { r = document.createRange(); const end = ed.querySelector('br[data-fill]'); end ? r.setStartBefore(end) : r.selectNodeContents(ed); r.collapse(!end ? false : true); }
+      const tmp = document.createElement('span'); tmp.innerHTML = pill(k); const node = tmp.firstChild, sp = document.createTextNode('\u200b');
+      r.deleteContents(); r.insertNode(sp); r.insertNode(node); r.setStartAfter(sp); r.collapse(true); s.removeAllRanges(); s.addRange(r); range = r.cloneRange(); sync(); } };
+    render();
+    const iv = setInterval(() => { if (!ed.isConnected) return clearInterval(iv); if (field.value !== last && document.activeElement !== ed) render(); }, 400);
+    return api;
+  }
+  // the "Insert a fill-in" menus: friendly labels, and the bubble goes where your cursor is
+  document.addEventListener('change', e => {
+    const sel = e.target; if (!sel || !/^(t-fill|cm-fill)$/.test(sel.id) || !sel.value) return;
+    const sh = sel.closest('.sheet'), api = sh && (TOK.forms.get(sh) || (sh.__ssxBody)); if (!api) return;
+    const k = sel.value; sel.value = ''; api.insert(k);
+  }, true);
+  function friendlyFills(root) {
+    [['#t-subj', '#t-body', '#t-fill'], ['#cm-subj', '#cm-body', '#cm-fill']].forEach(([s, b, f]) => {
+      const subj = root.querySelector(s), body = root.querySelector(b), sel = root.querySelector(f); if (!body || body.__ssxTok) return;
+      const bApi = tokenEditor(body, true); tokenEditor(subj, false);
+      const sh = body.closest('.sheet'); if (sh && bApi) sh.__ssxBody = bApi;
+      if (sel) sel.querySelectorAll('option').forEach(o => { o.textContent = o.textContent.replace(/\s*·\s*\{\{[^}]*\}\}\s*$/, ''); });
+    });
+  }
+
+  // -- To-do rows: tap anywhere on the left of a task (not just the tiny box) to check it off
+  document.addEventListener('click', e => {
+    const row = e.target.closest && e.target.closest('.trow'); if (!row || e.target.closest('.tcb, .tmain, a, button, input, select')) return;
+    const cb = row.querySelector('.tcb'); if (cb) cb.click();
+  });
+
+  // -- Place search: venue names and addresses fill themselves in (free, from OpenStreetMap via Photon)
+  const PLACE = { cache: new Map() };
+  const placeAddr = p => { const a = [[p.housenumber, p.street].filter(Boolean).join(' '), p.city || p.town || p.village || p.district, [p.state, p.postcode].filter(Boolean).join(' ')].filter(Boolean); return a.join(', '); };
+  async function placeSearch(q, kind) {
+    const h = (apCfg().home || {}), key = kind + '|' + q.toLowerCase(); if (PLACE.cache.has(key)) return PLACE.cache.get(key);
+    const u = `https://photon.komoot.io/api/?limit=6&lang=en&q=${encodeURIComponent(q.slice(0, 120))}${h.lat ? `&lat=${h.lat}&lon=${h.lon}` : ''}${kind === 'addr' ? '&layer=house&layer=street&layer=city' : ''}`;
+    const r = await fetch(u); if (!r.ok) throw new Error('place ' + r.status);
+    const j = await r.json(), out = (j.features || []).map(f => { const p = f.properties || {}; return { name: p.name || '', addr: placeAddr(p), city: p.city || p.town || p.village || '', lat: f.geometry && f.geometry.coordinates[1], lon: f.geometry && f.geometry.coordinates[0], osm: p.osm_type && p.osm_id ? p.osm_type + p.osm_id : '', kind: p.osm_value || '' }; }).filter(x => x.name || x.addr);
+    PLACE.cache.set(key, out); return out;
+  }
+  async function placeExtras(osm) { // website and phone for a picked place (one lookup, only after you pick)
+    if (!osm) return {}; try { const r = await fetch(`https://nominatim.openstreetmap.org/lookup?format=jsonv2&extratags=1&osm_ids=${encodeURIComponent(osm)}`); if (!r.ok) return {}; const j = (await r.json())[0] || {}, x = j.extratags || {}; return { website: x.website || x['contact:website'] || x.url || '', phone: x.phone || x['contact:phone'] || '' }; } catch (_) { return {}; }
+  }
+  function placeAuto(input, kind, onPick) {
+    if (!input || input.__ssxPlace) return; input.__ssxPlace = true; input.setAttribute('autocomplete', 'off');
+    const wrap = input.parentElement; wrap.classList.add('ssx-placewrap');
+    const box = document.createElement('div'); box.className = 'ssx-place'; box.hidden = true; box.setAttribute('role', 'listbox'); input.after(box);
+    let t = 0, items = [], at = -1, seq = 0;
+    const hide = () => { box.hidden = true; at = -1; };
+    const draw = () => { box.innerHTML = items.map((p, i) => `<button type="button" class="ssx-placeopt${i === at ? ' on' : ''}" role="option" data-i="${i}"><b>${esc(kind === 'addr' ? (p.addr || p.name) : (p.name || p.addr))}</b>${kind === 'addr' ? (p.name && p.addr && p.name !== p.addr ? `<span>${esc(p.name)}</span>` : '') : (p.addr ? `<span>${esc(p.addr)}</span>` : '')}</button>`).join('') + '<span class="ssx-placeattr">Places from OpenStreetMap</span>'; box.hidden = !items.length;
+      box.querySelectorAll('[data-i]').forEach(b => b.onmousedown = ev => { ev.preventDefault(); pick(items[+b.dataset.i]); }); };
+    const pick = async p => { hide(); if (!p) return; input.value = kind === 'addr' ? (p.addr || p.name) : (p.name || input.value); input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true }));
+      try { if (p.addr && p.lat) { const g = { ...(apCfg().geo || {}) }; g[normAddr(p.addr)] = { lat: p.lat, lon: p.lon, city: p.city }; AP.cfg = { ...apCfg(), geo: g }; } } catch (_) {}
+      try { await onPick(p); } catch (_) {} };
+    input.addEventListener('input', () => { clearTimeout(t); const q = input.value.trim(); if (q.length < 3) { items = []; hide(); return; }
+      t = setTimeout(async () => { const my = ++seq; try { const r = await placeSearch(q, kind); if (my !== seq || document.activeElement !== input) return; items = r; at = -1; draw(); } catch (_) { hide(); } }, 320); });
+    input.addEventListener('keydown', e => { if (box.hidden) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); at = (at + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length; draw(); }
+      else if (e.key === 'Enter' && at >= 0) { e.preventDefault(); pick(items[at]); } else if (e.key === 'Escape') hide(); });
+    input.addEventListener('blur', () => setTimeout(hide, 150));
+  }
+  const fillIfEmpty = (root, sel, v) => { const el = root.querySelector(sel); if (el && v && !el.value.trim()) { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); } };
+  function enhancePlaces(root) {
+    const venueForm = root.querySelector('#c-addr');
+    if (venueForm) {
+      placeAuto(root.querySelector('#c-org'), 'place', async p => { fillIfEmpty(root, '#c-addr', p.addr); fillIfEmpty(root, '#c-city', p.city); const x = await placeExtras(p.osm); fillIfEmpty(root, '#c-site', x.website); fillIfEmpty(root, '#c-phone', x.phone); });
+      placeAuto(root.querySelector('#c-addr'), 'addr', async p => { fillIfEmpty(root, '#c-city', p.city); });
+    }
+    placeAuto(root.querySelector('#b-addr'), 'addr', async p => { fillIfEmpty(root, '#b-city', p.city); });
+    placeAuto(root.querySelector('#ssx-am-home'), 'addr', async () => {});
+    const hn = root.querySelector('#ssx-hname'); if (hn) placeAuto(hn, 'place', async p => { fillIfEmpty(root, '#ssx-hcity', p.city); });
+  }
+  function hookForms() {
+    if (window.__ssxForms) return; window.__ssxForms = true;
+    const scan = () => { ['#sheetRoot', '#composeRoot', 'section[data-view="money"]'].forEach(s => { const r = document.querySelector(s); if (!r) return; try { friendlyFills(r); } catch (e) { console.error(e); } try { enhancePlaces(r); } catch (e) { console.error(e); } }); };
+    let raf = 0; const soon = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; scan(); }); };
+    ['#sheetRoot', '#composeRoot'].forEach(s => { const r = document.querySelector(s); if (r) new MutationObserver(soon).observe(r, { childList: true, subtree: true }); });
+    setInterval(scan, 2000); scan();
   }
 
   /* ---------- Smooth saving.
