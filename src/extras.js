@@ -113,7 +113,7 @@ function appExtras() {
   const wait = setInterval(async () => {
     if (!ready()) return;
     clearInterval(wait);
-speedUp(); submitGuard(); routeProfile(); hookFinance(); hookRequestView(); phoneFixes();
+    speedUp(); submitGuard(); routeProfile(); hookFinance(); hookRequestView(); phoneFixes(); financeIcon();
     st.db = await window.claude.use('db');
     if (!st.db) return;
     hookAutopilot(); hookLayout(); hookEase(); hookForms(); hookNotes();
@@ -2400,6 +2400,11 @@ speedUp(); submitGuard(); routeProfile(); hookFinance(); hookRequestView(); phon
     if (LAYOUT.kit && !LAYOUT.kit.blocks.some(b => b[0] === 'history')) LAYOUT.kit.blocks.splice(1, 0, ['history', 'Show history', byId('ssx-hist')]);
     ntTourDemo['Your show history'] = '<div class="ssx-nit"><div class="ssx-tshow"><b>42 shows · 11 venues · 6 cities</b></div><div class="ssx-nmeta"><span>Mar 14, 2025 · The Lantern Room · San Diego</span></div><div class="ssx-nmeta"><span class="ssx-tfake">Import shows</span><span>Add a show</span></div></div>';
     setInterval(() => { try { nhCard(); } catch (e) { console.error(e); } }, 1500);
+  }
+  /* ---------- Financials tab icon: one coin with a dollar sign. */
+  function financeIcon() {
+    const s = document.querySelector('#tabs [data-tab="money"] svg');
+    if (s) s.innerHTML = '<circle cx="14" cy="14" r="12" fill="color-mix(in srgb, var(--accent) 22%, transparent)"/><path d="M6.2 10.6 A8.6 8.6 0 0 1 10.6 6.2" fill="none" stroke="var(--accent-2)" stroke-width="1.8" stroke-linecap="round"/><path d="M18.4 10.3 Q17.2 8.7 14 8.7 Q10 8.7 10 11.3 Q10 13.4 14 14 Q18 14.6 18 16.8 Q18 19.3 14 19.3 Q10.8 19.3 9.6 17.7 M14 6 V22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>';
   }
   /* ---------- Smooth saving.
      1. Every saved change used to redraw all nine pages at once, several times per save (once for the save and again
