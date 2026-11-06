@@ -2267,6 +2267,7 @@ function appExtras() {
   // -- reading a pasted list or CSV
   const NH_MON = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
   function nhDate(text) {
+    text = flDateFix(text);
     const t = String(text || '').trim().replace(/^(mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)[a-z]*\.?,?\s+/i, '').replace(/(\d)(st|nd|rd|th)\b/gi, '$1'); let m, y, mo, d = 1, approx = false;
     const mon = s => NH_MON.indexOf(String(s).slice(0, 3).toLowerCase()) + 1;
     if ((m = t.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/))) { y = +m[1]; mo = +m[2]; d = +m[3]; }
@@ -2512,17 +2513,88 @@ function appExtras() {
      - Old stage tasks close when a booking moves on (Settings → Checklists by stage).
      - Reminders can repeat until a task is done, with an early heads-up (Settings → Reminders).
      - Add a venue, promoter, media person or contact right inside the booking form.
-     - Media (Kit): photos from your shows in one place. Any of them can be your EPK picture.
-     - "Show on my EPK" for each booking and past show, with All / None when adding past shows.
+     - What kind of artist you are (Settings → Profile) replaces "DJ" across the app.
+     - Media tab: photos, links and folders from your shows, plus a post plan with ready captions.
+     - "Show on my EPK" for each booking and past show; Google Sheet import for past shows.
      Settings live in settings/flow. Photos live in app storage, listed in the media collection. */
-  const FL = { cfg: null, media: [], draftEpk: new Map(), raf: 0, formB: null, nhOpen: null };
-  const flCfg = () => ({ closeOld: true, every: 0, ahead: 0, epkPhoto: '', mediaDone: {}, ...(FL.cfg || {}) });
+  const FL = { cfg: null, media: [], posts: {}, draftEpk: new Map(), raf: 0, formB: null, nhOpen: null, sel: {}, loaded: false };
+  const flCfg = () => ({ closeOld: true, every: 0, ahead: 0, epkPhoto: '', mediaDone: {}, artist: null, plan: { announce: true, countdown: true, dayof: true, recap: true }, tags: '', sheetId: '', sheetUrl: '', ...(FL.cfg || {}) });
   const flSave = patch => { FL.cfg = { ...flCfg(), ...patch }; return st.db ? st.db.doc('settings/flow').set(FL.cfg).catch(() => {}) : null; };
   const flSoon = () => { if (!FL.raf) FL.raf = requestAnimationFrame(flScan); };
   function flRefresh(all) { if (all) { try { window.render(); } catch (_) {} } try { queueSoon(); } catch (_) {} }
   const flKind = s => { try { return K(s); } catch (_) { return String(s || '').toLowerCase(); } };
   const flBk = () => { try { return S.bookings || []; } catch (_) { return []; } };
   const flChip = (on, label = 'EPK') => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ssx-fl-epkchip'; b.textContent = label; b.title = 'Show on my EPK'; b.setAttribute('aria-label', 'Show on my EPK'); b.setAttribute('aria-pressed', String(!!on)); return b; };
+  const flTwoTap = (btn, label, go) => { if (!btn.dataset.armed) { btn.dataset.armed = '1'; const was = btn.innerHTML; btn.textContent = label; setTimeout(() => { if (btn.isConnected && btn.dataset.armed) { delete btn.dataset.armed; btn.innerHTML = was; } }, 3500); return; } delete btn.dataset.armed; go(); };
+
+  /* -- what kind of artist: replaces "DJ" in labels, calendar events, invoices and pitch text */
+  const FL_KINDS = [['dj', 'DJ'], ['singer', 'Singer'], ['rapper', 'Rapper'], ['band', 'Band'], ['instrumentalist', 'Instrumentalist'], ['producer', 'Producer'], ['dancer', 'Dancer'], ['comedian', 'Comedian'], ['other', 'Something else']];
+  function flArtist() {
+    const a = flCfg().artist || {}, kind = a.kind || '';
+    const label = String((kind === 'other' ? a.label : (FL_KINDS.find(k => k[0] === kind) || [])[1]) || a.label || 'Artist').trim() || 'Artist';
+    return { kind, label, name: kind === 'dj' ? 'DJ name' : kind === 'band' ? 'Band name' : 'Stage name' };
+  }
+  function flSwap(s) {
+    const A = flArtist(); if (A.label === 'DJ' || !/\bDJs?\b/.test(s)) return s;
+    const L = A.label, N = A.name, low = N.charAt(0).toLowerCase() + N.slice(1);
+    return flA(s.replace(/\bDJ or artist name\b/g, low).replace(/\bYour DJ name\b/g, 'Your ' + low).replace(/\bor DJ name\b/g, 'or ' + low).replace(/\bDJ name\b/g, N))
+      .replace(/\bDJs\b/g, L + 's').replace(/\bDJ\b/g, L);
+  }
+  // "a DJ" in a sentence becomes "a singer", "an instrumentalist"
+  const flLow = L => /^[A-Z0-9]+$/.test(L) ? L : L.charAt(0).toLowerCase() + L.slice(1);
+  const flA = s => { const L = flArtist().label; return s.replace(/\b([Aa]) DJ\b/g, (m, a) => (/^[aeiou]/i.test(L) ? (a === 'A' ? 'An' : 'an') : a) + ' ' + flLow(L)); };
+  const FL_SKIPUI = '.epk-page,.epk-ed,#kitBio,#kitRider,#kitHosp,#kitNotes,.kv dd,.row,.trow,.list,.ssx-hlist,.ssx-nshows,.ssx-uplist,.ssx-fl-wait,.ssx-fl-plist,.ssx-fl-llist,.cl-row,.pop,.ev,.cal-g,.ssx-fl-artist,[data-open-booking],[data-open-contact],[data-open-task],[data-up],[data-mid],[data-cid],[data-vid],[data-pid],.pick-btn';
+  const FL_UI = 'label,.note,.eyebrow,.hint,.empty,.ssx-epk-k,.ssx-tok,summary,dt,button,[class*="ssx-tour"]';
+  function flUiText(el) {
+    if (!el || el.closest('script,style,textarea')) return false;
+    if (el.closest('.ssx-tok')) return true;
+    if (el.closest('[contenteditable="true"]') || el.closest(FL_SKIPUI)) return false;
+    if (el.closest('option')) return !!el.closest('#t-fill,#cm-fill');
+    if (el.id === 'kitName') return true;
+    return !!el.closest(FL_UI);
+  }
+  function flRelabel(root) {
+    if (!root || !st.db || !FL.cfg) return; const on = flArtist().label !== 'DJ';
+    const fix = n => { if (n.__flOrig == null) { if (!on || !/\bDJs?\b/.test(n.nodeValue)) return; n.__flOrig = n.nodeValue; } const v = on ? flSwap(n.__flOrig) : n.__flOrig; if (n.nodeValue !== v) n.nodeValue = v; };
+    if (root.nodeType === 3) { if (flUiText(root.parentElement)) fix(root); return; }
+    if (root.nodeType !== 1) return;
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); let n;
+    while ((n = w.nextNode())) if ((n.__flOrig != null || /\bDJs?\b/.test(n.nodeValue)) && flUiText(n.parentElement) && !(n.parentElement.id === 'kitName' && (n.__flOrig || n.nodeValue) !== 'Your DJ name')) fix(n);
+    const els = [...(root.matches && root.matches('[placeholder],[data-ph]') ? [root] : []), ...root.querySelectorAll('[placeholder],[data-ph]')];
+    for (const el of els) for (const at of ['placeholder', 'data-ph']) {
+      if (!el.hasAttribute(at)) continue; const k = 'flo' + at; let o = el[k];
+      if (o == null) { const v = el.getAttribute(at); if (!on || !/\bDJs?\b/.test(v)) continue; o = el[k] = v; }
+      const v = on ? flSwap(o) : o; if (el.getAttribute(at) !== v) el.setAttribute(at, v);
+    }
+    if (on) root.querySelectorAll('#sheetRoot input:not([type]), #sheetRoot input[type="text"]').forEach(i => { if (/^DJ performance\b/.test(i.value)) { i.value = i.value.replace(/^DJ performance/, flArtist().label + ' performance'); i.dispatchEvent(new Event('input', { bubbles: true })); } });
+  }
+  function flWrapWords() {
+    const wrap = (name, fixOut) => { const o = window[name]; if (typeof o !== 'function' || o.__fl) return; const w = function () { const out = o.apply(this, arguments); try { if (!FL.cfg || flArtist().label === 'DJ') return out; return out && typeof out.then === 'function' ? out.then(fixOut) : fixOut(out); } catch (_) { return out; } }; w.__fl = true; window[name] = w; };
+    wrap('evPayload', p => { if (p && typeof p.summary === 'string') p.summary = p.summary.replace(/DJ set:/, flArtist().label + ' performance:'); return p; });
+    wrap('newInvoice', inv => { if (inv && Array.isArray(inv.lines)) inv.lines.forEach(l => { if (l && typeof l.desc === 'string') l.desc = l.desc.replace(/^DJ performance/, flArtist().label + ' performance'); }); return inv; });
+    wrap('dmText', s => typeof s === 'string' ? flA(s) : s);
+  }
+  function flArtistBox(id) {
+    const A = flArtist(), c = flCfg().artist || {}, box = document.createElement('div'); box.id = id; box.className = 'ssx-fl-artist';
+    box.innerHTML = `<div class="ssx-fl-k">What kind of artist are you?</div><div class="chips">${FL_KINDS.map(([k, l]) => `<button type="button" class="chip" data-fl-kind="${k}" aria-pressed="${A.kind === k}">${l}</button>`).join('')}</div>
+      <div class="ssx-fl-other" ${A.kind === 'other' ? '' : 'hidden'}><input aria-label="How should the app refer to you?" placeholder="How should we refer to you? e.g. Poet, Drag artist, Choir" value="${esc(c.kind === 'other' ? c.label || '' : '')}" maxlength="30"><button type="button" class="btn small primary" data-fl-kok>Save</button></div>
+      <p class="note" style="margin:0">The app uses this everywhere it used to say "DJ": labels, invoices, calendar events and pitch messages.</p>`;
+    const set = (kind, label) => { flSave({ artist: { kind, label } }); flRelabel(document.body); toast(`Got it. The app will call you ${(/^[aeiou]/i.test(label) ? 'an ' : 'a ') + flLow(label)}.`); flSoon(); };
+    box.querySelectorAll('[data-fl-kind]').forEach(b => b.onclick = () => { const k = b.dataset.flKind; if (k === 'other') { box.querySelector('.ssx-fl-other').hidden = false; box.querySelector('.ssx-fl-other input').focus(); return; } set(k, (FL_KINDS.find(x => x[0] === k) || [])[1]); });
+    const inp = box.querySelector('.ssx-fl-other input'), ok = () => { const v = inp.value.trim().replace(/\s+/g, ' '); if (!v) { toast('Type how we should refer to you'); inp.focus(); return; } set('other', v.charAt(0).toUpperCase() + v.slice(1)); };
+    box.querySelector('[data-fl-kok]').onclick = ok; inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); ok(); } };
+    return box;
+  }
+  function flArtistUI() {
+    const sig = JSON.stringify(flCfg().artist || {});
+    const prof = document.getElementById('ssx-profile');
+    if (prof) { let b = prof.querySelector('#ssx-fl-art'); if (!b || b.dataset.sig !== sig) { if (b && b.contains(document.activeElement)) return; const nb = flArtistBox('ssx-fl-art'); nb.dataset.sig = sig; if (b) b.replaceWith(nb); else { const h = prof.querySelector('.ssx-head, .head, h3'); h ? h.after(nb) : prof.prepend(nb); } } }
+    const home = document.querySelector('section[data-view="home"]'), q = document.getElementById('ssx-fl-ask');
+    if (flCfg().artist) { if (q) q.remove(); return; }
+    if (!home || q || !FL.cfg) return;
+    const card = document.createElement('div'); card.id = 'ssx-fl-ask'; card.className = 'card ssx';
+    card.append(flArtistBox('ssx-fl-art2')); const w = document.getElementById('welcome'); w ? w.after(card) : home.prepend(card);
+  }
 
   /* -- old stage tasks close on their own */
   function flWrapTasks() {
@@ -2540,7 +2612,7 @@ function appExtras() {
     row.querySelector('input').onchange = e => { flSave({ closeOld: e.target.checked }); flRefresh(true); toast(e.target.checked ? 'Old stage tasks now close on their own' : 'Old stage tasks stay open'); };
   }
 
-  /* -- reminders: repeat until done, plus an early heads-up */
+  /* -- reminders: repeat until done, an early heads-up, and posts from the post plan */
   const FL_EVERY = [[0, 'Just once'], [1, 'Every day'], [3, 'Every 3 days'], [7, 'Every week']];
   const FL_AHEAD = [[0, 'None'], [1, '1 day before'], [3, '3 days before'], [7, '1 week before']];
   const flWhen = n => n === 1 ? 'tomorrow' : n === 7 ? 'in a week' : `in ${n} days`;
@@ -2553,21 +2625,21 @@ function appExtras() {
     const chips = (list, key, val) => list.map(([v, l]) => `<button type="button" class="chip" data-fl-${key}="${v}" aria-pressed="${+val === v}">${l}</button>`).join('');
     box.innerHTML = `<div class="ssx-fl-k">Remind me until it's done</div><div class="chips">${chips(FL_EVERY, 'every', c.every)}</div>
       <div class="ssx-fl-k">Early heads-up</div><div class="chips">${chips(FL_AHEAD, 'ahead', c.ahead)}</div>
-      <p class="note" style="margin:0">Reminders stop on their own once you check a task off or mark the show Paid.</p>`;
+      <p class="note" style="margin:0">Reminders stop on their own once you check a task off or mark the show Paid. Posts from your post plan (Media) remind you on their day.</p>`;
     box.querySelectorAll('[data-fl-every]').forEach(b => b.onclick = () => { flSave({ every: +b.dataset.flEvery }); flRemindRow(); flRefresh(); });
     box.querySelectorAll('[data-fl-ahead]').forEach(b => b.onclick = () => { flSave({ ahead: +b.dataset.flAhead }); flRemindRow(); flRefresh(); });
   }
-  // called from the reminder list builder: adds repeat and heads-up copies of each task reminder
+  // called from the reminder list builder
   function flRepeat(out) {
-    const c = flCfg(), every = +c.every || 0, ahead = +c.ahead || 0; if (!every && !ahead) return;
-    const t = todayStr(), end = addDays(t, 60), add = [];
-    for (const it of out) {
-      if (!it || !it.bookingId || !it.at || !(it.key || it.kind === 'paid')) continue;
+    const c = flCfg(), every = +c.every || 0, ahead = +c.ahead || 0, t = todayStr(), end = addDays(t, 60), add = [];
+    if (every || ahead) for (const it of out) {
+      if (!it || !it.bookingId || !it.at || !(it.key || it.kind === 'paid') || String(it.key || '').startsWith('post_')) continue;
       const base = String(it.id || '').slice(0, 96), paid = it.kind === 'paid';
       if (ahead && !paid) { const d = addDays(it.at, -ahead); if (d >= t) add.push({ ...it, id: `${base}:h${d}`, at: d, body: `Coming up ${flWhen(ahead)}: "${it.label}" for ${it.show}.` }); }
       if (every) for (let d = addDays(it.at, every), n = 0; d <= end && n < 30; d = addDays(d, every), n++) if (d >= t)
         add.push({ ...it, id: `${base}:r${d}`, at: d, body: paid ? `${it.show} still isn't marked Paid. Did you get paid?` : `Still open: "${it.label}" for ${it.show}.` });
     }
+    try { flPlan(true).filter(p => p.due >= t && p.due <= end).forEach(p => add.push({ id: `post:${p.b.id}:${p.kind}:${p.due}`.slice(0, 120), at: p.due, bookingId: p.b.id, key: 'post_' + p.kind, label: `Post: ${FL_POSTS[p.kind][0]}`, show: bookingName(p.b).slice(0, 80), showDate: p.b.date || '', body: `Time to post about ${bookingName(p.b)}: ${FL_POSTS[p.kind][1]}. Your caption is ready in Media.` })); } catch (_) {}
     out.push(...add);
   }
 
@@ -2599,7 +2671,7 @@ function appExtras() {
       venue: `${fld('c-org', 'Venue name', 'autocomplete="off" placeholder="Start typing to look it up"')}${fld('c-addr', 'Address', 'autocomplete="off" placeholder="Fills in when you pick a place"')}
         <div class="frow">${fld('c-city', 'City', `value="${esc(city)}"`)}${email}</div><input type="hidden" id="c-site"><input type="hidden" id="c-phone">`,
       promoter: `${seg('pkind', [['person', 'Person'], ['collective', 'Collective or company']])}${fld('ssx-fl-name', 'Name')}<div class="frow">${email}${fld('ssx-fl-ig', 'Instagram (optional)', 'placeholder="@handle"')}</div>`,
-      media: `${fld('ssx-fl-name', 'Name')}${seg('mkind', [['photo', 'Photo'], ['video', 'Video'], ['both', 'Photo & video']])}${email}`,
+      media: `${fld('ssx-fl-name', 'Name')}${seg('mkind', [['photo', 'Photo'], ['video', 'Video'], ['both', 'Photo & video']])}<div class="frow">${email}${fld('ssx-fl-ig', 'Instagram (optional)', 'placeholder="@handle"')}</div>`,
       talk: `${fld('ssx-fl-name', 'Name')}${email}`
     }[kind];
     const p = document.createElement('div'); p.id = 'ssx-fl-new'; p.className = 'ssx-fl-new';
@@ -2612,7 +2684,7 @@ function appExtras() {
     q('[data-fl-cancel]').onclick = done;
     q('[data-fl-more]').onclick = () => { p.remove(); sel.__flBypass = true; sel.value = '__new__'; sel.dispatchEvent(new Event('change', { bubbles: true })); };
     const go = async () => {
-      const name = (first.value || '').trim(), mail = (q('#ssx-fl-email') || {}).value || '';
+      const name = (first.value || '').trim(), mail = (q('#ssx-fl-email') || {}).value || '', ig = ((q('#ssx-fl-ig') || {}).value || '').trim();
       if (!name) { toast(kind === 'venue' ? 'Add the venue name' : 'Add a name'); first.focus(); return; }
       const venueId = val('#b-venue'), promoId = val('#b-promo'), talkId = val('#b-talk'), c0 = city || '';
       let data;
@@ -2621,9 +2693,9 @@ function appExtras() {
         data = { type: 'venue', vkind: 'club', org: name, address: (q('#c-addr').value || '').trim(), city: (q('#c-city').value || '').trim(), website: q('#c-site').value || '', phone: q('#c-phone').value || '', email: mail.trim(), promoterIds: [...new Set([promoId, bc].filter(x => x && x !== '__new__'))], ...(bc ? { bookingContactId: bc } : {}) };
       } else if (kind === 'promoter') {
         const coll = segVal('pkind') === 'collective', vIds = venueId && venueId !== '__new__' ? [venueId] : [];
-        data = coll ? { type: 'promoter', pkind: 'collective', org: name, email: mail.trim(), instagram: (q('#ssx-fl-ig').value || '').trim(), city: c0, venueIds: vIds }
-          : { type: 'promoter', pkind: 'person', name, email: mail.trim(), instagram: (q('#ssx-fl-ig').value || '').trim(), city: c0, venueIds: vIds, collectiveIds: [] };
-      } else if (kind === 'media') data = { type: 'media', mkind: segVal('mkind') || 'photo', name, email: mail.trim(), city: c0 };
+        data = coll ? { type: 'promoter', pkind: 'collective', org: name, email: mail.trim(), instagram: ig, city: c0, venueIds: vIds }
+          : { type: 'promoter', pkind: 'person', name, email: mail.trim(), instagram: ig, city: c0, venueIds: vIds, collectiveIds: [] };
+      } else if (kind === 'media') data = { type: 'media', mkind: segVal('mkind') || 'photo', name, email: mail.trim(), instagram: ig, city: c0 };
       else data = { type: 'promoter', pkind: 'person', name, email: mail.trim(), city: c0, venueIds: [], collectiveIds: promoId ? [promoId] : [] };
       const btn = q('[data-fl-save]'); btn.disabled = true; btn.textContent = 'Adding…';
       const id = await save('contacts', null, data);
@@ -2661,12 +2733,13 @@ function appExtras() {
     const root = document.querySelector(`#sheetRoot .sheet[data-booking="${id}"]`), b = flBk().find(x => x.id === id); if (!root || !b) return;
     if (flCfg().closeOld) root.querySelectorAll('[data-stgtog]').forEach(h => { if (h.dataset.stgtog === b.status) return; const n = [...h.querySelectorAll('.note')].pop(); if (n && /to do/.test(n.textContent)) { n.textContent = 'Closed'; n.title = 'Closed when this booking moved on'; } });
     const dl = root.querySelector('dl.kv'); if (!dl || dl.querySelector('.ssx-fl-epkrow') || flKind(b.status) === 'lost') return;
-    const n = FL.media.filter(m => m.bookingId === id).length;
+    const n = FL.media.filter(m => m.bookingId === id && m.assetId).length;
     const add = (label, html, cls) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = label; dd.className = cls; dd.innerHTML = html; dl.append(dt, dd); return dd; };
     const ep = add('EPK', `<label class="ssx-fl-check"><input type="checkbox" ${b.epkOff ? '' : 'checked'}> Show on my EPK</label>`, 'ssx-fl-epkrow');
     ep.querySelector('input').onchange = async e => { const on = e.target.checked; if (await window.patch('bookings', id, { epkOff: !on })) toast(on ? 'On your EPK' : 'Hidden from your EPK'); };
-    const ph = add('Photos', `${n ? `<span>${n} in Media</span> ` : ''}<button type="button" class="btn small" data-fl-addph>Add photos</button>`, 'ssx-fl-phrow');
+    const ph = add('Photos', `${n ? `<button type="button" class="linkbtn" data-fl-goto>${n} in Media</button> ` : ''}<button type="button" class="btn small" data-fl-addph>Add photos</button>`, 'ssx-fl-phrow');
     ph.querySelector('[data-fl-addph]').onclick = () => flAddPhotos(id, () => { if (document.querySelector(`#sheetRoot .sheet[data-booking="${id}"]`)) bookingView(id); });
+    const gt = ph.querySelector('[data-fl-goto]'); if (gt) gt.onclick = () => { close(); goTab('media'); };
   }
 
   /* -- "Show on my EPK" on past shows: the add list, Check my shows, See all and the edit form */
@@ -2682,7 +2755,8 @@ function appExtras() {
       if (!chip) { chip = flChip(!r.epkOff); const act = row.querySelector('.ssx-hact'); act ? act.before(chip) : row.appendChild(chip); chip.onclick = e => { e.preventDefault(); e.stopPropagation(); flDraftSet(r, !!r.epkOff); chip.setAttribute('aria-pressed', String(!r.epkOff)); }; }
       else if (chip.getAttribute('aria-pressed') !== String(!r.epkOff)) chip.setAttribute('aria-pressed', String(!r.epkOff));
     });
-    const hf = root.querySelector('.ssx-hfile .note'); if (hf && !hf.dataset.fl) { hf.dataset.fl = '1'; hf.textContent += ' Use the On EPK column to pick which shows go on your EPK.'; }
+    const hf = root.querySelector('.ssx-hfile .note'); if (hf && !hf.dataset.fl) { hf.dataset.fl = '1'; hf.textContent = 'Fill in a Google Sheet and import it in one tap, or use the template with Excel and upload it as a CSV. The On EPK column picks which shows go on your EPK.'; }
+    flSheetRow(root);
   }
   function flReview(root) {
     const list = root.querySelector('.ssx-hcheck'); if (!list) return; flApplyDraft(); const D = flDraft();
@@ -2724,6 +2798,17 @@ function appExtras() {
     const el = document.createElement('label'); el.className = 'ssx-fl-check'; el.innerHTML = `<input type="checkbox" id="ssx-nh-epk" ${p && p.epkOff ? '' : 'checked'}> Show on my EPK`;
     const a = root.querySelector('.actions'); a ? a.before(el) : root.appendChild(el);
   }
+  // dates the template reader didn't know: 7-Feb-25, Feb 7 25, ranges ("May 1, 2026 → May 2, 2026"), month-year ("Feb-25"), spreadsheet date numbers
+  function flDateFix(v) {
+    let t = String(v == null ? '' : v).trim();
+    if (/^\d{5}(\.\d+)?$/.test(t)) { const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(+t) * 864e5); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`; }
+    t = t.split(/\s*(?:→|->|–|—|\bto\b|\bthru\b|\bthrough\b|\s-\s)\s*/i)[0].trim();
+    const MO = 'jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec', yr = y => y.length === 2 ? 2000 + +y : +y; let m;
+    if ((m = t.match(new RegExp(`^(\\d{1,2})[-\\s/.]+(${MO})[a-z]*\\.?[-\\s/.,]+(\\d{4}|\\d{2})$`, 'i')))) return `${m[2]} ${+m[1]}, ${yr(m[3])}`;
+    if ((m = t.match(new RegExp(`^(${MO})[a-z]*\\.?[-\\s/.]+(\\d{1,2})[-\\s/.,]+(\\d{4}|\\d{2})$`, 'i')))) return `${m[1]} ${+m[2]}, ${yr(m[3])}`;
+    if ((m = t.match(new RegExp(`^(${MO})[a-z]*\\.?[-\\s/.']+(\\d{2})$`, 'i')))) return `${m[1]} ${2000 + +m[2]}`;
+    return t;
+  }
   const flCells = line => { if (line.includes('\t')) return line.split('\t').map(s => s.trim()); const out = []; let cur = '', q = false; for (let i = 0; i < line.length; i++) { const ch = line[i]; if (ch === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q; } else if (ch === ',' && !q) { out.push(cur); cur = ''; } else cur += ch; } out.push(cur); return out.map(s => s.trim()); };
   function flReadEpkCol(text) {
     const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim()); if (lines.length < 2) return;
@@ -2736,10 +2821,48 @@ function appExtras() {
     }
     flApplyDraft(); flSoon();
   }
+  const FL_TPL = 'Date,Event name,Venue,City,On EPK (yes/no)\r\n3/14/2025,Example Block Party,Example Venue,San Diego,yes\r\n';
   function flTemplate() {
-    const csv = 'Date,Event name,Venue,City,On EPK (yes/no)\r\n3/14/2025,Example Block Party,Example Venue,San Diego,yes\r\n';
-    const u = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })), a = document.createElement('a');
+    const u = URL.createObjectURL(new Blob(['\uFEFF' + FL_TPL], { type: 'text/csv;charset=utf-8' })), a = document.createElement('a');
     a.href = u; a.download = 'set-and-settled-show-history-template.csv'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 2000);
+  }
+  // Google Sheet: made in their Drive with the right columns, then read back in one tap
+  async function flToken() { try { const mcp = await driveReady(); if (!mcp) return ''; const r = await mcp.callTool('Google Drive', 'picker_token', {}); return ((r || {}).payload || {}).token || ''; } catch (_) { return ''; } }
+  async function flMakeSheet(btn) {
+    const win = window.open('', '_blank'); btn.disabled = true; btn.textContent = 'Making your sheet…';
+    try {
+      const tok = await flToken(); if (!tok) throw new Error('drive');
+      const bd = 'ssx' + Date.now(), meta = { name: 'Set & Settled – Show history', mimeType: 'application/vnd.google-apps.spreadsheet' };
+      const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', { method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'multipart/related; boundary=' + bd }, body: `--${bd}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${bd}\r\nContent-Type: text/csv\r\n\r\n${FL_TPL}\r\n--${bd}--` });
+      if (!r.ok) throw new Error('make ' + r.status);
+      const f = await r.json(), url = f.webViewLink || `https://docs.google.com/spreadsheets/d/${f.id}/edit`;
+      await flSave({ sheetId: f.id, sheetUrl: url });
+      if (win && !win.closed) win.location.href = url; else window.open(url, '_blank');
+      toast('Your sheet is open in a new tab. Fill it in, then come back and tap Import.'); flSoon();
+    } catch (e) { if (win && !win.closed) win.close(); toast(e.message === 'drive' ? 'Connect Google Drive in Settings, then try again' : "Couldn't make the sheet. Try again."); }
+    finally { if (btn.isConnected) { btn.disabled = false; btn.textContent = 'Make a Google Sheet'; } }
+  }
+  async function flImportSheet(root, btn) {
+    const c = flCfg(); if (!c.sheetId) return; btn.disabled = true; btn.textContent = 'Reading your sheet…';
+    try {
+      const tok = await flToken(); if (!tok) throw new Error('drive');
+      const r = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(c.sheetId)}/export?mimeType=text%2Fcsv`, { headers: { Authorization: 'Bearer ' + tok } });
+      if (r.status === 404) { await flSave({ sheetId: '', sheetUrl: '' }); throw new Error('gone'); }
+      if (!r.ok) throw new Error('read ' + r.status);
+      const text = await r.text(), inp = root.querySelector('#nh-file');
+      if (!inp) throw new Error('form');
+      const dt = new DataTransfer(); dt.items.add(new File([text], 'google-sheet.csv', { type: 'text/csv' })); inp.files = dt.files; inp.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (e) { toast(e.message === 'drive' ? 'Connect Google Drive in Settings, then try again' : e.message === 'gone' ? 'That sheet was deleted. Make a new one.' : "Couldn't read your sheet. Try again."); }
+    finally { if (btn.isConnected) { btn.disabled = false; btn.textContent = 'Import from my sheet'; } }
+  }
+  function flSheetRow(root) {
+    const hf = root.querySelector('.ssx-hfile'); if (!hf) return;
+    const c = flCfg(), sig = c.sheetId || '-'; let row = hf.querySelector('.ssx-fl-gs'); if (row && row.dataset.sig === sig) return;
+    if (!row) { row = document.createElement('div'); row.className = 'ssx-row ssx-fl-gs'; const n = hf.querySelector('.note'); n ? n.after(row) : hf.appendChild(row); }
+    row.dataset.sig = sig;
+    row.innerHTML = c.sheetId ? `<a class="btn small" href="${esc(c.sheetUrl)}" target="_blank" rel="noopener">Open my Google Sheet</a><button type="button" class="btn small primary" data-fl-gsin>Import from my sheet</button><button type="button" class="linkbtn" data-fl-gsnew>Make a new one</button>` : '<button type="button" class="btn small primary" data-fl-gsnew>Make a Google Sheet</button>';
+    const nw = row.querySelector('[data-fl-gsnew]'); nw.onclick = () => flMakeSheet(nw);
+    const im = row.querySelector('[data-fl-gsin]'); if (im) im.onclick = () => flImportSheet(root, im);
   }
   function flDocClick(e) {
     const t = e.target && e.target.closest ? e.target : null; if (!t) return;
@@ -2766,10 +2889,11 @@ function appExtras() {
     w.__fl = true; window.save = w;
   }
 
-  /* -- Media: photos from your shows in one place */
+  /* -- Media: photos, links and folders, and a post plan */
   const flAssets = async () => { try { return await claude.use('assets'); } catch (_) { return null; } };
   const flSrc = id => { try { return typeof __blob === 'function' ? __blob(id) : ''; } catch (_) { return ''; } };
   const flPhotos = () => FL.media.filter(m => m.assetId).sort((a, b) => String(b.addedAt || '').localeCompare(String(a.addedAt || '')));
+  const flLinks = () => FL.media.filter(m => m.type === 'link' && m.url).sort((a, b) => String(b.addedAt || '').localeCompare(String(a.addedAt || '')));
   const flKitPhotos = () => { try { return (S.kitFiles || []).filter(f => f.assetId && /^image\//.test(f.contentType || '')); } catch (_) { return []; } };
   const flAvatar = () => { try { return (S.profile || {}).avatarId || ''; } catch (_) { return ''; } };
   function flEpkAsset() {
@@ -2782,16 +2906,17 @@ function appExtras() {
   const flEpkPhoto = () => { const id = flEpkAsset(); return id ? flSrc(id) : ''; };
   const flFolder = b => { try { return subUrl(b, 'mkt', 'media') || b.driveUrl || (((b.folders || {}).mkt) || {}).url || ''; } catch (_) { return b.driveUrl || ''; } };
   function flWaiting() {
-    const t = todayStr(), from = addDays(t, -60), have = new Set(FL.media.map(m => m.bookingId).filter(Boolean)), skip = flCfg().mediaDone || {};
+    const t = todayStr(), from = addDays(t, -60), have = new Set(FL.media.filter(m => m.assetId).map(m => m.bookingId).filter(Boolean)), skip = flCfg().mediaDone || {};
     return flBk().filter(b => b.date && b.date <= t && b.date >= from && ['played', 'paid'].includes(flKind(b.status)) && (b.mediaId || flFolder(b)) && !have.has(b.id) && !skip[b.id]).sort((a, b) => b.date.localeCompare(a.date));
   }
-  const flShows = () => flBk().filter(b => b.date && flKind(b.status) !== 'lost' && b.date <= addDays(todayStr(), 7)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60);
+  const flShows = () => flBk().filter(b => b.date && flKind(b.status) !== 'lost' && b.date <= addDays(todayStr(), 60)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 80);
+  // app copies are kept to 1600px so storage stays small
   async function flShrink(file) {
     try {
-      const bmp = await createImageBitmap(file), r = Math.min(1, 2400 / Math.max(bmp.width, bmp.height));
-      if (r === 1 && file.size < 3e6) return file;
+      const bmp = await createImageBitmap(file), r = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+      if (r === 1 && file.size < 1.2e6) return file;
       const c = document.createElement('canvas'); c.width = Math.round(bmp.width * r); c.height = Math.round(bmp.height * r); c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-      return await new Promise(res => c.toBlob(x => res(x || file), 'image/jpeg', 0.88));
+      return await new Promise(res => c.toBlob(x => res(x || file), 'image/jpeg', 0.85));
     } catch (_) { return file; }
   }
   async function flAddFiles(files, bookingId, after) {
@@ -2811,47 +2936,190 @@ function appExtras() {
     i.onchange = () => { const files = [...(i.files || [])]; i.remove(); flAddFiles(files, bookingId, after); };
     i.click();
   }
+  async function flRemovePhoto(kind, docId, assetId) {
+    if (kind === 'kit') { try { await st.db.collection('kitFiles').doc(docId).delete(); } catch (_) {} }
+    else { await st.db.collection('media').doc(docId).delete().catch(() => {}); FL.media = FL.media.filter(x => x.id !== docId); }
+    if (flCfg().epkPhoto === assetId) flSave({ epkPhoto: '' });
+    try { const a = await flAssets(); a && await a.delete(assetId); } catch (_) {}
+    toast('Photo removed'); flSoon(); try { if (EPK.el) epkRender(); } catch (_) {}
+  }
   function flAsk(id) {
     const b = flBk().find(x => x.id === id), m = b && contact(b.mediaId); if (!b || !m) return;
     const name = bookingName(b), f = flFolder(b);
     try { composeSheet({ booking: b.id, to: m.id, subject: `Photos & video from ${name}`, body: `Hi ${(cName(m) || '').split(' ')[0] || 'there'},\n\nThank you for shooting ${name}! Whenever they're ready, could you drop the photos and video here?\n${f || '(folder link)'}\n\nThanks so much,\n${myName()}` }); } catch (_) {}
   }
-  const flThumb = m => `<button type="button" class="ssx-fl-th${flEpkAsset() === m.assetId ? ' on' : ''}" data-fl-ph="${esc(m.id)}" aria-label="Open photo ${esc(m.name || '')}"><img src="${esc(flSrc(m.assetId))}" alt="" loading="lazy">${flEpkAsset() === m.assetId ? '<span class="ssx-fl-badge">EPK</span>' : ''}</button>`;
+  const flLinkKind = u => { const s = String(u || '').toLowerCase(); return /youtu\.?be|vimeo|tiktok/.test(s) ? 'Video' : /soundcloud|mixcloud|spotify|bandcamp|music\.apple|audiomack/.test(s) ? 'Music' : /instagram/.test(s) ? 'Instagram' : /drive\.google|dropbox|photos\.google|wetransfer|icloud/.test(s) ? 'Folder' : 'Link'; };
+  const flHost = u => { try { return new URL(u).host.replace(/^www\./, ''); } catch (_) { return u; } };
+  // every link the Kit link form can pick from: saved media links plus each show's media folder
+  function flMediaLinks() {
+    const out = flLinks().map(l => { const b = l.bookingId && flBk().find(x => x.id === l.bookingId); return { id: l.id, url: l.url, label: l.title || (b ? `${bookingName(b)} – ${flLinkKind(l.url).toLowerCase()}` : flHost(l.url)), kind: flLinkKind(l.url), b }; });
+    flBk().filter(b => b.date && flKind(b.status) !== 'lost' && flFolder(b)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20).forEach(b => out.push({ id: 'f:' + b.id, url: flFolder(b), label: `${bookingName(b)} photos (${dueShort(b.date)})`, kind: 'Folder', b, auto: true }));
+    return out;
+  }
+  function flLinkSheet(l = {}) {
+    const bks = flShows();
+    sheet(`<h3>${l.id ? 'Edit link' : 'Add a media link'}</h3><p class="note" style="margin:0">A video, mix, Instagram post or photo folder. It shows up when you add links to your Kit and EPK.</p>
+      <div class="f"><label for="ssx-fl-lu">Link</label><input id="ssx-fl-lu" type="url" value="${esc(l.url || '')}" placeholder="https://"></div>
+      <div class="f"><label for="ssx-fl-lt">Name (optional)</label><input id="ssx-fl-lt" value="${esc(l.title || '')}" placeholder="e.g. Freakuency set recording"></div>
+      <div class="f"><label for="ssx-fl-lb">From show (optional)</label><select id="ssx-fl-lb" class="srch"><option value="">Not linked to a show</option>${bks.map(b => `<option value="${esc(b.id)}" ${b.id === l.bookingId ? 'selected' : ''}>${esc(bookingName(b) + (b.date ? ' · ' + dueShort(b.date) : ''))}</option>`).join('')}</select></div>
+      <div class="actions">${l.id ? '<button class="btn danger" data-fl-ldel>Remove</button>' : ''}<button class="btn" data-cancel>Cancel</button><button class="btn primary" data-save>Save</button></div>`, root => {
+      root.querySelector('[data-cancel]').onclick = close;
+      const del = root.querySelector('[data-fl-ldel]'); if (del) del.onclick = () => flTwoTap(del, 'Tap again to remove', async () => { await st.db.collection('media').doc(l.id).delete().catch(() => {}); close(); toast('Link removed'); });
+      root.querySelector('[data-save]').onclick = async () => {
+        let url = root.querySelector('#ssx-fl-lu').value.trim(); if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
+        try { new URL(url); } catch (_) { toast('Paste a full link'); root.querySelector('#ssx-fl-lu').focus(); return; }
+        const d = { type: 'link', url, title: root.querySelector('#ssx-fl-lt').value.trim().slice(0, 120), bookingId: root.querySelector('#ssx-fl-lb').value, addedAt: l.addedAt || new Date().toISOString() };
+        if (l.id) await st.db.collection('media').doc(l.id).set(d); else await st.db.collection('media').add(d);
+        close(); toast('Link saved');
+      };
+    });
+  }
+  // the Kit "Add link" form: pick from your media links instead of pasting
+  function flLinkPicker(root) {
+    const u = root.querySelector('#l-url'), lab = root.querySelector('#l-label'); if (!u || !lab || root.querySelector('#ssx-fl-lpick') || u.value) return;
+    const opts = flMediaLinks().slice(0, 12); if (!opts.length) return;
+    const box = document.createElement('div'); box.id = 'ssx-fl-lpick'; box.className = 'f';
+    box.innerHTML = `<label>Pick from Media</label><div class="chips">${opts.map((o, i) => `<button type="button" class="chip" data-fl-lp="${i}">${esc(o.label)}</button>`).join('')}</div><span class="note">Or paste any link below.</span>`;
+    const h = root.querySelector('h3'); h ? h.after(box) : root.prepend(box);
+    box.querySelectorAll('[data-fl-lp]').forEach(b => b.onclick = () => {
+      const o = opts[+b.dataset.flLp]; u.value = o.url; lab.value = o.label; const g = root.querySelector('#l-group');
+      if (g) { g.value = o.kind === 'Video' || o.kind === 'Music' ? 'music' : 'press'; if (typeof g._sync === 'function') g._sync(); }
+      [u, lab].forEach(x => x.dispatchEvent(new Event('input', { bubbles: true })));
+      box.querySelectorAll('[data-fl-lp]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    });
+  }
+
+  // post plan: the posts each show needs, with captions written from the booking
+  const FL_POSTS = { announce: ['Announce it', 'let people know you are playing', -14], countdown: ['Countdown', 'a reminder a couple of days before', -2], dayof: ['Tonight', 'a day-of post or story', 0], recap: ['Recap and thank-you', 'photos and a thank-you to the venue and crew', 1] };
+  const flHandle = c => c && c.instagram ? '@' + String(c.instagram).replace(/^@/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/\/.*$/, '').trim() : '';
+  function flPlan(all) {
+    const t = todayStr(), plan = flCfg().plan || {}, out = [];
+    for (const b of flBk()) {
+      if (!b.date) continue; const k = flKind(b.status), past = b.date < t;
+      for (const [kind, [, , off]] of Object.entries(FL_POSTS)) {
+        if (plan[kind] === false) continue; const p = FL.posts[`${b.id}__${kind}`];
+        if (p && (p.status === 'posted' || p.status === 'skipped')) continue;
+        let due = addDays(b.date, off);
+        if (kind === 'recap') { if (!(['played', 'paid'].includes(k) || (k === 'confirmed' && past)) || daysBetween(b.date, t) > 14) continue; }
+        else { if (k !== 'confirmed' || past) continue; if (kind === 'announce' && daysBetween(t, b.date) <= 2 && plan.countdown !== false) continue; if (due < t) due = t; }
+        if (!all && daysBetween(t, due) > 21) continue;
+        out.push({ b, kind, due, draft: p && p.caption });
+      }
+    }
+    return out.sort((a, b) => a.due.localeCompare(b.due));
+  }
+  function flCaption(b, kind) {
+    const v = contact(b.venueId), pr = contact(b.promoterId), m = contact(b.mediaId), show = bookingName(b), where = cName(v) || '';
+    const day = parseD(b.date) ? parseD(b.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : '';
+    const at = where && where !== show ? ` at ${where}` : '', city = b.city ? ` in ${b.city}` : '';
+    const tags = [...new Set([flHandle(v), flHandle(pr)].filter(Boolean))].join(' ');
+    const tix = b.ticketUrl ? `\nTickets: ${b.ticketUrl}` : '', time = b.setTime ? ` I'm on ${b.setTime}.` : '';
+    const own = String(flCfg().tags || '').trim(), city2 = b.city ? '#' + b.city.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+    const foot = [tags, [own, own.toLowerCase().includes(city2) ? '' : city2].filter(Boolean).join(' ')].filter(Boolean).join('\n');
+    const body = {
+      announce: `${day}: catch me live for ${show}${at}${city}.${tix}`,
+      countdown: `2 days until ${show}${at}! Who's coming?${tix}`,
+      dayof: `Tonight: ${show}${at}.${time} See you there.${tix}`,
+      recap: `Thank you${where ? ' ' + where : ''} for having me at ${show}. What a night!${m ? ` 📸 ${flHandle(m) || cName(m)}` : ''}`
+    }[kind];
+    return body + (foot ? '\n\n' + foot : '');
+  }
+  const clKeys = b => { try { return [...new Set(STAGES.flatMap(st0 => clFor(b, st0).map(x => x.key)))]; } catch (_) { return []; } };
+  async function flMarkPost(b, kind, status, caption) {
+    await st.db.collection('posts').doc(`${b.id}__${kind}`).set({ bookingId: b.id, kind, status, caption: caption || '', at: new Date().toISOString() });
+    if (status !== 'posted') return;
+    const keys = { ['post_' + kind]: true }, ck = clKeys(b);
+    if (kind === 'announce' && ck.includes('promo')) keys.promo = true;
+    if (kind === 'recap' && ck.includes('pl_recap')) keys.pl_recap = true;
+    await window.patch('bookings', b.id, { tasks: keys });
+    if (kind === 'recap') { try { apMark('done', 'recap:' + b.id); } catch (_) {} }
+  }
+  function flPostSheet(bid, kind) {
+    const b = flBk().find(x => x.id === bid); if (!b) return;
+    const saved = FL.posts[`${bid}__${kind}`] || {}, mine = flPhotos().filter(m => m.bookingId === bid), others = flPhotos().filter(m => m.bookingId !== bid).slice(0, 12), pics = [...mine, ...others];
+    let picked = FL.sel[bid + kind] || (mine[0] || {}).assetId || '', touched = !!saved.caption;
+    const cap0 = saved.caption || flCaption(b, kind);
+    sheet(`<h3>${esc(FL_POSTS[kind][0])}: ${esc(bookingName(b))}</h3><p class="note" style="margin:0">${esc(fmtD(b.date))}. Written from the booking, so just check it and post.</p>
+      <div class="f"><label for="ssx-fl-cap">Caption</label><textarea id="ssx-fl-cap" style="min-height:150px">${esc(cap0)}</textarea></div>
+      <div class="f"><label>Photo</label><div class="ssx-fl-picks">${pics.map(p => `<button type="button" class="ssx-fl-pick" data-fl-pp="${esc(p.assetId)}" aria-pressed="${p.assetId === picked}" aria-label="Use ${esc(p.name || 'photo')}"><img src="${esc(flSrc(p.assetId))}" alt=""></button>`).join('')}<button type="button" class="ssx-chip" data-fl-pup>+ Add photo</button></div>${pics.length ? '' : '<span class="note">No photos yet. Text posts and stories work too.</span>'}</div>
+      <div class="f"><label for="ssx-fl-tags">Hashtags for every post</label><input id="ssx-fl-tags" value="${esc(flCfg().tags || '')}" placeholder="#sandiego #livemusic"></div>
+      <div class="ssx-row"><button type="button" class="btn primary small" data-fl-share>Copy caption and share</button><button type="button" class="btn small" data-fl-copy>Copy caption</button></div>
+      <p class="note" style="margin:0">On a phone, Share opens Instagram, TikTok or any app with the photo. Paste the caption there.</p>
+      <div class="actions"><button class="btn" data-fl-skip>Skip this post</button><button class="btn" data-cancel>Close</button><button class="btn primary" data-fl-done>I posted it</button></div>`, root => {
+      const cap = root.querySelector('#ssx-fl-cap'), tg = root.querySelector('#ssx-fl-tags');
+      let tmr = 0; cap.addEventListener('input', () => { touched = true; clearTimeout(tmr); tmr = setTimeout(() => st.db.collection('posts').doc(`${bid}__${kind}`).set({ bookingId: bid, kind, status: 'draft', caption: cap.value, at: new Date().toISOString() }).catch(() => {}), 800); });
+      tg.addEventListener('change', () => { flSave({ tags: tg.value.trim() }); if (!touched) cap.value = flCaption(b, kind); });
+      root.querySelectorAll('[data-fl-pp]').forEach(x => x.onclick = () => { picked = x.getAttribute('aria-pressed') === 'true' ? '' : x.dataset.flPp; FL.sel[bid + kind] = picked; root.querySelectorAll('[data-fl-pp]').forEach(y => y.setAttribute('aria-pressed', String(y.dataset.flPp === picked))); });
+      root.querySelector('[data-fl-pup]').onclick = () => flAddPhotos(bid, ids => { FL.sel[bid + kind] = ids[0]; flPostSheet(bid, kind); });
+      const copy = async () => { try { await navigator.clipboard.writeText(cap.value); return true; } catch (_) { cap.select(); try { return document.execCommand('copy'); } catch (__) { return false; } } };
+      root.querySelector('[data-fl-copy]').onclick = async () => toast(await copy() ? 'Caption copied' : 'Select the caption and copy it');
+      root.querySelector('[data-fl-share]').onclick = async () => {
+        const ok = await copy(); let file = null;
+        if (picked) { try { const r = await fetch(flSrc(picked)); const bl = await r.blob(); file = new File([bl], (bookingName(b).replace(/[^\w\- ]+/g, '').trim() || 'photo') + (/png/.test(bl.type) ? '.png' : '.jpg'), { type: bl.type || 'image/jpeg' }); } catch (_) {} }
+        try {
+          if (file && navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], text: cap.value });
+          else if (!file && navigator.share) await navigator.share({ text: cap.value });
+          else { if (file) await window.dl(file.name, file); toast(ok ? 'Caption copied and photo saved. Post it from your phone or Instagram.' : 'Photo saved. Copy the caption, then post.'); return; }
+          toast('Posted it? Tap "I posted it" to check it off.');
+        } catch (e) { if (e && e.name !== 'AbortError') toast(ok ? 'Caption copied' : "Couldn't open sharing here"); }
+      };
+      root.querySelector('[data-cancel]').onclick = () => { close(); };
+      root.querySelector('[data-fl-skip]').onclick = async () => { await flMarkPost(b, kind, 'skipped', cap.value); close(); toast('Skipped', () => st.db.collection('posts').doc(`${bid}__${kind}`).delete().catch(() => {})); };
+      root.querySelector('[data-fl-done]').onclick = async () => { await flMarkPost(b, kind, 'posted', cap.value); close(); toast('Nice! Checked off.'); };
+    });
+  }
+
+  // the Media tab
+  const FL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>';
+  function flMediaTab() {
+    const main = document.getElementById('main'), kit = document.querySelector('section[data-view="kit"]'); if (!main || !kit) return;
+    let sec = document.querySelector('section[data-view="media"]');
+    if (!sec) {
+      sec = document.createElement('section'); sec.dataset.view = 'media'; sec.hidden = true;
+      sec.innerHTML = `<div class="head"><div><h2>Media</h2><p class="note" style="margin:2px 0 0">Photos, videos and links from your shows, and a simple plan for posting about them.</p></div><div class="chips"><button type="button" class="btn" data-fl-addlink>+ Add link</button><button type="button" class="btn primary" data-fl-add>Add photos</button></div></div><div id="ssx-fl-mhost"></div>`;
+      kit.after(sec); sec.querySelector('[data-fl-addlink]').onclick = () => flLinkSheet(); sec.querySelector('[data-fl-add]').onclick = () => flAddPhotos('');
+    }
+    const tabs = document.getElementById('tabs'); if (tabs && !tabs.querySelector('[data-tab="media"]')) {
+      const b = document.createElement('button'); b.type = 'button'; b.dataset.tab = 'media'; b.setAttribute('aria-current', 'false'); b.innerHTML = FL_ICON + 'Media'; b.onclick = () => window.goTab('media');
+      const k = tabs.querySelector('[data-tab="kit"]'); k ? k.after(b) : tabs.appendChild(b);
+    }
+    try { if (typeof TAB_NAMES === 'object' && !TAB_NAMES.media) TAB_NAMES.media = 'Media'; } catch (_) {}
+  }
+  const flThumb = (m, x) => `<span class="ssx-fl-thw"><button type="button" class="ssx-fl-th${flEpkAsset() === m.assetId ? ' on' : ''}" data-fl-ph="${esc(m.id)}" aria-label="Open photo ${esc(m.name || '')}"><img src="${esc(flSrc(m.assetId))}" alt="" loading="lazy">${flEpkAsset() === m.assetId ? '<span class="ssx-fl-badge">EPK</span>' : ''}</button>${x ? `<button type="button" class="ssx-fl-x" data-fl-rm="${esc(m.id)}" aria-label="Remove photo ${esc(m.name || '')}">×</button>` : ''}</span>`;
   const flWaitRow = b => { const m = contact(b.mediaId), f = flFolder(b);
     return `<div class="ssx-fl-wrow"><span><b>${esc(bookingName(b))}</b><span class="note">${esc(fmtD(b.date))}${m ? ' · ' + esc(cName(m)) : ''}</span></span><span class="ssx-fl-wact">${f ? `<a class="btn small" href="${esc(f)}" target="_blank" rel="noopener">Open folder</a>` : ''}${m && m.email ? `<button type="button" class="btn small" data-fl-ask="${esc(b.id)}">Ask for files</button>` : ''}<button type="button" class="btn small primary" data-fl-addb="${esc(b.id)}">Add photos</button><button type="button" class="btn small" data-fl-skip="${esc(b.id)}" aria-label="No photos coming for ${esc(bookingName(b))}">Skip</button></span></div>`; };
-  function flWire(root, again) {
-    root.querySelectorAll('[data-fl-add]').forEach(x => x.onclick = () => flAddPhotos('', again));
-    root.querySelectorAll('[data-fl-all]').forEach(x => x.onclick = () => flMediaSheet());
-    root.querySelectorAll('[data-fl-addb]').forEach(x => x.onclick = () => flAddPhotos(x.dataset.flAddb, again));
-    root.querySelectorAll('[data-fl-ask]').forEach(x => x.onclick = () => flAsk(x.dataset.flAsk));
-    root.querySelectorAll('[data-fl-skip]').forEach(x => x.onclick = () => { const id = x.dataset.flSkip; flSave({ mediaDone: { ...(flCfg().mediaDone || {}), [id]: true } }); x.closest('.ssx-fl-wrow').remove(); toast('Skipped', () => { const md = { ...(flCfg().mediaDone || {}) }; delete md[id]; flSave({ mediaDone: md }); if (again) again(); }); });
-    root.querySelectorAll('[data-fl-ph]').forEach(x => x.onclick = () => flPhotoSheet(x.dataset.flPh));
-  }
-  function flMediaCard() {
-    const sec = document.querySelector('section[data-view="kit"]'); if (!sec || !st.db) return;
-    const ph = flPhotos(), wait = flWaiting(), sig = [ph.slice(0, 8).map(m => m.id + m.assetId).join(), ph.length, wait.map(b => b.id).join(), flEpkAsset()].join('|');
-    let box = document.getElementById('ssx-media');
-    if (!box) { box = document.createElement('div'); box.id = 'ssx-media'; box.className = 'card ssx ssx-kitcard'; const a = document.getElementById('ssx-hist') || document.getElementById('ssx-kit'); a ? a.after(box) : sec.appendChild(box); }
-    if (box.dataset.sig === sig) return; box.dataset.sig = sig;
-    box.innerHTML = `<div class="ssx-head"><div><h3>Media</h3><p class="note">${ph.length ? `${ph.length} photo${ph.length === 1 ? '' : 's'} from your shows. Tap one to put it on your EPK.` : 'Photos from your shows, in one place. Add them here or from any booking.'}</p></div></div>
-      ${ph.length ? `<div class="ssx-fl-strip">${ph.slice(0, 8).map(flThumb).join('')}</div>` : ''}
-      ${wait.length ? `<div class="eyebrow" style="margin:4px 0 6px">Waiting on photos</div><div class="ssx-fl-wait">${wait.slice(0, 2).map(flWaitRow).join('')}</div>` : ''}
-      <div class="ssx-row"><button type="button" class="btn primary small" data-fl-add>Add photos</button>${ph.length || wait.length > 2 ? `<button type="button" class="btn small" data-fl-all>See all</button>` : ''}</div>`;
-    flWire(box);
-  }
-  function flMediaSheet() {
-    const ph = flPhotos(), wait = flWaiting(), groups = new Map();
-    ph.forEach(m => { const b = m.bookingId && flBk().find(x => x.id === m.bookingId), k = b ? b.id : ''; if (!groups.has(k)) groups.set(k, { label: b ? `${bookingName(b)}${b.date ? ' · ' + dueShort(b.date) : ''}` : 'Not linked to a show', at: b ? b.date || '' : '', items: [] }); groups.get(k).items.push(m); });
+  function flMediaPage() {
+    const host = document.getElementById('ssx-fl-mhost'); if (!host || !st.db) return;
+    if (host.contains(document.activeElement) && /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+    const ph = flPhotos(), wait = flWaiting(), plan = flPlan(false), links = flMediaLinks(), pc = flCfg().plan || {};
+    const sig = JSON.stringify([ph.map(m => m.id + m.bookingId), wait.map(b => b.id), plan.map(p => p.b.id + p.kind + p.due), links.map(l => l.id + l.label), flEpkAsset(), pc, flBk().length]);
+    if (host.dataset.sig === sig) return; host.dataset.sig = sig;
+    const t = todayStr(), grp = p => p.due < t ? 'Late' : p.due === t ? 'Today' : p.due <= addDays(t, 7) ? 'This week' : 'Coming up';
+    let last = '', planHtml = '';
+    plan.forEach(p => { const g = grp(p); if (g !== last) { last = g; planHtml += `<div class="ssx-fl-pg">${g}</div>`; } planHtml += `<div class="ssx-fl-prow"><span><b>${esc(FL_POSTS[p.kind][0])}</b><span class="note">${esc(bookingName(p.b))} · ${esc(dueShort(p.due))}${p.draft ? ' · draft saved' : ''}</span></span><button type="button" class="btn small primary" data-fl-post="${esc(p.b.id)}|${p.kind}">Write it</button></div>`; });
+    const groups = new Map(); ph.forEach(m => { const b = m.bookingId && flBk().find(x => x.id === m.bookingId), k = b ? b.id : ''; if (!groups.has(k)) groups.set(k, { label: b ? `${bookingName(b)}${b.date ? ' · ' + dueShort(b.date) : ''}` : 'Not linked to a show', at: b ? b.date || '' : '', items: [] }); groups.get(k).items.push(m); });
     const G = [...groups.values()].sort((a, b) => (b.at || '0').localeCompare(a.at || '0'));
-    sheet(`<h3>Media</h3><p class="note" style="margin:0">Tap a photo to use it on your EPK, download it or link it to a show.</p>
-      <div class="ssx-row"><button type="button" class="btn primary small" data-fl-add>Add photos</button></div>
-      ${wait.length ? `<div class="f"><label>Waiting on photos</label><div class="ssx-fl-wait">${wait.map(flWaitRow).join('')}</div><span class="note">Your media person uploads to the show's folder. Save the photos you like to your phone or computer, then add them here.</span></div>` : ''}
-      ${G.map(g => `<div class="f"><label>${esc(g.label)}</label><div class="ssx-fl-grid">${g.items.map(flThumb).join('')}</div></div>`).join('')}
-      ${!ph.length && !wait.length ? '<div class="empty">No photos yet. Add some from your phone or computer.</div>' : ''}
-      <div class="actions"><button class="btn" data-cancel>Done</button></div>`, root => {
-      root.querySelector('[data-cancel]').onclick = close;
-      flWire(root, () => flMediaSheet());
-    });
+    host.innerHTML = `
+      <div class="card ssx" id="ssx-fl-posts"><div class="ssx-head"><div><h3>Post plan</h3><p class="note">Posts each show needs, with captions already written from the booking. Tap Write it, check the caption, then share.</p></div></div>
+        ${plan.length ? `<div class="ssx-fl-plist">${planHtml}</div>` : '<div class="empty">Nothing to post right now. Posts appear here when you confirm a show.</div>'}
+        <details class="ssx-det"><summary>Which posts to plan</summary><div class="chips" style="margin-top:8px">${Object.entries(FL_POSTS).map(([k, [l, d]]) => `<button type="button" class="chip" data-fl-plan="${k}" aria-pressed="${pc[k] !== false}" title="${esc(d)}">${esc(l)}</button>`).join('')}</div></details></div>
+      <div class="card ssx" id="ssx-fl-photos"><div class="ssx-head"><div><h3>Photos</h3><p class="note">${ph.length ? 'Tap a photo to use it on your EPK, download it or link it to a show.' : 'Photos from your shows, in one place. Add them here or from any booking.'}</p></div></div>
+        ${wait.length ? `<div class="eyebrow" style="margin:4px 0 6px">Waiting on photos</div><div class="ssx-fl-wait">${wait.map(flWaitRow).join('')}</div>` : ''}
+        ${G.map(g => `<div class="ssx-fl-gl">${esc(g.label)}</div><div class="ssx-fl-grid">${g.items.map(m => flThumb(m, true)).join('')}</div>`).join('')}
+        <div class="ssx-row"><button type="button" class="btn small primary" data-fl-add>Add photos</button></div></div>
+      <div class="card ssx" id="ssx-fl-links"><div class="ssx-head"><div><h3>Links and folders</h3><p class="note">Videos, mixes, posts and photo folders. Pick any of them when you add links to your Kit and EPK.</p></div></div>
+        ${links.length ? `<div class="ssx-fl-llist">${links.map(l => `<div class="ssx-fl-lrow"><span class="ssx-fl-lk">${esc(l.kind)}</span><span class="ssx-fl-lt"><b>${esc(l.label)}</b><span class="note">${esc(flHost(l.url))}</span></span><a class="btn small" href="${esc(l.url)}" target="_blank" rel="noopener">Open</a>${l.auto ? '' : `<button type="button" class="btn small" data-fl-ledit="${esc(l.id)}">Edit</button>`}</div>`).join('')}</div>` : '<div class="empty">No links yet.</div>'}
+        <div class="ssx-row"><button type="button" class="btn small" data-fl-addlink2>+ Add link</button></div></div>`;
+    host.querySelectorAll('[data-fl-post]').forEach(x => x.onclick = () => { const [bid, k] = x.dataset.flPost.split('|'); flPostSheet(bid, k); });
+    host.querySelectorAll('[data-fl-plan]').forEach(x => x.onclick = () => { const k = x.dataset.flPlan; flSave({ plan: { ...pc, [k]: pc[k] === false } }); flRefresh(); flSoon(); });
+    host.querySelectorAll('[data-fl-add]').forEach(x => x.onclick = () => flAddPhotos(''));
+    host.querySelectorAll('[data-fl-addb]').forEach(x => x.onclick = () => flAddPhotos(x.dataset.flAddb));
+    host.querySelectorAll('[data-fl-ask]').forEach(x => x.onclick = () => flAsk(x.dataset.flAsk));
+    host.querySelectorAll('[data-fl-skip]').forEach(x => x.onclick = () => { const id = x.dataset.flSkip; flSave({ mediaDone: { ...(flCfg().mediaDone || {}), [id]: true } }); flSoon(); toast('Skipped', () => { const md = { ...(flCfg().mediaDone || {}) }; delete md[id]; flSave({ mediaDone: md }); flSoon(); }); });
+    host.querySelectorAll('[data-fl-ph]').forEach(x => x.onclick = () => flPhotoSheet(x.dataset.flPh));
+    host.querySelectorAll('[data-fl-rm]').forEach(x => x.onclick = () => flTwoTap(x, 'Remove?', () => { const m = FL.media.find(y => y.id === x.dataset.flRm); if (m) flRemovePhoto('media', m.id, m.assetId); }));
+    host.querySelectorAll('[data-fl-ledit]').forEach(x => x.onclick = () => flLinkSheet(FL.media.find(y => y.id === x.dataset.flLedit) || {}));
+    host.querySelector('[data-fl-addlink2]').onclick = () => flLinkSheet();
   }
   function flPhotoSheet(id) {
     const m = FL.media.find(x => x.id === id); if (!m) return;
@@ -2859,52 +3127,49 @@ function appExtras() {
     sheet(`<h3>Photo</h3><div class="ssx-fl-prev"><img src="${esc(flSrc(m.assetId))}" alt=""></div>
       <div class="ssx-row"><button type="button" class="btn primary small" data-fl-epk ${on ? 'disabled' : ''}>${on ? 'On your EPK ✓' : 'Use on my EPK'}</button><button type="button" class="btn small" data-fl-dl>Download</button><button type="button" class="btn small danger" data-fl-del>Remove</button></div>
       <div class="f"><label for="ssx-fl-tag">From show</label><select id="ssx-fl-tag" class="srch"><option value="">Not linked to a show</option>${bks.map(b => `<option value="${esc(b.id)}" ${b.id === m.bookingId ? 'selected' : ''}>${esc(bookingName(b) + (b.date ? ' · ' + dueShort(b.date) : ''))}</option>`).join('')}</select></div>
-      <div class="actions"><button class="btn" data-cancel>Back to Media</button></div>`, root => {
-      root.querySelector('[data-cancel]').onclick = () => flMediaSheet();
+      <div class="actions"><button class="btn" data-cancel>Done</button></div>`, root => {
+      root.querySelector('[data-cancel]').onclick = close;
       root.querySelector('[data-fl-epk]').onclick = () => { flSave({ epkPhoto: m.assetId }); toast('This photo is now on your EPK'); try { if (EPK.el) epkRender(); } catch (_) {} flPhotoSheet(id); };
       root.querySelector('[data-fl-dl]').onclick = async () => { try { const r = await fetch(flSrc(m.assetId)); if (!r.ok) throw 0; const blob = await r.blob(); await window.dl((m.name || 'photo').replace(/\.[a-z0-9]+$/i, '').replace(/[^\w\- ]+/g, '').trim() + (/png/.test(blob.type) ? '.png' : '.jpg'), blob); } catch (_) { toast("Couldn't get that photo. Try again."); } };
       root.querySelector('#ssx-fl-tag').addEventListener('change', async e => { if (await window.patch('media', id, { bookingId: e.target.value })) toast(e.target.value ? 'Linked to the show' : 'Unlinked'); });
-      const del = root.querySelector('[data-fl-del]');
-      del.onclick = async () => {
-        if (!del.dataset.armed) { del.dataset.armed = '1'; del.textContent = 'Tap again to remove'; setTimeout(() => { if (del.isConnected) { delete del.dataset.armed; del.textContent = 'Remove'; } }, 3500); return; }
-        await st.db.collection('media').doc(id).delete().catch(() => {}); FL.media = FL.media.filter(x => x.id !== id);
-        if (flCfg().epkPhoto === m.assetId) flSave({ epkPhoto: '' });
-        try { const a = await flAssets(); a && await a.delete(m.assetId); } catch (_) {}
-        toast('Photo removed'); flMediaSheet();
-      };
+      const del = root.querySelector('[data-fl-del]'); del.onclick = () => flTwoTap(del, 'Tap again to remove', async () => { close(); await flRemovePhoto('media', id, m.assetId); });
     });
   }
-  // the EPK's "Picture" row: pick the profile photo or any photo from Media or Promo content
+  // the EPK's "Picture" row: profile photo or any photo from Media or Kit, each removable
   function flEpkPicRow() {
     let el = null; try { el = EPK.el; } catch (_) {} if (!el) return;
     const side = el.querySelector('[data-epk-pside]'), row0 = side && side.closest('.ssx-epk-row'); if (!row0) return;
     const opts = []; const av = flAvatar(); if (av) opts.push({ id: 'profile', asset: av, label: 'Profile photo' });
-    const seen = new Set(); [...flPhotos(), ...flKitPhotos()].forEach(p => { if (!seen.has(p.assetId)) { seen.add(p.assetId); opts.push({ id: p.assetId, asset: p.assetId, label: p.name || p.label || 'Photo' }); } });
+    const seen = new Set();
+    flPhotos().forEach(p => { if (!seen.has(p.assetId)) { seen.add(p.assetId); opts.push({ id: p.assetId, asset: p.assetId, label: p.name || 'Photo', kind: 'media', doc: p.id }); } });
+    flKitPhotos().forEach(p => { if (!seen.has(p.assetId)) { seen.add(p.assetId); opts.push({ id: p.assetId, asset: p.assetId, label: p.label || 'Photo', kind: 'kit', doc: p.id }); } });
     const cur = flEpkAsset() || (av ? 'profile' : ''), sig = opts.map(o => o.id).join() + '|' + cur;
     let row = el.querySelector('#ssx-fl-pic'); if (row && row.dataset.sig === sig && row.previousElementSibling === row0) return;
     if (!row) { row = document.createElement('div'); row.id = 'ssx-fl-pic'; row.className = 'ssx-epk-row'; }
     row0.after(row); row.dataset.sig = sig;
-    row.innerHTML = `<span class="ssx-epk-k">Picture</span><span class="ssx-fl-picks">${opts.slice(0, 16).map(o => `<button type="button" class="ssx-fl-pick" data-fl-pick="${esc(o.id)}" aria-pressed="${o.id === cur}" aria-label="${esc(o.label)}" title="${esc(o.label)}"><img src="${esc(flSrc(o.asset))}" alt=""></button>`).join('')}<button type="button" class="ssx-chip" data-fl-pup>+ Add photo</button></span>`;
+    row.innerHTML = `<span class="ssx-epk-k">Picture</span><span class="ssx-fl-picks">${opts.slice(0, 24).map((o, i) => `<span class="ssx-fl-thw"><button type="button" class="ssx-fl-pick" data-fl-pick="${esc(o.id)}" aria-pressed="${o.id === cur}" aria-label="${esc(o.label)}" title="${esc(o.label)}"><img src="${esc(flSrc(o.asset))}" alt=""></button>${o.kind ? `<button type="button" class="ssx-fl-x" data-fl-prm="${i}" aria-label="Remove ${esc(o.label)}">×</button>` : ''}</span>`).join('')}<button type="button" class="ssx-chip" data-fl-pup>+ Add photo</button></span>`;
     const pick = v => { flSave({ epkPhoto: v }); try { epkRender(); } catch (_) {} };
     row.querySelectorAll('[data-fl-pick]').forEach(b => b.onclick = () => pick(b.dataset.flPick));
+    row.querySelectorAll('[data-fl-prm]').forEach(b => b.onclick = () => flTwoTap(b, 'Remove?', () => { const o = opts[+b.dataset.flPrm]; flRemovePhoto(o.kind, o.doc, o.asset); }));
     row.querySelector('[data-fl-pup]').onclick = () => flAddPhotos('', ids => pick(ids[0]));
   }
 
   function flScan() {
     FL.raf = 0;
-    for (const f of [flStageToggle, flRemindRow, flMediaCard, flEpkPicRow]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaPage, flEpkPicRow, flArtistUI]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
-    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm]) { try { f(root); } catch (e) { console.error(e); } } });
+    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker]) { try { f(root); } catch (e) { console.error(e); } } });
   }
   function hookFlow() {
     if (window.__ssxFL || !st.db) return; window.__ssxFL = true;
-    st.db.doc('settings/flow').onSnapshot(s => { const was = flCfg(); FL.cfg = s.exists ? s.data() : {}; const now = flCfg(); flRefresh(was.closeOld !== now.closeOld); if (was.epkPhoto !== now.epkPhoto) { try { if (EPK.el) epkRender(); } catch (_) {} } flSoon(); }, () => {});
+    st.db.doc('settings/flow').onSnapshot(s => { const was = flCfg(); FL.cfg = s.exists ? s.data() : {}; const now = flCfg(); flRefresh(was.closeOld !== now.closeOld || JSON.stringify(was.plan) !== JSON.stringify(now.plan)); if (was.epkPhoto !== now.epkPhoto) { try { if (EPK.el) epkRender(); } catch (_) {} } if (!FL.loaded || JSON.stringify(was.artist) !== JSON.stringify(now.artist)) flRelabel(document.body); FL.loaded = true; flSoon(); }, () => {});
     st.db.collection('media').onSnapshot(s => { const was = flEpkAsset(); FL.media = s.docs.map(d => ({ id: d.id, ...d.data() })); if (was !== flEpkAsset()) { try { if (EPK.el) epkRender(); } catch (_) {} } flSoon(); }, () => {});
-    flWrapTasks(); flWrapForm(); flWrapView(); flWrapSave();
+    st.db.collection('posts').onSnapshot(s => { FL.posts = Object.fromEntries(s.docs.map(d => [d.id, d.data()])); flRefresh(); flSoon(); }, () => {});
+    flWrapTasks(); flWrapForm(); flWrapView(); flWrapSave(); flWrapWords();
     document.addEventListener('click', flDocClick, true);
     document.addEventListener('change', flDocChange, true);
-    new MutationObserver(flSoon).observe(document.body, { childList: true, subtree: true });
-    flRefresh(true); flSoon();
+    new MutationObserver(recs => { flSoon(); if (!FL.cfg || flArtist().label === 'DJ') return; for (const r of recs) for (const n of r.addedNodes) { try { flRelabel(n); } catch (_) {} } }).observe(document.body, { childList: true, subtree: true });
+    flRefresh(true); flSoon(); flRelabel(document.body);
   }
   /* ---------- Smooth saving.
      1. Every saved change used to redraw all nine pages at once, several times per save (once for the save and again
