@@ -116,7 +116,7 @@ function appExtras() {
     speedUp(); submitGuard(); routeProfile(); hookFinance(); hookRequestView(); phoneFixes(); financeIcon();
     st.db = await window.claude.use('db');
     if (!st.db) return;
-    hookAutopilot(); hookLayout(); hookEase(); hookForms(); hookNotes();
+    hookAutopilot(); hookLayout(); hookEase(); hookForms(); hookNotes(); hookFlow();
     st.db.doc('settings/notify').onSnapshot(s => { st.prefs = s.exists ? s.data() : {}; render(); queueSoon(); }, () => {});
         st.db.doc('settings/profile').onSnapshot(() => setTimeout(() => fillProfile(), 0), () => {});
     st.db.doc('settings/bookinglink').onSnapshot(s => { st.link = s.exists ? s.data() : {}; render(); renderKit(); }, () => {});
@@ -184,6 +184,7 @@ function appExtras() {
       }
     }
     try { out.push(...apQueue()); } catch (_) {}
+    try { flRepeat(out); } catch (_) {}
     return out.sort((a, b) => a.at.localeCompare(b.at)).slice(0, 200);
   }
   let qt = null;
@@ -2412,7 +2413,7 @@ function appExtras() {
     const badge = s => { const p = nhParts(s.date); return `<span class="epk-date${s.approx ? ' mo' : ''}" style="border-color:${T.line}"><b>${s.approx ? p.mon : p.day}</b><span style="color:${T.solid}">${s.approx ? p.year : `${p.mon} ${p.year}`}</span></span>`; };
     const row = s => `<div class="epk-show" style="border-color:${T.line}">${badge(s)}<span><b style="font-weight:500">${esc(s.title)}</b><br><span style="color:${T.muted};font-size:12.5px">${esc(nhWhere(s))}</span></span></div>`;
     let bks = []; try { bks = S.bookings || []; } catch (_) {}
-    const t0 = todayStr(), up = bks.filter(b => b.date && b.date >= t0 && String(b.status).toLowerCase() === 'confirmed').sort((a, b) => a.date.localeCompare(b.date)), all = nhShows();
+    const t0 = todayStr(), up = bks.filter(b => b.date && b.date >= t0 && String(b.status).toLowerCase() === 'confirmed' && !b.epkOff).sort((a, b) => a.date.localeCompare(b.date)), all = nhShows().filter(flOnEpk);
     if (k === 'stats') {
       const s = { ...nhStats(all), upcoming: up.length }, list = [['shows', 'Shows played'], ['cities', 'Cities'], ['venues', 'Venues'], ['upcoming', 'Upcoming']].filter(([x]) => s[x]);
       if (list.length) place('stats', 'full', `<div class="epk-stats" style="border-color:${T.line}">${list.map(([x, l]) => `<div><b style="color:${T.solid}">${s[x]}</b><span style="color:${T.muted}">${l}</span></div>`).join('')}</div>`);
@@ -2507,6 +2508,404 @@ function appExtras() {
       if (card) card.hidden = false; else draw(false);
     }, 3000);
   })();
+  /* ---------- Flow: less busywork.
+     - Old stage tasks close when a booking moves on (Settings → Checklists by stage).
+     - Reminders can repeat until a task is done, with an early heads-up (Settings → Reminders).
+     - Add a venue, promoter, media person or contact right inside the booking form.
+     - Media (Kit): photos from your shows in one place. Any of them can be your EPK picture.
+     - "Show on my EPK" for each booking and past show, with All / None when adding past shows.
+     Settings live in settings/flow. Photos live in app storage, listed in the media collection. */
+  const FL = { cfg: null, media: [], draftEpk: new Map(), raf: 0, formB: null, nhOpen: null };
+  const flCfg = () => ({ closeOld: true, every: 0, ahead: 0, epkPhoto: '', mediaDone: {}, ...(FL.cfg || {}) });
+  const flSave = patch => { FL.cfg = { ...flCfg(), ...patch }; return st.db ? st.db.doc('settings/flow').set(FL.cfg).catch(() => {}) : null; };
+  const flSoon = () => { if (!FL.raf) FL.raf = requestAnimationFrame(flScan); };
+  function flRefresh(all) { if (all) { try { window.render(); } catch (_) {} } try { queueSoon(); } catch (_) {} }
+  const flKind = s => { try { return K(s); } catch (_) { return String(s || '').toLowerCase(); } };
+  const flBk = () => { try { return S.bookings || []; } catch (_) { return []; } };
+  const flChip = (on, label = 'EPK') => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ssx-fl-epkchip'; b.textContent = label; b.title = 'Show on my EPK'; b.setAttribute('aria-label', 'Show on my EPK'); b.setAttribute('aria-pressed', String(!!on)); return b; };
+
+  /* -- old stage tasks close on their own */
+  function flWrapTasks() {
+    const orig = window.tasksOf; if (typeof orig !== 'function' || orig.__fl) return;
+    const w = function (b) { const out = orig.apply(this, arguments); try { if (flCfg().closeOld && b && b.status) return out.filter(t => t.st === b.status); } catch (_) {} return out; };
+    w.__fl = true; window.tasksOf = w;
+  }
+  function flStageToggle() {
+    const anchor = document.getElementById('defCl'), card = anchor && anchor.closest('.card'); if (!card) return;
+    let row = card.querySelector('#ssx-fl-close'); const on = flCfg().closeOld;
+    if (row) { const cb = row.querySelector('input'); if (cb.checked !== on && document.activeElement !== cb) cb.checked = on; return; }
+    row = document.createElement('label'); row.id = 'ssx-fl-close'; row.className = 'ssx-fl-switch';
+    row.innerHTML = `<input type="checkbox" ${on ? 'checked' : ''}><span><b>Close old stage tasks</b><span class="note">When a booking moves to its next stage, unfinished tasks from earlier stages leave your to-do list and reminders.</span></span>`;
+    const note = card.querySelector(':scope > p.note'); note ? note.after(row) : card.appendChild(row);
+    row.querySelector('input').onchange = e => { flSave({ closeOld: e.target.checked }); flRefresh(true); toast(e.target.checked ? 'Old stage tasks now close on their own' : 'Old stage tasks stay open'); };
+  }
+
+  /* -- reminders: repeat until done, plus an early heads-up */
+  const FL_EVERY = [[0, 'Just once'], [1, 'Every day'], [3, 'Every 3 days'], [7, 'Every week']];
+  const FL_AHEAD = [[0, 'None'], [1, '1 day before'], [3, '3 days before'], [7, '1 week before']];
+  const flWhen = n => n === 1 ? 'tomorrow' : n === 7 ? 'in a week' : `in ${n} days`;
+  function flRemindRow() {
+    const card = document.getElementById('ssx-notify'); if (!card) return;
+    let box = card.querySelector('#ssx-fl-rem'); const c = flCfg(), sig = c.every + '|' + c.ahead;
+    if (box && box.dataset.sig === sig && box === card.lastElementChild) return;
+    if (!box) { box = document.createElement('div'); box.id = 'ssx-fl-rem'; box.className = 'ssx-fl-rem'; }
+    card.appendChild(box); box.dataset.sig = sig;
+    const chips = (list, key, val) => list.map(([v, l]) => `<button type="button" class="chip" data-fl-${key}="${v}" aria-pressed="${+val === v}">${l}</button>`).join('');
+    box.innerHTML = `<div class="ssx-fl-k">Remind me until it's done</div><div class="chips">${chips(FL_EVERY, 'every', c.every)}</div>
+      <div class="ssx-fl-k">Early heads-up</div><div class="chips">${chips(FL_AHEAD, 'ahead', c.ahead)}</div>
+      <p class="note" style="margin:0">Reminders stop on their own once you check a task off or mark the show Paid.</p>`;
+    box.querySelectorAll('[data-fl-every]').forEach(b => b.onclick = () => { flSave({ every: +b.dataset.flEvery }); flRemindRow(); flRefresh(); });
+    box.querySelectorAll('[data-fl-ahead]').forEach(b => b.onclick = () => { flSave({ ahead: +b.dataset.flAhead }); flRemindRow(); flRefresh(); });
+  }
+  // called from the reminder list builder: adds repeat and heads-up copies of each task reminder
+  function flRepeat(out) {
+    const c = flCfg(), every = +c.every || 0, ahead = +c.ahead || 0; if (!every && !ahead) return;
+    const t = todayStr(), end = addDays(t, 60), add = [];
+    for (const it of out) {
+      if (!it || !it.bookingId || !it.at || !(it.key || it.kind === 'paid')) continue;
+      const base = String(it.id || '').slice(0, 96), paid = it.kind === 'paid';
+      if (ahead && !paid) { const d = addDays(it.at, -ahead); if (d >= t) add.push({ ...it, id: `${base}:h${d}`, at: d, body: `Coming up ${flWhen(ahead)}: "${it.label}" for ${it.show}.` }); }
+      if (every) for (let d = addDays(it.at, every), n = 0; d <= end && n < 30; d = addDays(d, every), n++) if (d >= t)
+        add.push({ ...it, id: `${base}:r${d}`, at: d, body: paid ? `${it.show} still isn't marked Paid. Did you get paid?` : `Still open: "${it.label}" for ${it.show}.` });
+    }
+    out.push(...add);
+  }
+
+  /* -- add a new venue, promoter, media person or contact inside the booking form */
+  const FL_NEW = { 'b-venue': 'venue', 'b-promo': 'promoter', 'b-media': 'media', 'b-talk': 'talk' };
+  function flInlineHook(root) {
+    if (!root.querySelector('#b-venue')) return;
+    Object.keys(FL_NEW).forEach(id => { const s = root.querySelector('#' + id); if (s && !s.__flSeen) { s.__flSeen = true; s.__flPrev = s.value; } });
+    if (root.__flInline) return; root.__flInline = true;
+    root.addEventListener('change', e => {
+      const s = e.target; if (!s || !FL_NEW[s.id]) return;
+      if (s.value !== '__new__') { s.__flPrev = s.value; return; }
+      if (s.__flBypass) { s.__flBypass = false; return; }
+      e.stopImmediatePropagation();
+      s.value = [...s.options].some(o => o.value === s.__flPrev) ? s.__flPrev : ''; if (typeof s._sync === 'function') s._sync();
+      flNewPanel(root, s, FL_NEW[s.id]);
+    }, true);
+  }
+  function flNewPanel(root, sel, kind) {
+    const old = root.querySelector('#ssx-fl-new'); if (old) old.remove();
+    const host = sel.closest('.frow') || sel.closest('.f'); if (!host) return;
+    const val = id => ((root.querySelector(id) || {}).value || '').trim();
+    const promo = contact(val('#b-promo')), city = val('#b-city');
+    const title = { venue: 'New venue or festival', promoter: 'New promoter or collective', media: 'New media person', talk: `New person at ${cName(promo) || 'this collective'}` }[kind];
+    const fld = (id, label, attrs = '') => `<div class="f"><label for="${id}">${label}</label><input id="${id}" ${attrs}></div>`;
+    const seg = (name, list) => `<div class="seg" data-fl-seg="${name}" style="flex-wrap:wrap">${list.map(([k, l], i) => `<button type="button" data-v="${k}" aria-pressed="${i === 0}">${l}</button>`).join('')}</div>`;
+    const email = fld('ssx-fl-email', 'Email (optional)', 'type="email" autocomplete="off"');
+    const body = {
+      venue: `${fld('c-org', 'Venue name', 'autocomplete="off" placeholder="Start typing to look it up"')}${fld('c-addr', 'Address', 'autocomplete="off" placeholder="Fills in when you pick a place"')}
+        <div class="frow">${fld('c-city', 'City', `value="${esc(city)}"`)}${email}</div><input type="hidden" id="c-site"><input type="hidden" id="c-phone">`,
+      promoter: `${seg('pkind', [['person', 'Person'], ['collective', 'Collective or company']])}${fld('ssx-fl-name', 'Name')}<div class="frow">${email}${fld('ssx-fl-ig', 'Instagram (optional)', 'placeholder="@handle"')}</div>`,
+      media: `${fld('ssx-fl-name', 'Name')}${seg('mkind', [['photo', 'Photo'], ['video', 'Video'], ['both', 'Photo & video']])}${email}`,
+      talk: `${fld('ssx-fl-name', 'Name')}${email}`
+    }[kind];
+    const p = document.createElement('div'); p.id = 'ssx-fl-new'; p.className = 'ssx-fl-new';
+    p.innerHTML = `<h4>${esc(title)}</h4>${body}<div class="ssx-row"><button type="button" class="btn primary small" data-fl-save>Add and pick</button><button type="button" class="btn small" data-fl-cancel>Cancel</button><button type="button" class="linkbtn" data-fl-more>More details</button></div>`;
+    host.after(p);
+    const q = s => p.querySelector(s), segVal = n => { const b = p.querySelector(`[data-fl-seg="${n}"] [aria-pressed="true"]`); return b ? b.dataset.v : ''; };
+    p.querySelectorAll('[data-fl-seg] [data-v]').forEach(b => b.onclick = () => { b.parentElement.querySelectorAll('[data-v]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); const n = q('#ssx-fl-name'); if (n && b.dataset.v === 'collective') n.previousElementSibling.textContent = 'Collective name'; else if (n && b.dataset.v === 'person') n.previousElementSibling.textContent = 'Name'; });
+    const first = q('#c-org') || q('#ssx-fl-name'); setTimeout(() => { try { first.focus(); p.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (_) {} }, 30);
+    const done = () => { p.remove(); try { sel.focus(); } catch (_) {} };
+    q('[data-fl-cancel]').onclick = done;
+    q('[data-fl-more]').onclick = () => { p.remove(); sel.__flBypass = true; sel.value = '__new__'; sel.dispatchEvent(new Event('change', { bubbles: true })); };
+    const go = async () => {
+      const name = (first.value || '').trim(), mail = (q('#ssx-fl-email') || {}).value || '';
+      if (!name) { toast(kind === 'venue' ? 'Add the venue name' : 'Add a name'); first.focus(); return; }
+      const venueId = val('#b-venue'), promoId = val('#b-promo'), talkId = val('#b-talk'), c0 = city || '';
+      let data;
+      if (kind === 'venue') {
+        const pr = contact(promoId), bc = talkId || (pr && !isColl(pr) ? pr.id : '');
+        data = { type: 'venue', vkind: 'club', org: name, address: (q('#c-addr').value || '').trim(), city: (q('#c-city').value || '').trim(), website: q('#c-site').value || '', phone: q('#c-phone').value || '', email: mail.trim(), promoterIds: [...new Set([promoId, bc].filter(x => x && x !== '__new__'))], ...(bc ? { bookingContactId: bc } : {}) };
+      } else if (kind === 'promoter') {
+        const coll = segVal('pkind') === 'collective', vIds = venueId && venueId !== '__new__' ? [venueId] : [];
+        data = coll ? { type: 'promoter', pkind: 'collective', org: name, email: mail.trim(), instagram: (q('#ssx-fl-ig').value || '').trim(), city: c0, venueIds: vIds }
+          : { type: 'promoter', pkind: 'person', name, email: mail.trim(), instagram: (q('#ssx-fl-ig').value || '').trim(), city: c0, venueIds: vIds, collectiveIds: [] };
+      } else if (kind === 'media') data = { type: 'media', mkind: segVal('mkind') || 'photo', name, email: mail.trim(), city: c0 };
+      else data = { type: 'promoter', pkind: 'person', name, email: mail.trim(), city: c0, venueIds: [], collectiveIds: promoId ? [promoId] : [] };
+      const btn = q('[data-fl-save]'); btn.disabled = true; btn.textContent = 'Adding…';
+      const id = await save('contacts', null, data);
+      if (!id) { btn.disabled = false; btn.textContent = 'Add and pick'; return; }
+      try { if (!S.contacts.some(x => x.id === id)) S.contacts.push({ id, ...data }); } catch (_) {}
+      if (kind === 'talk' && promo && !promo.mainContactId) { const { id: _pid, ...rest } = promo; save('contacts', promo.id, { ...rest, mainContactId: id }); }
+      const o = document.createElement('option'); o.value = id; o.textContent = cName({ id, ...data });
+      const nw = [...sel.options].find(x => x.value === '__new__'); nw && nw.parentElement === sel ? nw.after(o) : sel.appendChild(o);
+      sel.value = id; sel.__flPrev = id; if (typeof sel._sync === 'function') sel._sync();
+      p.remove(); sel.dispatchEvent(new Event('change', { bubbles: true }));
+      toast(`Added ${name}`);
+    };
+    q('[data-fl-save]').onclick = go;
+    p.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(); } else if (e.key === 'Enter' && e.target.tagName === 'INPUT' && !e.defaultPrevented) { e.preventDefault(); go(); } });
+  }
+
+  /* -- "Show on my EPK" on bookings */
+  function flFormExtras(root) {
+    if (!root.querySelector('#b-venue') || root.querySelector('#ssx-b-epk')) return;
+    const g = root.querySelector('#b-gcal'), lab = g && g.closest('label'), el = document.createElement('label');
+    el.className = 'note ssx-fl-check'; el.innerHTML = `<input type="checkbox" id="ssx-b-epk" ${(FL.formB || {}).epkOff ? '' : 'checked'}> Show on my EPK`;
+    if (lab) lab.after(el); else { const a = root.querySelector('.actions'); a ? a.before(el) : root.appendChild(el); }
+  }
+  function flWrapForm() {
+    const orig = window.bookingForm; if (typeof orig !== 'function' || orig.__fl) return;
+    const w = function (b) { FL.formB = b || {}; const out = orig.apply(this, arguments); try { flScan(); } catch (e) { console.error(e); } return out; };
+    w.__fl = true; window.bookingForm = w;
+  }
+  function flWrapView() {
+    const orig = window.bookingView; if (typeof orig !== 'function' || orig.__fl) return;
+    const w = function (id) { const out = orig.apply(this, arguments); try { flViewExtras(id); } catch (e) { console.error(e); } return out; };
+    w.__fl = true; window.bookingView = w;
+  }
+  function flViewExtras(id) {
+    const root = document.querySelector(`#sheetRoot .sheet[data-booking="${id}"]`), b = flBk().find(x => x.id === id); if (!root || !b) return;
+    if (flCfg().closeOld) root.querySelectorAll('[data-stgtog]').forEach(h => { if (h.dataset.stgtog === b.status) return; const n = [...h.querySelectorAll('.note')].pop(); if (n && /to do/.test(n.textContent)) { n.textContent = 'Closed'; n.title = 'Closed when this booking moved on'; } });
+    const dl = root.querySelector('dl.kv'); if (!dl || dl.querySelector('.ssx-fl-epkrow') || flKind(b.status) === 'lost') return;
+    const n = FL.media.filter(m => m.bookingId === id).length;
+    const add = (label, html, cls) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = label; dd.className = cls; dd.innerHTML = html; dl.append(dt, dd); return dd; };
+    const ep = add('EPK', `<label class="ssx-fl-check"><input type="checkbox" ${b.epkOff ? '' : 'checked'}> Show on my EPK</label>`, 'ssx-fl-epkrow');
+    ep.querySelector('input').onchange = async e => { const on = e.target.checked; if (await window.patch('bookings', id, { epkOff: !on })) toast(on ? 'On your EPK' : 'Hidden from your EPK'); };
+    const ph = add('Photos', `${n ? `<span>${n} in Media</span> ` : ''}<button type="button" class="btn small" data-fl-addph>Add photos</button>`, 'ssx-fl-phrow');
+    ph.querySelector('[data-fl-addph]').onclick = () => flAddPhotos(id, () => { if (document.querySelector(`#sheetRoot .sheet[data-booking="${id}"]`)) bookingView(id); });
+  }
+
+  /* -- "Show on my EPK" on past shows: the add list, Check my shows, See all and the edit form */
+  const flDraft = () => { try { return NH.draft || []; } catch (_) { return []; } };
+  const flDraftSet = (r, on) => { r.epkOff = !on; FL.draftEpk.set(nhKey(r), !on); };
+  const flApplyDraft = () => flDraft().forEach(r => { const k = nhKey(r); if (FL.draftEpk.has(k)) r.epkOff = FL.draftEpk.get(k); });
+  function flBuilder(root) {
+    const rows = [...root.querySelectorAll('.ssx-hrow')].filter(r => r.querySelector('[data-nh-edit]')); if (!rows.length && !root.querySelector('.ssx-hfile')) return;
+    flApplyDraft(); const D = flDraft();
+    rows.forEach(row => {
+      const r = D[+row.querySelector('[data-nh-edit]').dataset.nhEdit]; if (!r) return;
+      let chip = row.querySelector('.ssx-fl-epkchip');
+      if (!chip) { chip = flChip(!r.epkOff); const act = row.querySelector('.ssx-hact'); act ? act.before(chip) : row.appendChild(chip); chip.onclick = e => { e.preventDefault(); e.stopPropagation(); flDraftSet(r, !!r.epkOff); chip.setAttribute('aria-pressed', String(!r.epkOff)); }; }
+      else if (chip.getAttribute('aria-pressed') !== String(!r.epkOff)) chip.setAttribute('aria-pressed', String(!r.epkOff));
+    });
+    const hf = root.querySelector('.ssx-hfile .note'); if (hf && !hf.dataset.fl) { hf.dataset.fl = '1'; hf.textContent += ' Use the On EPK column to pick which shows go on your EPK.'; }
+  }
+  function flReview(root) {
+    const list = root.querySelector('.ssx-hcheck'); if (!list) return; flApplyDraft(); const D = flDraft();
+    list.querySelectorAll('label').forEach(lab => {
+      const inp = lab.querySelector('[data-nh-row]'), r = inp && D[+inp.dataset.nhRow]; if (!r) return;
+      let chip = lab.querySelector('.ssx-fl-epkchip');
+      if (!chip) { chip = flChip(!r.epkOff); chip.disabled = inp.disabled; lab.appendChild(chip); chip.onclick = e => { e.preventDefault(); e.stopPropagation(); flDraftSet(r, !!r.epkOff); chip.setAttribute('aria-pressed', String(!r.epkOff)); }; }
+      else if (chip.getAttribute('aria-pressed') !== String(!r.epkOff)) chip.setAttribute('aria-pressed', String(!r.epkOff));
+    });
+    if (root.querySelector('.ssx-fl-selbar')) return;
+    const bar = document.createElement('div'); bar.className = 'ssx-fl-selbar';
+    bar.innerHTML = `<span>Add</span><button type="button" class="linkbtn" data-fl-sel="add:1">All</button><button type="button" class="linkbtn" data-fl-sel="add:0">None</button><span aria-hidden="true">·</span><span>On my EPK</span><button type="button" class="linkbtn" data-fl-sel="epk:1">All</button><button type="button" class="linkbtn" data-fl-sel="epk:0">None</button>`;
+    list.before(bar);
+    const intro = root.querySelector('p.note'); if (intro && !intro.dataset.fl) { intro.dataset.fl = '1'; intro.textContent += ' Turn EPK off for shows you want in your history but not on your EPK.'; }
+    bar.querySelectorAll('[data-fl-sel]').forEach(b => b.onclick = () => {
+      const [what, v] = b.dataset.flSel.split(':'), on = v === '1';
+      if (what === 'add') list.querySelectorAll('[data-nh-row]:not(:disabled)').forEach(i => { if (i.checked !== on) { i.checked = on; i.dispatchEvent(new Event('change', { bubbles: true })); } });
+      else { list.querySelectorAll('[data-nh-row]').forEach(i => { const r = D[+i.dataset.nhRow]; if (r && !i.disabled) flDraftSet(r, on); }); flReview(root); }
+    });
+  }
+  const flShowOn = s => { try { if (s.kind === 'booking') { const b = flBk().find(x => x.id === s.id); return !(b && b.epkOff); } const p = (S.pastShows || []).find(x => x.id === s.id); return !(p && p.epkOff); } catch (_) { return true; } };
+  const flOnEpk = s => flShowOn(s);
+  function flSeeAll(root) {
+    root.querySelectorAll('.ssx-nshows:not(.ssx-hcheck) [data-nh-open]').forEach(btn => {
+      const [kind, ...rest] = btn.dataset.nhOpen.split(':'), id = rest.join(':'), on = flShowOn({ kind, id });
+      let chip = btn.querySelector('.ssx-fl-epkchip');
+      if (!chip) {
+        chip = document.createElement('span'); chip.className = 'ssx-fl-epkchip'; chip.textContent = 'EPK'; chip.setAttribute('role', 'switch'); chip.tabIndex = 0; chip.title = 'Show on my EPK';
+        const flip = async e => { e.preventDefault(); e.stopPropagation(); const now = chip.getAttribute('aria-checked') !== 'true'; chip.setAttribute('aria-checked', String(now)); if (await window.patch(kind === 'booking' ? 'bookings' : 'pastShows', id, { epkOff: !now })) toast(now ? 'On your EPK' : 'Hidden from your EPK'); };
+        chip.addEventListener('click', flip); chip.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') flip(e); });
+        btn.appendChild(chip);
+      }
+      chip.setAttribute('aria-checked', String(on)); chip.setAttribute('aria-label', `Show ${btn.querySelector('b') ? btn.querySelector('b').textContent : 'this show'} on my EPK`);
+    });
+  }
+  function flPastForm(root) {
+    const d = root.querySelector('#nh-date[data-k]'); if (!d || root.querySelector('[data-nh-ok]') || root.querySelector('#ssx-nh-epk')) return;
+    const h = root.querySelector('h3'), isEdit = h && /edit/i.test(h.textContent), p = isEdit && FL.nhOpen && FL.nhOpen.kind === 'past' ? (S.pastShows || []).find(x => x.id === FL.nhOpen.id) : null;
+    const el = document.createElement('label'); el.className = 'ssx-fl-check'; el.innerHTML = `<input type="checkbox" id="ssx-nh-epk" ${p && p.epkOff ? '' : 'checked'}> Show on my EPK`;
+    const a = root.querySelector('.actions'); a ? a.before(el) : root.appendChild(el);
+  }
+  const flCells = line => { if (line.includes('\t')) return line.split('\t').map(s => s.trim()); const out = []; let cur = '', q = false; for (let i = 0; i < line.length; i++) { const ch = line[i]; if (ch === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q; } else if (ch === ',' && !q) { out.push(cur); cur = ''; } else cur += ch; } out.push(cur); return out.map(s => s.trim()); };
+  function flReadEpkCol(text) {
+    const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim()); if (lines.length < 2) return;
+    const h = flCells(lines[0]).map(s => s.toLowerCase()), at = re => h.findIndex(x => re.test(x));
+    const di = at(/date|when/), ei = at(/epk/), ti = at(/event|show|title|gig|name/), vi = at(/venue|club|location|place|where/);
+    if (di < 0 || ei < 0) return;
+    for (const line of lines.slice(1)) {
+      const c = flCells(line), d = nhDate(c[di]); if (!d || !d.date) continue;
+      FL.draftEpk.set(nhKey({ date: d.date, venue: vi >= 0 ? c[vi] || '' : '', title: ti >= 0 ? c[ti] || '' : '' }), /^(no|n|false|0|off|hide|skip)$/i.test(String(c[ei] || '').trim()));
+    }
+    flApplyDraft(); flSoon();
+  }
+  function flTemplate() {
+    const csv = 'Date,Event name,Venue,City,On EPK (yes/no)\r\n3/14/2025,Example Block Party,Example Venue,San Diego,yes\r\n';
+    const u = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })), a = document.createElement('a');
+    a.href = u; a.download = 'set-and-settled-show-history-template.csv'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 2000);
+  }
+  function flDocClick(e) {
+    const t = e.target && e.target.closest ? e.target : null; if (!t) return;
+    if (t.closest('[data-nh-tpl]')) { e.preventDefault(); e.stopImmediatePropagation(); flTemplate(); return; }
+    const o = t.closest('[data-nh-open]'); if (o && !t.closest('.ssx-fl-epkchip')) { const [kind, ...rest] = o.dataset.nhOpen.split(':'); FL.nhOpen = { kind, id: rest.join(':') }; }
+  }
+  function flDocChange(e) {
+    const t = e.target; if (!t || t.id !== 'nh-file' || !t.files || !t.files[0]) return;
+    const f = t.files[0]; if (f.size > 1048576 || /\.xlsx?$/i.test(f.name)) return;
+    f.text().then(flReadEpkCol).catch(() => {});
+  }
+  function flWrapSave() {
+    const sv = window.save; if (typeof sv !== 'function' || sv.__fl) return;
+    const w = async function (col, id, data) {
+      try {
+        if (col === 'bookings' && data && typeof data === 'object') { const cb = document.querySelector('#sheetRoot #ssx-b-epk'); if (cb) data = { ...data, epkOff: !cb.checked }; }
+        if (col === 'pastShows' && data && typeof data === 'object') {
+          const cb = document.querySelector('#sheetRoot #ssx-nh-epk');
+          if (cb) data = { ...data, epkOff: !cb.checked }; else if (!id) { const k = nhKey(data); if (FL.draftEpk.has(k)) data = { ...data, epkOff: FL.draftEpk.get(k) }; }
+        }
+      } catch (_) {}
+      return sv.call(this, col, id, data);
+    };
+    w.__fl = true; window.save = w;
+  }
+
+  /* -- Media: photos from your shows in one place */
+  const flAssets = async () => { try { return await claude.use('assets'); } catch (_) { return null; } };
+  const flSrc = id => { try { return typeof __blob === 'function' ? __blob(id) : ''; } catch (_) { return ''; } };
+  const flPhotos = () => FL.media.filter(m => m.assetId).sort((a, b) => String(b.addedAt || '').localeCompare(String(a.addedAt || '')));
+  const flKitPhotos = () => { try { return (S.kitFiles || []).filter(f => f.assetId && /^image\//.test(f.contentType || '')); } catch (_) { return []; } };
+  const flAvatar = () => { try { return (S.profile || {}).avatarId || ''; } catch (_) { return ''; } };
+  function flEpkAsset() {
+    const c = flCfg(), all = [...flPhotos().map(m => m.assetId), ...flKitPhotos().map(f => f.assetId)];
+    if (c.epkPhoto === 'profile') return '';
+    if (c.epkPhoto && all.includes(c.epkPhoto)) return c.epkPhoto;
+    return flAvatar() ? '' : (all[0] || '');
+  }
+  // called from epkData: the picture the EPK should use, or '' for the profile photo
+  const flEpkPhoto = () => { const id = flEpkAsset(); return id ? flSrc(id) : ''; };
+  const flFolder = b => { try { return subUrl(b, 'mkt', 'media') || b.driveUrl || (((b.folders || {}).mkt) || {}).url || ''; } catch (_) { return b.driveUrl || ''; } };
+  function flWaiting() {
+    const t = todayStr(), from = addDays(t, -60), have = new Set(FL.media.map(m => m.bookingId).filter(Boolean)), skip = flCfg().mediaDone || {};
+    return flBk().filter(b => b.date && b.date <= t && b.date >= from && ['played', 'paid'].includes(flKind(b.status)) && (b.mediaId || flFolder(b)) && !have.has(b.id) && !skip[b.id]).sort((a, b) => b.date.localeCompare(a.date));
+  }
+  const flShows = () => flBk().filter(b => b.date && flKind(b.status) !== 'lost' && b.date <= addDays(todayStr(), 7)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60);
+  async function flShrink(file) {
+    try {
+      const bmp = await createImageBitmap(file), r = Math.min(1, 2400 / Math.max(bmp.width, bmp.height));
+      if (r === 1 && file.size < 3e6) return file;
+      const c = document.createElement('canvas'); c.width = Math.round(bmp.width * r); c.height = Math.round(bmp.height * r); c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      return await new Promise(res => c.toBlob(x => res(x || file), 'image/jpeg', 0.88));
+    } catch (_) { return file; }
+  }
+  async function flAddFiles(files, bookingId, after) {
+    files = files.filter(f => /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name)); if (!files.length) return;
+    if (files.some(f => f.size > 25e6)) { toast('One of those photos is over 25 MB. Pick a smaller copy.'); return; }
+    const assets = await flAssets(); if (!assets) { toast("Photo uploads aren't available right now"); return; }
+    const ids = [];
+    for (const [n, f] of files.entries()) {
+      if (files.length > 1) toast(`Adding photo ${n + 1} of ${files.length}…`);
+      try { const r = await assets.upload(await flShrink(f)); if (r && r.id) { await st.db.collection('media').add({ assetId: r.id, name: String(f.name || 'Photo').slice(0, 120), bookingId: bookingId || '', type: 'photo', addedAt: new Date().toISOString() }); ids.push(r.id); } } catch (e) { console.error(e); }
+    }
+    toast(ids.length ? `Added ${ids.length} photo${ids.length === 1 ? '' : 's'} to Media` : "Couldn't add those photos. Try again.");
+    if (ids.length && after) after(ids);
+  }
+  function flAddPhotos(bookingId, after) {
+    const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.multiple = true; i.style.display = 'none'; document.body.appendChild(i);
+    i.onchange = () => { const files = [...(i.files || [])]; i.remove(); flAddFiles(files, bookingId, after); };
+    i.click();
+  }
+  function flAsk(id) {
+    const b = flBk().find(x => x.id === id), m = b && contact(b.mediaId); if (!b || !m) return;
+    const name = bookingName(b), f = flFolder(b);
+    try { composeSheet({ booking: b.id, to: m.id, subject: `Photos & video from ${name}`, body: `Hi ${(cName(m) || '').split(' ')[0] || 'there'},\n\nThank you for shooting ${name}! Whenever they're ready, could you drop the photos and video here?\n${f || '(folder link)'}\n\nThanks so much,\n${myName()}` }); } catch (_) {}
+  }
+  const flThumb = m => `<button type="button" class="ssx-fl-th${flEpkAsset() === m.assetId ? ' on' : ''}" data-fl-ph="${esc(m.id)}" aria-label="Open photo ${esc(m.name || '')}"><img src="${esc(flSrc(m.assetId))}" alt="" loading="lazy">${flEpkAsset() === m.assetId ? '<span class="ssx-fl-badge">EPK</span>' : ''}</button>`;
+  const flWaitRow = b => { const m = contact(b.mediaId), f = flFolder(b);
+    return `<div class="ssx-fl-wrow"><span><b>${esc(bookingName(b))}</b><span class="note">${esc(fmtD(b.date))}${m ? ' · ' + esc(cName(m)) : ''}</span></span><span class="ssx-fl-wact">${f ? `<a class="btn small" href="${esc(f)}" target="_blank" rel="noopener">Open folder</a>` : ''}${m && m.email ? `<button type="button" class="btn small" data-fl-ask="${esc(b.id)}">Ask for files</button>` : ''}<button type="button" class="btn small primary" data-fl-addb="${esc(b.id)}">Add photos</button><button type="button" class="btn small" data-fl-skip="${esc(b.id)}" aria-label="No photos coming for ${esc(bookingName(b))}">Skip</button></span></div>`; };
+  function flWire(root, again) {
+    root.querySelectorAll('[data-fl-add]').forEach(x => x.onclick = () => flAddPhotos('', again));
+    root.querySelectorAll('[data-fl-all]').forEach(x => x.onclick = () => flMediaSheet());
+    root.querySelectorAll('[data-fl-addb]').forEach(x => x.onclick = () => flAddPhotos(x.dataset.flAddb, again));
+    root.querySelectorAll('[data-fl-ask]').forEach(x => x.onclick = () => flAsk(x.dataset.flAsk));
+    root.querySelectorAll('[data-fl-skip]').forEach(x => x.onclick = () => { const id = x.dataset.flSkip; flSave({ mediaDone: { ...(flCfg().mediaDone || {}), [id]: true } }); x.closest('.ssx-fl-wrow').remove(); toast('Skipped', () => { const md = { ...(flCfg().mediaDone || {}) }; delete md[id]; flSave({ mediaDone: md }); if (again) again(); }); });
+    root.querySelectorAll('[data-fl-ph]').forEach(x => x.onclick = () => flPhotoSheet(x.dataset.flPh));
+  }
+  function flMediaCard() {
+    const sec = document.querySelector('section[data-view="kit"]'); if (!sec || !st.db) return;
+    const ph = flPhotos(), wait = flWaiting(), sig = [ph.slice(0, 8).map(m => m.id + m.assetId).join(), ph.length, wait.map(b => b.id).join(), flEpkAsset()].join('|');
+    let box = document.getElementById('ssx-media');
+    if (!box) { box = document.createElement('div'); box.id = 'ssx-media'; box.className = 'card ssx ssx-kitcard'; const a = document.getElementById('ssx-hist') || document.getElementById('ssx-kit'); a ? a.after(box) : sec.appendChild(box); }
+    if (box.dataset.sig === sig) return; box.dataset.sig = sig;
+    box.innerHTML = `<div class="ssx-head"><div><h3>Media</h3><p class="note">${ph.length ? `${ph.length} photo${ph.length === 1 ? '' : 's'} from your shows. Tap one to put it on your EPK.` : 'Photos from your shows, in one place. Add them here or from any booking.'}</p></div></div>
+      ${ph.length ? `<div class="ssx-fl-strip">${ph.slice(0, 8).map(flThumb).join('')}</div>` : ''}
+      ${wait.length ? `<div class="eyebrow" style="margin:4px 0 6px">Waiting on photos</div><div class="ssx-fl-wait">${wait.slice(0, 2).map(flWaitRow).join('')}</div>` : ''}
+      <div class="ssx-row"><button type="button" class="btn primary small" data-fl-add>Add photos</button>${ph.length || wait.length > 2 ? `<button type="button" class="btn small" data-fl-all>See all</button>` : ''}</div>`;
+    flWire(box);
+  }
+  function flMediaSheet() {
+    const ph = flPhotos(), wait = flWaiting(), groups = new Map();
+    ph.forEach(m => { const b = m.bookingId && flBk().find(x => x.id === m.bookingId), k = b ? b.id : ''; if (!groups.has(k)) groups.set(k, { label: b ? `${bookingName(b)}${b.date ? ' · ' + dueShort(b.date) : ''}` : 'Not linked to a show', at: b ? b.date || '' : '', items: [] }); groups.get(k).items.push(m); });
+    const G = [...groups.values()].sort((a, b) => (b.at || '0').localeCompare(a.at || '0'));
+    sheet(`<h3>Media</h3><p class="note" style="margin:0">Tap a photo to use it on your EPK, download it or link it to a show.</p>
+      <div class="ssx-row"><button type="button" class="btn primary small" data-fl-add>Add photos</button></div>
+      ${wait.length ? `<div class="f"><label>Waiting on photos</label><div class="ssx-fl-wait">${wait.map(flWaitRow).join('')}</div><span class="note">Your media person uploads to the show's folder. Save the photos you like to your phone or computer, then add them here.</span></div>` : ''}
+      ${G.map(g => `<div class="f"><label>${esc(g.label)}</label><div class="ssx-fl-grid">${g.items.map(flThumb).join('')}</div></div>`).join('')}
+      ${!ph.length && !wait.length ? '<div class="empty">No photos yet. Add some from your phone or computer.</div>' : ''}
+      <div class="actions"><button class="btn" data-cancel>Done</button></div>`, root => {
+      root.querySelector('[data-cancel]').onclick = close;
+      flWire(root, () => flMediaSheet());
+    });
+  }
+  function flPhotoSheet(id) {
+    const m = FL.media.find(x => x.id === id); if (!m) return;
+    const on = flEpkAsset() === m.assetId, bks = flShows();
+    sheet(`<h3>Photo</h3><div class="ssx-fl-prev"><img src="${esc(flSrc(m.assetId))}" alt=""></div>
+      <div class="ssx-row"><button type="button" class="btn primary small" data-fl-epk ${on ? 'disabled' : ''}>${on ? 'On your EPK ✓' : 'Use on my EPK'}</button><button type="button" class="btn small" data-fl-dl>Download</button><button type="button" class="btn small danger" data-fl-del>Remove</button></div>
+      <div class="f"><label for="ssx-fl-tag">From show</label><select id="ssx-fl-tag" class="srch"><option value="">Not linked to a show</option>${bks.map(b => `<option value="${esc(b.id)}" ${b.id === m.bookingId ? 'selected' : ''}>${esc(bookingName(b) + (b.date ? ' · ' + dueShort(b.date) : ''))}</option>`).join('')}</select></div>
+      <div class="actions"><button class="btn" data-cancel>Back to Media</button></div>`, root => {
+      root.querySelector('[data-cancel]').onclick = () => flMediaSheet();
+      root.querySelector('[data-fl-epk]').onclick = () => { flSave({ epkPhoto: m.assetId }); toast('This photo is now on your EPK'); try { if (EPK.el) epkRender(); } catch (_) {} flPhotoSheet(id); };
+      root.querySelector('[data-fl-dl]').onclick = async () => { try { const r = await fetch(flSrc(m.assetId)); if (!r.ok) throw 0; const blob = await r.blob(); await window.dl((m.name || 'photo').replace(/\.[a-z0-9]+$/i, '').replace(/[^\w\- ]+/g, '').trim() + (/png/.test(blob.type) ? '.png' : '.jpg'), blob); } catch (_) { toast("Couldn't get that photo. Try again."); } };
+      root.querySelector('#ssx-fl-tag').addEventListener('change', async e => { if (await window.patch('media', id, { bookingId: e.target.value })) toast(e.target.value ? 'Linked to the show' : 'Unlinked'); });
+      const del = root.querySelector('[data-fl-del]');
+      del.onclick = async () => {
+        if (!del.dataset.armed) { del.dataset.armed = '1'; del.textContent = 'Tap again to remove'; setTimeout(() => { if (del.isConnected) { delete del.dataset.armed; del.textContent = 'Remove'; } }, 3500); return; }
+        await st.db.collection('media').doc(id).delete().catch(() => {}); FL.media = FL.media.filter(x => x.id !== id);
+        if (flCfg().epkPhoto === m.assetId) flSave({ epkPhoto: '' });
+        try { const a = await flAssets(); a && await a.delete(m.assetId); } catch (_) {}
+        toast('Photo removed'); flMediaSheet();
+      };
+    });
+  }
+  // the EPK's "Picture" row: pick the profile photo or any photo from Media or Promo content
+  function flEpkPicRow() {
+    let el = null; try { el = EPK.el; } catch (_) {} if (!el) return;
+    const side = el.querySelector('[data-epk-pside]'), row0 = side && side.closest('.ssx-epk-row'); if (!row0) return;
+    const opts = []; const av = flAvatar(); if (av) opts.push({ id: 'profile', asset: av, label: 'Profile photo' });
+    const seen = new Set(); [...flPhotos(), ...flKitPhotos()].forEach(p => { if (!seen.has(p.assetId)) { seen.add(p.assetId); opts.push({ id: p.assetId, asset: p.assetId, label: p.name || p.label || 'Photo' }); } });
+    const cur = flEpkAsset() || (av ? 'profile' : ''), sig = opts.map(o => o.id).join() + '|' + cur;
+    let row = el.querySelector('#ssx-fl-pic'); if (row && row.dataset.sig === sig && row.previousElementSibling === row0) return;
+    if (!row) { row = document.createElement('div'); row.id = 'ssx-fl-pic'; row.className = 'ssx-epk-row'; }
+    row0.after(row); row.dataset.sig = sig;
+    row.innerHTML = `<span class="ssx-epk-k">Picture</span><span class="ssx-fl-picks">${opts.slice(0, 16).map(o => `<button type="button" class="ssx-fl-pick" data-fl-pick="${esc(o.id)}" aria-pressed="${o.id === cur}" aria-label="${esc(o.label)}" title="${esc(o.label)}"><img src="${esc(flSrc(o.asset))}" alt=""></button>`).join('')}<button type="button" class="ssx-chip" data-fl-pup>+ Add photo</button></span>`;
+    const pick = v => { flSave({ epkPhoto: v }); try { epkRender(); } catch (_) {} };
+    row.querySelectorAll('[data-fl-pick]').forEach(b => b.onclick = () => pick(b.dataset.flPick));
+    row.querySelector('[data-fl-pup]').onclick = () => flAddPhotos('', ids => pick(ids[0]));
+  }
+
+  function flScan() {
+    FL.raf = 0;
+    for (const f of [flStageToggle, flRemindRow, flMediaCard, flEpkPicRow]) { try { f(); } catch (e) { console.error(e); } }
+    const sr = document.getElementById('sheetRoot'); if (!sr) return;
+    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm]) { try { f(root); } catch (e) { console.error(e); } } });
+  }
+  function hookFlow() {
+    if (window.__ssxFL || !st.db) return; window.__ssxFL = true;
+    st.db.doc('settings/flow').onSnapshot(s => { const was = flCfg(); FL.cfg = s.exists ? s.data() : {}; const now = flCfg(); flRefresh(was.closeOld !== now.closeOld); if (was.epkPhoto !== now.epkPhoto) { try { if (EPK.el) epkRender(); } catch (_) {} } flSoon(); }, () => {});
+    st.db.collection('media').onSnapshot(s => { const was = flEpkAsset(); FL.media = s.docs.map(d => ({ id: d.id, ...d.data() })); if (was !== flEpkAsset()) { try { if (EPK.el) epkRender(); } catch (_) {} } flSoon(); }, () => {});
+    flWrapTasks(); flWrapForm(); flWrapView(); flWrapSave();
+    document.addEventListener('click', flDocClick, true);
+    document.addEventListener('change', flDocChange, true);
+    new MutationObserver(flSoon).observe(document.body, { childList: true, subtree: true });
+    flRefresh(true); flSoon();
+  }
   /* ---------- Smooth saving.
      1. Every saved change used to redraw all nine pages at once, several times per save (once for the save and again
         when the server echoed it back). With a full season of shows that froze the page for seconds. Now the page
@@ -2654,6 +3053,7 @@ function appExtras() {
     const upcoming = bookings.filter(b => b.date && b.date >= t0 && String(b.status).toLowerCase() === 'confirmed').sort((a, b) => a.date.localeCompare(b.date));
     const L = { ...defLink(), ...(st.link || {}) };
     let photo = ''; try { if (p.avatarId && typeof __blob === 'function') photo = __blob(p.avatarId); } catch (_) {}
+    try { const alt = flEpkPhoto(); if (alt) photo = alt; } catch (_) {}
     return {
       name: p.djName || p.myName || 'Your name', genres: k.genres || '', shortBio: k.bioShort || '', longBio: k.bioLong || k.bioShort || '',
       rider: k.rider || '', hosp: k.hospitality || '', contactName: p.myName || p.djName || '', email: p.email || '', phone: p.phone || '',
