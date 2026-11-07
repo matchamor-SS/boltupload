@@ -3522,9 +3522,162 @@ function appExtras() {
       el.setAttribute('autocomplete', 'off'); el.setAttribute('data-lpignore', 'true'); el.setAttribute('data-1p-ignore', '');
     });
   }
+  /* -- public booking page: "Who are you?" first, then only the questions that fit, so the request fills in the booking for the performer */
+  const FL_BK_KINDS = [
+    ['booker', 'I book talent for a venue'], ['venue', 'I run or own a venue'], ['collective', 'I lead a collective or crew'],
+    ['promoter', "I'm an independent promoter"], ['private', "I'm planning a private event"], ['other', 'Something else']];
+  // what the booking server understands: venue, promoter, coordinator, other
+  const FL_BK_ROLE = { booker: 'promoter', venue: 'venue', collective: 'promoter', promoter: 'promoter', private: 'coordinator', other: 'other' };
+  function flBookPage() {
+    const main = document.getElementById('ss-book'), form = main && main.querySelector('#bk-form'); if (!form || form.dataset.fl) return;
+    form.dataset.fl = '1';
+    const $ = s => form.querySelector(s), lab = id => { const i = $('#' + id); return i && i.closest('label'); };
+    const two = $('.bk-step:nth-of-type(3) .bk-two'), step3 = two && two.closest('.bk-step'); if (!two) return;
+    const V = main.__vals || {}, kindIn = document.createElement('input'); kindIn.type = 'hidden'; kindIn.id = 'bk-x-kind'; kindIn.value = V['bk-x-kind'] || '';
+    const fld = (id, label, attrs = '', span) => `<label class="bk-f${span ? ' bk-span' : ''}" data-flk>${label}<input id="${id}" ${attrs}></label>`;
+    const opt = ' <i>(optional)</i>';
+    // step 3 becomes "About you"; a new step 4 holds the event and the venue
+    step3.querySelector('h2').innerHTML = '<span>3</span>About you';
+    const who = document.createElement('div'); who.className = 'bk-f'; who.innerHTML = `<span>Who are you?</span><div class="bk-chips ssx-bk-who" role="group" aria-label="Who are you?">${FL_BK_KINDS.map(([k, l]) => `<button type="button" class="bk-chip" data-flk-who="${k}" aria-pressed="false">${l}</button>`).join('')}</div>`;
+    two.before(who, kindIn);
+    const me = document.createElement('div'); me.className = 'bk-two ssx-bk-me';
+    me.innerHTML = fld('bk-x-title', 'Your title' + opt, 'maxlength="60" placeholder="e.g. Talent buyer, GM"') + fld('bk-x-ig', 'Instagram' + opt, 'maxlength="60" placeholder="@handle"') + fld('bk-x-site', 'Website' + opt, 'type="url" maxlength="200" placeholder="https://"');
+    two.after(me);
+    const s4 = document.createElement('section'); s4.className = 'bk-step ssx-bk-ev';
+    s4.innerHTML = `<h2><span>4</span>About the event</h2><div class="bk-two ssx-bk-ev2"></div><div class="bk-two ssx-bk-ven"></div><div class="bk-two ssx-bk-more"></div>`;
+    step3.after(s4);
+    const ev2 = s4.querySelector('.ssx-bk-ev2'), ven = s4.querySelector('.ssx-bk-ven'), more = s4.querySelector('.ssx-bk-more');
+    ev2.append(lab('bk-event'));
+    ev2.insertAdjacentHTML('beforeend', `<label class="bk-f" data-flk="private">Type of event<select id="bk-x-etype"><option value="">Choose…</option>${['Wedding', 'Birthday', 'Corporate event', 'Holiday party', 'House party', 'Other'].map(x => `<option>${x}</option>`).join('')}</select></label>` + fld('bk-x-guests', 'How many guests?' + opt, 'inputmode="numeric" maxlength="6" placeholder="e.g. 120"').replace('data-flk', 'data-flk="private"'));
+    ven.append(lab('bk-venue'), lab('bk-city'), lab('bk-address'));
+    ven.insertAdjacentHTML('beforeend', fld('bk-x-vsite', 'Venue website or Instagram' + opt, 'maxlength="200"').replace('data-flk', 'data-flk="venue"') + fld('bk-x-cap', 'Capacity' + opt, 'inputmode="numeric" maxlength="6" placeholder="e.g. 300"').replace('data-flk', 'data-flk="venue"'));
+    more.insertAdjacentHTML('beforeend', `<label class="bk-f" data-flk="ages">Ages<select id="bk-x-ages"><option value="">Choose…</option><option>21+</option><option>18+</option><option>All ages</option></select></label>` + fld('bk-x-lineup', 'Who else is playing?' + opt, 'maxlength="200" placeholder="Other acts on the bill"').replace('data-flk', 'data-flk="lineup"'));
+    more.append(lab('bk-fee'));
+    const msgL = lab('bk-msg'); s4.append(msgL); const tail = [...step3.children].filter(x => x.matches('.bk-hp, p, button')); s4.append(...tail);
+    const msg = $('#bk-msg'); if (msg) msg.maxLength = 1400;
+    const roleL = lab('bk-role'); if (roleL) roleL.hidden = true;
+    // bring back anything typed before the page redrew (picking a date or a set length redraws it)
+    form.querySelectorAll('[id^="bk-x-"]').forEach(x => { if (V[x.id] != null && x.id !== 'bk-x-kind') x.value = V[x.id]; });
+    const setLab = (id, text) => { const l = lab(id); if (!l) return; const n = [...l.childNodes].find(c => c.nodeType === 3); if (n) n.textContent = text; const i = l.querySelector('i'); if (i) i.hidden = !/optional/.test(text) ? true : false; };
+    const apply = () => {
+      const k = kindIn.value, pick = form.querySelectorAll('[data-flk-who]');
+      pick.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.flkWho === k)));
+      const show = (sel, on) => form.querySelectorAll(sel).forEach(x => { x.hidden = !on; });
+      const orgL = lab('bk-org'), venL = lab('bk-venue');
+      const orgText = { booker: 'Company you work for', venue: 'Venue name', collective: 'Collective or crew name', promoter: 'Company or brand', private: 'Company', other: 'Company or organization' }[k] || 'Company or collective';
+      setLab('bk-org', orgText); orgL.querySelector('i') && (orgL.querySelector('i').hidden = k === 'venue' || k === 'collective');
+      if (orgL) orgL.hidden = k === 'private';
+      setLab('bk-venue', k === 'private' ? 'Where is it?' : k === 'booker' ? 'Venue you book for' : 'Venue');
+      if (venL) { venL.hidden = k === 'venue'; const i = venL.querySelector('i'); if (i) i.hidden = k === 'booker'; }
+      show('#bk-x-title', true); lab('bk-x-title').hidden = !(k === 'booker' || k === 'venue' || k === 'other');
+      lab('bk-x-ig').hidden = !(k === 'collective' || k === 'promoter'); lab('bk-x-site').hidden = !(k === 'collective' || k === 'promoter');
+      show('[data-flk="private"]', k === 'private'); show('[data-flk="venue"]', k !== 'private'); show('[data-flk="ages"]', k !== 'private'); show('[data-flk="lineup"]', k !== 'private');
+      setLab('bk-event', k === 'private' ? "What's the occasion?" : 'Event name');
+      const ev = $('#bk-event'); if (ev) ev.placeholder = k === 'private' ? "e.g. Maria's 30th birthday" : 'e.g. Saturday night at the club';
+      const role = $('#bk-role'); if (role) role.value = FL_BK_ROLE[k] || 'other';
+      me.hidden = !k || [...me.querySelectorAll('label')].every(l => l.hidden);
+      s4.hidden = !k; two.hidden = !k;
+    };
+    form.querySelectorAll('[data-flk-who]').forEach(b => b.onclick = () => { kindIn.value = b.dataset.flkWho; apply(); const f = $('#bk-name'); if (f && !f.value) f.focus(); });
+    apply();
+  }
+  // on send: pack the extra answers for the performer's app, then let the page send it as usual
+  function flBookSubmit(e) {
+    const form = e.target; if (!form || form.id !== 'bk-form' || !form.dataset.fl) return;
+    const $ = s => form.querySelector(s), v = id => (($('#' + id) || {}).value || '').trim(), err = $('#bk-err'), k = v('bk-x-kind');
+    const stop = t => { e.preventDefault(); e.stopImmediatePropagation(); if (err) { err.textContent = t; err.scrollIntoView({ block: 'center', behavior: 'smooth' }); } };
+    if (!k) return stop('Tell us who you are: tap the option under "Who are you?".');
+    if ((k === 'venue' || k === 'collective') && !v('bk-org')) { $('#bk-org').focus(); return stop(k === 'venue' ? 'Add the venue name.' : 'Add the name of your collective or crew.'); }
+    if (k === 'booker' && !v('bk-venue')) { $('#bk-venue').focus(); return stop('Add the venue you book for.'); }
+    if (k === 'venue') $('#bk-venue').value = v('bk-org');
+    const d = { k }; [['t', 'bk-x-title'], ['ig', 'bk-x-ig'], ['site', 'bk-x-site'], ['vsite', 'bk-x-vsite'], ['cap', 'bk-x-cap'], ['ages', 'bk-x-ages'], ['lineup', 'bk-x-lineup'], ['et', 'bk-x-etype'], ['g', 'bk-x-guests']].forEach(([a, id]) => { const x = v(id); if (x) d[a] = x.slice(0, 200); });
+    const msg = $('#bk-msg'); if (!msg) return;
+    const own = msg.value.replace(/\n*\[details\]\{[\s\S]*$/, '');
+    msg.value = (own.trim() ? own.trim() + '\n\n' : '') + '[details]' + JSON.stringify(d);
+    setTimeout(() => { msg.value = own; }, 0); // the page reads the message right away; put back what they typed
+  }
+  if (/[?&]book=/.test(location.search)) {
+    const mo = new MutationObserver(() => { try { flBookPage(); } catch (err) { console.error(err); } });
+    const start = () => { mo.observe(document.body, { childList: true, subtree: true }); flBookPage(); };
+    document.body ? start() : document.addEventListener('DOMContentLoaded', start);
+    document.addEventListener('submit', flBookSubmit, true);
+  }
+
+  /* -- performer's app: turn a booking-link request into a filled-in booking (venue, promoter or collective, person to talk to) */
+  const FL_REQ = new Set();
+  const flSameName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  const flKindLabel = k => (FL_BK_KINDS.find(x => x[0] === k) || [, ''])[1];
+  async function flFillContact(c, data) {
+    if (!c) return; const upd = {}; Object.keys(data).forEach(k => { const val = data[k]; if (val && (Array.isArray(val) ? val.some(x => !(c[k] || []).includes(x)) : !c[k])) upd[k] = Array.isArray(val) ? [...new Set([...(c[k] || []), ...val])] : val; });
+    if (Object.keys(upd).length) { await window.patch('contacts', c.id, { ...upd, updatedAt: new Date().toISOString() }); Object.assign(c, upd); }
+  }
+  async function flFindOrMake(test, data) {
+    const hit = S.contacts.find(test); if (hit) { await flFillContact(hit, data); return hit.id; }
+    const now = new Date().toISOString(), id = await window.save('contacts', null, { ...data, createdAt: now, updatedAt: now });
+    if (id && !S.contacts.some(x => x.id === id)) S.contacts.push({ id, ...data });
+    return id || '';
+  }
+  async function flReqOne(b) {
+    const m = String(b.notes || '').match(/\n*\[details\](\{[\s\S]*\})\s*$/); if (!m) return;
+    let d; try { d = JSON.parse(m[1]); } catch (_) { d = null; }
+    const base = String(b.notes).slice(0, m.index);
+    if (!d || !d.k) { await window.patch('bookings', b.id, { notes: base }); return; }
+    const k = d.k, personId = b.promoterId || '', person = contact(personId), venueAsPerson = k === 'venue' ? contact(b.venueId) : null;
+    const upd = {}, lines = [];
+    const vName = (base.match(/\nVenue: (.+)/) || [])[1] || '', city = b.city || '';
+    // the person who asked
+    if (person) await flFillContact(person, { instagram: d.ig || '', website: d.site || '' });
+    // the venue
+    let venueId = '';
+    if (k === 'venue' && venueAsPerson) { venueId = venueAsPerson.id; await flFillContact(venueAsPerson, { address: b.address || '', city, website: d.vsite || '', capacity: d.cap || '', vkind: 'club' }); }
+    else if (vName && k !== 'private') venueId = await flFindOrMake(c => c.type === 'venue' && flSameName(cName(c), vName), { type: 'venue', vkind: 'club', org: vName, address: b.address || '', city, website: d.vsite || '', capacity: d.cap || '', ...(k === 'booker' && personId ? { bookingContactId: personId } : {}), promoterIds: personId ? [personId] : [] });
+    if (venueId) upd.venueId = venueId;
+    // who you're working with
+    if (k === 'booker' && personId) { upd.promoterId = ''; upd.contactPersonId = personId; const vc = venueId && contact(venueId); if (vc) await flFillContact(vc, { bookingContactId: personId }); }
+    if (k === 'collective' && person) {
+      const org = person.org || ''; const cid = org ? await flFindOrMake(c => c.type === 'promoter' && c.pkind === 'collective' && flSameName(c.org, org), { type: 'promoter', pkind: 'collective', org, instagram: d.ig || '', website: d.site || '', city, mainContactId: personId, venueIds: venueId ? [venueId] : [] }) : '';
+      if (cid) { upd.promoterId = cid; upd.contactPersonId = personId; await flFillContact(person, { collectiveIds: [cid] }); }
+    }
+    if (k === 'private' && person && person.type !== 'other' && person.createdAt && person.createdAt === b.createdAt) await window.patch('contacts', person.id, { type: 'other' }); // only a contact this request just made
+    // a clean note: who they are, plus the extra answers
+    lines.push(`From: ${person ? cName(person) : (venueAsPerson ? venueAsPerson.name || cName(venueAsPerson) : 'the booking link')}${d.t ? ', ' + d.t : ''} (${flKindLabel(k)})`);
+    if (d.et || d.g) lines.push(`Event: ${[d.et, d.g ? d.g + ' guests' : ''].filter(Boolean).join(' · ')}`);
+    if (d.cap || d.ages) lines.push(`Room: ${[d.cap ? 'capacity ' + d.cap : '', d.ages || ''].filter(Boolean).join(' · ')}`);
+    if (d.lineup) lines.push(`Also playing: ${d.lineup}`);
+    if (d.ig || d.site || d.vsite) lines.push(`Links: ${[d.ig, d.site, d.vsite].filter(Boolean).join(' · ')}`);
+    upd.notes = base.replace(/\nRole: [^\n]*/, '\n' + lines.join('\n')); upd.requestKind = k; upd.updatedAt = new Date().toISOString();
+    await window.patch('bookings', b.id, upd);
+  }
+  function flReqSweep() {
+    let list = []; try { list = flBk().filter(b => b.source === 'booking-link' && /\[details\]\{/.test(String(b.notes || '')) && !FL_REQ.has(b.id)); } catch (_) { return; }
+    list.slice(0, 5).forEach(b => { FL_REQ.add(b.id); flReqOne(b).catch(e => { console.error(e); FL_REQ.delete(b.id); }); });
+  }
+
+  /* -- Lost shows: off the calendar. Keep trying to take a lost show off Google Calendar, and offer to clear old leftovers */
+  const FL_LOSTTRY = {};
+  function flLostSweep() {
+    let L = []; try { L = flBk().filter(b => flKind(b.status) === 'lost' && b.gcal && b.gcal.eventId); } catch (_) { return; }
+    const now = Date.now(); L.slice(0, 3).forEach(async b => { if (now - (FL_LOSTTRY[b.id] || 0) < 10 * 60e3) return; FL_LOSTTRY[b.id] = now; try { if (await dropEvent(b.gcal)) await window.patch('bookings', b.id, { gcal: { eventId: '', calendarId: '', link: '' } }); } catch (_) {} });
+  }
+  // Google events the app made for shows that are now Lost (from before this fix): same day, same show name
+  function flLostLeftovers() {
+    let out = []; try {
+      const lost = flBk().filter(b => flKind(b.status) === 'lost' && b.date), names = {}; Object.entries(G.calNames || {}).forEach(([id, n]) => { names[n] = id; });
+      lost.forEach(b => (G.byDate[b.date] || []).forEach(ev => { const t = String(ev.title || '').replace(/^HOLD · /, ''); if (t.endsWith(': ' + showName(b)) && !out.some(x => x.ev.id === ev.id)) out.push({ b, ev, cal: names[ev.cal] || '' }); }));
+    } catch (_) {}
+    return out;
+  }
+  function flLostCard() {
+    const bar = document.getElementById('syncbar'); if (!bar) return;
+    const left = flLostLeftovers(), sig = left.map(x => x.ev.id).join('|'); let box = document.getElementById('ssx-fl-lost');
+    if (!left.length) { if (box && box.dataset.kind !== 'ok') box.remove(); return; }
+    if (box && box.dataset.sig === sig) return;
+    if (!box) { box = document.createElement('div'); box.id = 'ssx-fl-lost'; box.className = 'ssx-fl-msg'; bar.after(box); }
+    box.dataset.sig = sig; box.dataset.kind = 'warn';
+    box.innerHTML = `<b>${left.length} Lost show${left.length === 1 ? ' is' : 's are'} still on your Google Calendar.</b><p>${esc(left.slice(0, 4).map(x => `${showName(x.b)}  
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
     sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow]) { try { f(root); } catch (e) { console.error(e); } } });
   }
