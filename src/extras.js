@@ -2766,6 +2766,7 @@ function appExtras() {
       if (!chip) { chip = flChip(!r.epkOff); chip.disabled = inp.disabled; lab.appendChild(chip); chip.onclick = e => { e.preventDefault(); e.stopPropagation(); flDraftSet(r, !!r.epkOff); chip.setAttribute('aria-pressed', String(!r.epkOff)); }; }
       else if (chip.getAttribute('aria-pressed') !== String(!r.epkOff)) chip.setAttribute('aria-pressed', String(!r.epkOff));
     });
+    flWhy(root, list, D);
     if (root.querySelector('.ssx-fl-selbar')) return;
     const bar = document.createElement('div'); bar.className = 'ssx-fl-selbar';
     bar.innerHTML = `<span>Add</span><button type="button" class="linkbtn" data-fl-sel="add:1">All</button><button type="button" class="linkbtn" data-fl-sel="add:0">None</button><span aria-hidden="true">·</span><span>On my EPK</span><button type="button" class="linkbtn" data-fl-sel="epk:1">All</button><button type="button" class="linkbtn" data-fl-sel="epk:0">None</button>`;
@@ -3154,6 +3155,69 @@ function appExtras() {
     row.querySelector('[data-fl-pup]').onclick = () => flAddPhotos('', ids => pick(ids[0]));
   }
 
+  /* -- always say why a show was held back, and send upcoming shows to Bookings in one tap */
+  const flConf = () => { try { return STAGES.find(s => flKind(s) === 'confirmed') || 'confirmed'; } catch (_) { return 'confirmed'; } };
+  const flVenueId = name => { const n = String(name || '').trim().toLowerCase(); if (!n) return ''; try { const c = S.contacts.find(x => x.type === 'venue' && cName(x).trim().toLowerCase() === n); return c ? c.id : ''; } catch (_) { return ''; } };
+  const flSame = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  const flBooked = r => flBk().some(b => b.date === r.date && flKind(b.status) !== 'lost' && [b.title, b.venueId ? contactName(b.venueId) : ''].some(x => x && [r.title, r.venue].some(y => y && flSame(x, y))));
+  async function flAddUpcoming(rows) {
+    const t = todayStr(), now = new Date().toISOString(), st0 = flConf(); let added = 0, had = 0;
+    for (const r of rows) {
+      if (flBooked(r)) { had++; continue; }
+      const vid = flVenueId(r.venue);
+      const data = { title: r.title || r.venue || 'Show', date: r.date, status: st0, venueId: vid, city: r.city || '', notes: r.venue && !vid ? `Venue: ${r.venue}` : '', tasks: {}, stageAt: { [st0]: t }, epkOff: !!r.epkOff, createdAt: now, updatedAt: now };
+      if (await window.save('bookings', null, data)) added++;
+    }
+    return { added, had };
+  }
+  const flShowName = r => `${r.title || r.venue || 'Show'} (${nhLabel(r)})`;
+  const flList = a => a.slice(0, 5).map(flShowName).join(', ') + (a.length > 5 ? ` and ${a.length - 5} more` : '');
+  // a message that stays on screen until the next step, instead of a toast that disappears
+  function flNotice(host, where, html, kind) {
+    let box = host.querySelector('.ssx-fl-why'); if (!box) { box = document.createElement('div'); box.className = 'ssx-fl-why'; box.setAttribute('role', 'status'); where(box); }
+    box.dataset.kind = kind || 'info'; box.innerHTML = html; return box;
+  }
+  // Check my shows: a summary of what will be added, what's held back and why
+  function flWhy(root, list, D) {
+    const rows = [...list.querySelectorAll('label')].map(l => { const i = l.querySelector('[data-nh-row]'), r = i && D[+i.dataset.nhRow], why = (l.querySelector('.note') || {}).textContent || ''; return { l, i, r, up: /Upcoming/.test(why), dup: /Already in your history/.test(why), done: !!l.dataset.flDone }; }).filter(x => x.r);
+    const up = rows.filter(x => x.up && !x.done), dup = rows.filter(x => x.dup), ready = rows.filter(x => !x.up && !x.dup && !x.done && x.i && !x.i.disabled).length, sig = [ready, up.length, dup.length].join('|');
+    let box = root.querySelector('.ssx-fl-why'); if (box && (box.dataset.sig === sig || (box.dataset.kind === 'ok' && !up.length))) return;
+    if (!up.length && !dup.length) { if (box && box.dataset.kind !== 'ok') box.remove(); return; }
+    const intro = root.querySelector('p.note');
+    box = flNotice(root, b => (intro ? intro.after(b) : list.before(b)), `<b>${ready ? `${ready} show${ready === 1 ? '' : 's'} ready to add.` : 'Nothing new to add from this list.'}</b>
+      ${dup.length ? `<p>${dup.length} ${dup.length === 1 ? 'is' : 'are'} already in your history, so ${dup.length === 1 ? "it's" : "they're"} greyed out: ${esc(flList(dup.map(x => x.r)))}.</p>` : ''}
+      ${up.length ? `<p>${up.length} ${up.length === 1 ? "hasn't" : "haven't"} happened yet: ${esc(flList(up.map(x => x.r)))}. Show history is for past shows. Upcoming shows go in Bookings, where they get reminders and invoices.</p><div class="ssx-row"><button type="button" class="btn small primary" data-fl-up>Add ${up.length === 1 ? 'it' : `these ${up.length}`} to Bookings</button></div>` : ''}`, up.length ? 'warn' : 'info');
+    box.dataset.sig = sig;
+    const b = box.querySelector('[data-fl-up]'); if (b) b.onclick = async () => {
+      b.disabled = true; b.textContent = 'Adding to Bookings…';
+      const res = await flAddUpcoming(up.map(x => x.r));
+      up.forEach(x => { x.l.dataset.flDone = '1'; const n = x.l.querySelector('.note'); if (n) n.textContent = n.textContent.replace(/Upcoming, add it in Bookings/, 'Added to Bookings'); });
+      box.dataset.sig = ''; box.dataset.kind = 'ok';
+      box.innerHTML = `<b>${res.added ? `Added ${res.added} upcoming show${res.added === 1 ? '' : 's'} to Bookings as ${esc(stName(flConf()))}.` : 'Those shows were already in Bookings.'}</b>${res.had && res.added ? `<p>${res.had} ${res.had === 1 ? 'was' : 'were'} already there, so ${res.had === 1 ? 'it was' : 'they were'} skipped.</p>` : ''}${ready ? `<p>Tap Add below to save the other ${ready} to your history.</p>` : ''}`;
+    };
+  }
+  // adding one past show with a future date: explain it and offer Bookings, instead of a quick toast
+  function flFutureGuard(e) {
+    const t = e.target && e.target.closest ? e.target : null; if (!t) return;
+    const ok = t.closest('[data-nh-ok]'), sv = t.closest('#sheetRoot [data-save]'), btn = ok || sv; if (!btn) return;
+    const root = btn.closest('.sheet'), d = root && root.querySelector('#nh-date'); if (!d || !d.value || d.value <= todayStr() || (sv && !root.querySelector('#nh-date[data-k]'))) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    const v = id => ((root.querySelector(id) || {}).value || '').trim(), r = { date: d.value, approx: false, title: v('#nh-title'), venue: v('#nh-venue'), city: v('#nh-city') };
+    const place = b => { const a = btn.closest('.ssx-row') || btn.closest('.actions'); a ? a.before(b) : root.appendChild(b); };
+    if (!r.title && !r.venue) { flNotice(root, place, '<b>Add a venue or event name first.</b>', 'warn'); return; }
+    const box = flNotice(root, place, `<b>${esc(nhLabel(r))} hasn't happened yet.</b><p>Show history is for past shows. Upcoming shows go in Bookings, where they get reminders and invoices.</p><div class="ssx-row"><button type="button" class="btn small primary" data-fl-up1>Add it to Bookings</button></div>`, 'warn');
+    box.querySelector('[data-fl-up1]').onclick = async () => {
+      const res = await flAddUpcoming([r]);
+      box.dataset.kind = 'ok'; box.innerHTML = `<b>${res.added ? `Added ${esc(r.title || r.venue)} to Bookings as ${esc(stName(flConf()))}.` : `${esc(r.title || r.venue)} is already in Bookings.`}</b>`;
+      if (ok) ['#nh-date', '#nh-title', '#nh-venue', '#nh-city'].forEach(id => { const x = root.querySelector(id); if (x) { x.value = ''; x.dispatchEvent(new Event('input', { bubbles: true })); x.dispatchEvent(new Event('change', { bubbles: true })); } });
+    };
+  }
+  // problems stay on screen long enough to read: messages about something going wrong last 7 seconds instead of 2
+  function flWrapToast() {
+    const o = window.toast; if (typeof o !== 'function' || o.__fl) return;
+    const w = function (t) { const out = o.apply(this, arguments); try { const el = document.getElementById('toast'); if (el) { el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite'); } if (el && /couldn't|can't|cannot|not available|isn't|aren't|failed|first|try again|too large|deleted|no shows|connect|add a|add the|pick|name the|enter|paste|type/i.test(String(t))) { clearTimeout(w.t); w.t = setTimeout(() => { el.hidden = true; }, 7000); } } catch (_) {} return out; };
+    w.__fl = true; window.toast = w;
+  }
   function flScan() {
     FL.raf = 0;
     for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaPage, flEpkPicRow, flArtistUI]) { try { f(); } catch (e) { console.error(e); } }
@@ -3167,6 +3231,7 @@ function appExtras() {
     st.db.collection('posts').onSnapshot(s => { FL.posts = Object.fromEntries(s.docs.map(d => [d.id, d.data()])); flRefresh(); flSoon(); }, () => {});
     flWrapTasks(); flWrapForm(); flWrapView(); flWrapSave(); flWrapWords();
     document.addEventListener('click', flDocClick, true);
+    document.addEventListener('click', flFutureGuard, true); flWrapToast();
     document.addEventListener('change', flDocChange, true);
     new MutationObserver(recs => { flSoon(); if (!FL.cfg || flArtist().label === 'DJ') return; for (const r of recs) for (const n of r.addedNodes) { try { flRelabel(n); } catch (_) {} } }).observe(document.body, { childList: true, subtree: true });
     flRefresh(true); flSoon(); flRelabel(document.body);
