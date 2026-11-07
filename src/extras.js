@@ -3491,11 +3491,35 @@ function appExtras() {
     });
     [subj, body].forEach(el => el.addEventListener('input', tell));
   }
+    /* -- a booking's extra money: add income or an expense right under the fee; it all lands in Financials */
+  const flMoneyOf = id => ({ inc: (S.income || []).filter(i => i.bookingId === id), exp: (S.expenses || []).filter(e => e.bookingId === id) });
+  function flAddIncome(b, i) {
+    const t = todayStr();
+    incomeForm(i || { bookingId: b.id, date: b.date && b.date <= t ? b.date : t, sourceId: b.promoterId || b.venueId || '', notes: `For ${bookingName(b)}${b.date ? ' (' + fmtD(b.date) + ')' : ''}` });
+    const r = document.querySelector('#sheetRoot .sheet'), n = r && r.querySelector('h3 + p.note');
+    if (n) n.textContent = `Extra money from ${bookingName(b)}: merch, tips, a bonus or a door split. It's added to Financials with this show.`;
+  }
+  function flAddExpense(b, e) { const t = todayStr(); expenseForm(e || { bookingId: b.id, date: b.date && b.date <= t ? b.date : t }); }
+  function flMoneyRow(root) {
+    const id = root.dataset && root.dataset.booking, b = id && flBk().find(x => x.id === id), dl = root.querySelector('dl.kv'); if (!b || !dl || dl.querySelector('.ssx-fl-money')) return;
+    const feeDt = [...dl.querySelectorAll('dt')].find(d => d.textContent.trim() === 'Fee'), feeDd = feeDt && feeDt.nextElementSibling; if (!feeDd) return;
+    const { inc, exp } = flMoneyOf(id), fee = +b.fee || 0, ti = inc.reduce((s, i) => s + (+i.amount || 0), 0), te = exp.reduce((s, e) => s + (+e.amount || 0), 0);
+    const items = [...inc.map(i => ({ k: 'i', id: i.id, amt: +i.amount || 0, label: i.desc || incCatLabel(i) })), ...exp.map(e => ({ k: 'e', id: e.id, amt: +e.amount || 0, label: e.desc || expCatLabel(e) }))];
+    const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = 'Extra money'; dd.className = 'ssx-fl-money';
+    dd.innerHTML = `${items.length ? `<div class="ssx-fl-mlist">${items.map(x => `<button type="button" class="ssx-fl-mi" data-fl-m="${x.k}:${esc(x.id)}" aria-label="Edit ${esc(x.label)}"><span class="num ${x.k === 'e' ? 'out' : 'in'}">${x.k === 'e' ? '−' : '+'}${money(x.amt)}</span><span>${esc(x.label)}</span></button>`).join('')}</div>
+      <div class="ssx-fl-mtot"><b>Show total ${money(fee + ti - te)}</b><span class="note">Fee ${money(fee)}${ti ? ` + ${money(ti)} income` : ''}${te ? ` − ${money(te)} expenses` : ''}</span></div>` : ''}
+      <div class="ssx-fl-mact"><button type="button" class="btn small" data-fl-addinc>+ Add income</button><button type="button" class="btn small" data-fl-addexp>+ Add expense</button>${items.length ? '<button type="button" class="linkbtn" data-fl-fin>See in Financials</button>' : ''}</div>`;
+    feeDd.after(dt, dd);
+    dd.querySelector('[data-fl-addinc]').onclick = () => flAddIncome(b);
+    dd.querySelector('[data-fl-addexp]').onclick = () => flAddExpense(b);
+    const fin = dd.querySelector('[data-fl-fin]'); if (fin) fin.onclick = () => { closeAll(); goTab('money'); };
+    dd.querySelectorAll('[data-fl-m]').forEach(x => x.onclick = () => { const [k, mid] = x.dataset.flM.split(':'); if (k === 'i') { const i = inc.find(y => y.id === mid); if (i) flAddIncome(b, i); } else { const e = exp.find(y => y.id === mid); if (e) flAddExpense(b, e); } });
+  }
   function flScan() {
     FL.raf = 0;
     for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
-    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker]) { try { f(root); } catch (e) { console.error(e); } } });
+    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow]) { try { f(root); } catch (e) { console.error(e); } } });
   }
   function hookFlow() {
     if (window.__ssxFL || !st.db) return; window.__ssxFL = true;
