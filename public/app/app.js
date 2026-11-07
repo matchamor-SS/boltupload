@@ -1014,10 +1014,10 @@ function evPayload(b){const s1=setStartOf(b),e1=setEndOf(b)||addMin(s1,60);const
   const hold=!["confirmed","played","paid"].includes(K(b.status));
   return {summary:`${hold?"HOLD · ":""}DJ set: ${showName(b)}`,startTime:`${sd}T${s1}:00`,endTime:`${end}T${e1}:00`,location:bAddr(b)||"",
     description:[`Stage: ${STAGE_L[b.status]||b.status}`,v?`Venue: ${cName(v)}`:"",pr?`Promoter: ${cName(pr)}`:"",b.fee?`Fee: ${money(b.fee)}`:"","Added from your booking app."].filter(Boolean).join("\n"),notificationLevel:"NONE"}}
-async function dropEvent(ge){const mcp=G.mcp||await claude.use("mcp");if(!mcp||!ge||!ge.eventId)return;try{await mcp.callTool(GC,"delete_event",{eventId:ge.eventId,...(ge.calendarId?{calendarId:ge.calendarId}:{}),notificationLevel:"NONE"})}catch(e){}}
+async function dropEvent(ge){const mcp=G.mcp||await claude.use("mcp");if(!mcp||!ge||!ge.eventId)return false;try{await mcp.callTool(GC,"delete_event",{eventId:ge.eventId,...(ge.calendarId?{calendarId:ge.calendarId}:{}),notificationLevel:"NONE"});return true}catch(e){return !!(e&&e.code==="tool_error"&&/not.?found|deleted|gone|404|410/i.test(String(e.message||"")))}}
 async function syncBookingEvent(id,given){const b=given?{...given,id}:S.bookings.find(x=>x.id===id);if(!b)return;const ge=b.gcal;
   const want=!b.gcalOff&&b.date&&setStartOf(b)&&K(b.status)!=="lost";const mcp=G.mcp||await claude.use("mcp");if(!mcp)return;
-  try{if(!want){if(ge&&ge.eventId){await dropEvent(ge);await patch("bookings",id,{gcal:{__gone:true,eventId:"",calendarId:"",link:""}});toast("Removed from Google Calendar")}return}
+  try{if(!want){if(ge&&ge.eventId){if(await dropEvent(ge)){await patch("bookings",id,{gcal:{__gone:true,eventId:"",calendarId:"",link:""}});toast("Removed from Google Calendar")}else toast("Couldn't take it off Google Calendar yet. The app will keep trying while Google Calendar is connected.")}return}
     const body=evPayload(b),cal=G.writeTo||"";
     if(ge&&ge.eventId&&(ge.calendarId||"")===cal){await mcp.callTool(GC,"update_event",{eventId:ge.eventId,...(cal?{calendarId:cal}:{}),...body});toast("Google Calendar updated")}
     else{if(ge&&ge.eventId)await dropEvent(ge);const r=await mcp.callTool(GC,"create_event",{...(cal?{calendarId:cal}:{}),...body});const p=r.payload||{},ev=p.event||p;
