@@ -2416,7 +2416,7 @@ function appExtras() {
     let bks = []; try { bks = S.bookings || []; } catch (_) {}
     const t0 = todayStr(), up = bks.filter(b => b.date && b.date >= t0 && String(b.status).toLowerCase() === 'confirmed' && !b.epkOff).sort((a, b) => a.date.localeCompare(b.date)), all = nhShows().filter(flOnEpk);
     if (k === 'stats') {
-      const s = { ...nhStats(all), upcoming: up.length }, list = [['shows', 'Shows played'], ['cities', 'Cities'], ['venues', 'Venues'], ['upcoming', 'Upcoming']].filter(([x]) => s[x]);
+      const s = { ...nhStats(c.statsAll === false ? all : nhShows()), upcoming: up.length }, list = [['shows', 'Shows played'], ['cities', 'Cities'], ['venues', 'Venues'], ['upcoming', 'Upcoming']].filter(([x]) => s[x]);
       if (list.length) place('stats', 'full', `<div class="epk-stats" style="border-color:${T.line}">${list.map(([x, l]) => `<div><b style="color:${T.solid}">${s[x]}</b><span style="color:${T.muted}">${l}</span></div>`).join('')}</div>`);
       return;
     }
@@ -2625,7 +2625,7 @@ function appExtras() {
     const chips = (list, key, val) => list.map(([v, l]) => `<button type="button" class="chip" data-fl-${key}="${v}" aria-pressed="${+val === v}">${l}</button>`).join('');
     box.innerHTML = `<div class="ssx-fl-k">Remind me until it's done</div><div class="chips">${chips(FL_EVERY, 'every', c.every)}</div>
       <div class="ssx-fl-k">Early heads-up</div><div class="chips">${chips(FL_AHEAD, 'ahead', c.ahead)}</div>
-      <p class="note" style="margin:0">Reminders stop on their own once you check a task off or mark the show Paid. Posts from your post plan (Media) remind you on their day.</p>`;
+      <p class="note" style="margin:0">Reminders stop on their own once you check a task off or mark the show Paid.</p>`;
     box.querySelectorAll('[data-fl-every]').forEach(b => b.onclick = () => { flSave({ every: +b.dataset.flEvery }); flRemindRow(); flRefresh(); });
     box.querySelectorAll('[data-fl-ahead]').forEach(b => b.onclick = () => { flSave({ ahead: +b.dataset.flAhead }); flRemindRow(); flRefresh(); });
   }
@@ -2994,6 +2994,7 @@ function appExtras() {
   const FL_POSTS = { announce: ['Announce it', 'let people know you are playing', -14], countdown: ['Countdown', 'a reminder a couple of days before', -2], dayof: ['Tonight', 'a day-of post or story', 0], recap: ['Recap and thank-you', 'photos and a thank-you to the venue and crew', 1] };
   const flHandle = c => c && c.instagram ? '@' + String(c.instagram).replace(/^@/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/\/.*$/, '').trim() : '';
   function flPlan(all) {
+    return []; // the post plan was taken out of Media
     const t = todayStr(), plan = flCfg().plan || {}, out = [];
     for (const b of flBk()) {
       if (!b.date) continue; const k = flKind(b.status), past = b.date < t;
@@ -3218,9 +3219,237 @@ function appExtras() {
     const w = function (t) { const out = o.apply(this, arguments); try { const el = document.getElementById('toast'); if (el) { el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite'); } if (el && /couldn't|can't|cannot|not available|isn't|aren't|failed|first|try again|too large|deleted|no shows|connect|add a|add the|pick|name the|enter|paste|type/i.test(String(t))) { clearTimeout(w.t); w.t = setTimeout(() => { el.hidden = true; }, 7000); } } catch (_) {} return out; };
     w.__fl = true; window.toast = w;
   }
+  /* -- past shows: never get stuck. A problem is explained right under the show, with a button that moves you forward */
+  const flNhVals = root => { const v = id => ((root.querySelector(id) || {}).value || '').trim(); return { date: v('#nh-date'), title: v('#nh-title'), venue: v('#nh-venue'), city: v('#nh-city'), approx: false }; };
+  const flNhIdx = root => { const e = root.querySelector('.ssx-hentry .eyebrow'), i = FL.nhEdit; return e && /edit/i.test(e.textContent) && Number.isInteger(i) && flDraft()[i] ? i : -1; };
+  const flNhSame = (a, b) => !!a && !!b && ['date', 'title', 'venue', 'city'].every(k => String(a[k] || '').trim() === String(b[k] || '').trim());
+  const flNhSheet = () => [...document.querySelectorAll('#sheetRoot .sheet')].find(s => s.querySelector('.ssx-hfile')) || null;
+  // a message box that stays until the next step (separate from the Check my shows summary)
+  function flMsg(host, where, html, kind) {
+    let box = host.querySelector('.ssx-fl-msg'); if (!box) { box = document.createElement('div'); box.className = 'ssx-fl-msg'; where(box); }
+    box.dataset.kind = kind || 'warn'; box.setAttribute('role', kind === 'ok' ? 'status' : 'alert'); box.innerHTML = html;
+    try { box.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (_) {}
+    return box;
+  }
+  const flNhTop = (s, html, kind) => flMsg(s, b => { const n = s.querySelector('p.note'); n ? n.after(b) : s.prepend(b); }, html, kind);
+  // close the open show form (the list stays), then show a message and/or go on to Check my shows
+  function flNhClose(root, go, msg) {
+    const stop = root.querySelector('[data-nh-stop]');
+    if (stop) stop.click(); else ['#nh-date', '#nh-title', '#nh-venue', '#nh-city'].forEach(id => { const x = root.querySelector(id); if (x) x.value = ''; });
+    FL.nhEdit = -1;
+    setTimeout(() => {
+      const s = flNhSheet(), g = s && s.querySelector('[data-go]');
+      if (go && g && !g.disabled) { g.click(); const r = [...document.querySelectorAll('#sheetRoot .sheet')].pop(); if (msg && r) flNhTop(r, msg, 'ok'); }
+      else if (msg && s) flNhTop(s, msg, 'ok');
+    }, 0);
+  }
+  async function flNhToBookings(root, r, idx, go) {
+    const res = await flAddUpcoming([r]), nm = esc(r.title || r.venue);
+    if (idx >= 0) flDraft().splice(idx, 1);
+    flNhClose(root, go, `<b>${res.added ? `Added ${nm} to Bookings as ${esc(stName(flConf()))}.` : `${nm} is already in Bookings.`}</b>${idx >= 0 ? '<p>It was taken off this list, since show history is only for past shows.</p>' : ''}`);
+  }
+  function flNhGuard(e) {
+    const t = e.target && e.target.closest ? e.target : null; if (!t || !t.closest('#sheetRoot')) return;
+    const ed = t.closest('[data-nh-edit]'); if (ed) { FL.nhEdit = +ed.dataset.nhEdit; return; }
+    if (t.closest('[data-nh-more]')) { FL.nhEdit = -1; return; }
+    const root = t.closest('.sheet'); if (!root) return;
+    const sv = t.closest('[data-save]'); if (sv && root.querySelector('#nh-date[data-k]')) { flNhOne(e, root, sv); return; }
+    const ok = t.closest('[data-nh-ok]'), go = t.closest('[data-go]'); if (!ok && !go) return;
+    const entry = root.querySelector('.ssx-hentry'); if (!entry || (go && !root.querySelector('.ssx-hfile'))) return;
+    const r = flNhVals(root), idx = flNhIdx(root), D = flDraft();
+    if (go && !r.date && !r.title && !r.venue) return;
+    const stop = () => { e.preventDefault(); e.stopImmediatePropagation(); };
+    // opened a show from the list but didn't change it: just close it and carry on
+    if (go && idx >= 0 && flNhSame(r, D[idx])) { stop(); flNhClose(root, true); return; }
+    const future = !!r.date && r.date > todayStr(), named = !!(r.title || r.venue);
+    if (r.date && named && !future) {
+      if (go) { stop(); const o = root.querySelector('[data-nh-ok]'); if (o) o.click(); setTimeout(() => { const s = flNhSheet(), g = s && s.querySelector('[data-go]'); if (g && !g.disabled) g.click(); }, 0); }
+      return;
+    }
+    stop();
+    const where = b => { const a = (ok && ok.closest('.ssx-row')) || entry.querySelector('[data-nh-ok]')?.closest('.ssx-row'); a ? a.before(b) : entry.appendChild(b); };
+    const later = go ? `<button type="button" class="btn small" data-fl-skip>${idx >= 0 ? 'Keep it as it was and continue' : 'Leave it out and continue'}</button>` : idx >= 0 ? '<button type="button" class="btn small" data-fl-drop>Take it off this list</button>' : '';
+    let html;
+    if (!r.date) html = '<b>Pick the date of this show.</b>';
+    else if (!named) html = '<b>Add a venue or event name.</b><p>Each show needs at least one of them.</p>';
+    else html = `<b>${esc(r.title || r.venue)} (${esc(nhLabel(r))}) hasn't happened yet.</b><p>Show history is only for past shows. Upcoming shows go in Bookings, where they get reminders and invoices. If the date is a typo, fix it above.</p>`;
+    html += `<div class="ssx-row">${future && named ? '<button type="button" class="btn small primary" data-fl-bk>Add it to Bookings</button>' : ''}${later}</div>`;
+    const box = flMsg(entry, where, html, 'warn');
+    const f = root.querySelector(!r.date ? '#nh-date' : !named ? '#nh-venue' : '#nh-date'); if (f && !future) f.focus();
+    const bk = box.querySelector('[data-fl-bk]'); if (bk) bk.onclick = () => { bk.disabled = true; bk.textContent = 'Adding…'; flNhToBookings(root, r, idx, !!go); };
+    const sk = box.querySelector('[data-fl-skip]'); if (sk) sk.onclick = () => flNhClose(root, true);
+    const dr = box.querySelector('[data-fl-drop]'); if (dr) dr.onclick = () => { const x = flDraft()[idx]; flDraft().splice(idx, 1); flNhClose(root, false, `<b>Took ${esc((x && (x.title || x.venue)) || 'that show')} off the list.</b>`); };
+  }
+  // the single "Add a past show" / "Edit past show" form
+  function flNhOne(e, root, sv) {
+    const r = flNhVals(root), named = !!(r.title || r.venue), future = !!r.date && r.date > todayStr();
+    if (r.date && named && !future) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    const where = b => { const a = sv.closest('.actions'); a ? a.before(b) : root.appendChild(b); };
+    if (!r.date) { flMsg(root, where, '<b>Pick the date of this show.</b>', 'warn'); return; }
+    if (!named) { flMsg(root, where, '<b>Add a venue or event name.</b><p>Each show needs at least one of them.</p>', 'warn'); return; }
+    const h = root.querySelector('h3'), id = h && /edit/i.test(h.textContent) && FL.nhOpen && FL.nhOpen.kind === 'past' ? FL.nhOpen.id : '';
+    const box = flMsg(root, where, `<b>${esc(r.title || r.venue)} (${esc(nhLabel(r))}) hasn't happened yet.</b><p>Show history is only for past shows. Upcoming shows go in Bookings, where they get reminders and invoices. If the date is a typo, fix it above.</p><div class="ssx-row"><button type="button" class="btn small primary" data-fl-bk>${id ? 'Move it to Bookings' : 'Add it to Bookings'}</button></div>`, 'warn');
+    const bk = box.querySelector('[data-fl-bk]'); bk.onclick = async () => {
+      bk.disabled = true; bk.textContent = 'Adding…';
+      const res = await flAddUpcoming([r]);
+      if (id) { try { await st.db.collection('pastShows').doc(id).delete(); } catch (_) {} }
+      close(); toast(res.added ? `${id ? 'Moved' : 'Added'} ${r.title || r.venue} to Bookings` : `${r.title || r.venue} is already in Bookings`);
+    };
+  }
+
+  /* -- EPK color themes: each one recolors the whole page (background, text, lines, accents), not just the headings */
+  // key, name, dark [background, glow, text, accent], light [background, glow, text, accent], metallic button/foil
+  function flThemeList() { return [
+    ['champagne', 'Champagne', ['#0E100C', '#26301E', '#EFE7D3', '#D4B26E'], ['#F6F1E6', '#EADFC8', '#1C2117', '#8A6A35'], ['#8A6A35', '#F2DDA4', '#C9A55C', '#F7E7BC'], 1],
+    ['fl-onyx', 'Onyx & Silver', ['#0A0A0C', '#2E3036', '#EEEFF2', '#C9CED6'], ['#ECECEA', '#D3D4D0', '#141417', '#4F555E'], ['#9DA2AA', '#F4F5F7', '#B9BEC6', '#FFFFFF']],
+    ['fl-emerald', 'Emerald', ['#06392C', '#13694F', '#ECF3EC', '#DDBB6A'], ['#DCEDE2', '#B9DCC6', '#0B2A21', '#0E6B4F'], ['#A8843F', '#F2DDA4', '#C9A55C', '#F7E7BC']],
+    ['fl-sapphire', 'Sapphire', ['#0B1C52', '#2649A3', '#E9EEF9', '#AFC6F5'], ['#DAE4F7', '#B6CAEF', '#0B193D', '#2446A0'], ['#8FA4D4', '#E3ECFF', '#A9BCE4', '#F4F7FF']],
+    ['fl-bordeaux', 'Bordeaux', ['#3D0A1A', '#7C1E38', '#F6E7E4', '#E8AE9E'], ['#F3DCDC', '#E5B7B9', '#3A0C17', '#8C1C34'], ['#C98A7B', '#F6CDBF', '#D9A092', '#FBE3DA']],
+    ['fl-amethyst', 'Amethyst', ['#2A0F4A', '#5C2D8C', '#F2EAF9', '#D9B8F2'], ['#E8DCF5', '#D0B8EA', '#261238', '#6B3A9A'], ['#B48FD6', '#F1DDFB', '#C9A4E6', '#FBEFFF']],
+    ['fl-scarlet', 'Scarlet Noir', ['#120405', '#7A1019', '#F8EEEB', '#F0505A'], ['#F8E2E0', '#EDBBB8', '#1A0405', '#B3141F'], ['#E06A72', '#F9BDC0', '#E8858C', '#FCDDDF']],
+    ['fl-peacock', 'Peacock', ['#043A40', '#0B7076', '#E7F5F3', '#5AD6C9'], ['#D7EEEB', '#B2DDD7', '#06282B', '#0D7470'], ['#6CC1BA', '#CFF5EF', '#8ED3CC', '#E8FBF8']],
+    ['fl-copper', 'Copper', ['#34190B', '#76391A', '#F7EADF', '#E8A26B'], ['#F3DFCC', '#E5C09D', '#2E160A', '#9A4E1F'], ['#C98450', '#F7C9A0', '#D9996A', '#FCE2C8']],
+    ['fl-rose', 'Rose', ['#4A1D29', '#8C4255', '#FCEEEF', '#F4B8C3'], ['#F7DBDF', '#ECB9C3', '#3B1A20', '#B4566A'], ['#D08F99', '#FBD9DE', '#E0A8B1', '#FFF0F2']],
+    ['fl-espresso', 'Espresso & Cream', ['#2A1A0F', '#5C3D24', '#F4EADD', '#DDB98E'], ['#EBDBC6', '#D8BE9E', '#24170E', '#7A5232'], ['#B38B62', '#F3DEC2', '#C9A27A', '#FBEEDC']],
+  ]; }
+  // the older app colors map to their closest theme, so a saved EPK still looks right
+  function flThemeKey(k) { const old = { sage: 'fl-emerald', lavender: 'fl-amethyst', sky: 'fl-sapphire', blush: 'fl-rose', apricot: 'fl-copper', pride: 'fl-scarlet', trans: 'fl-rose', gay: 'fl-peacock', lesbian: 'fl-copper', bi: 'fl-amethyst' }; return old[k] || k || 'champagne'; }
+  function flRgba(h, a) { return `rgba(${[1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)).join(',')},${a})`; }
+  function flMix(a, b, t) { return '#' + [1, 3, 5].map(i => Math.round(parseInt(a.slice(i, i + 2), 16) * (1 - t) + parseInt(b.slice(i, i + 2), 16) * t).toString(16).padStart(2, '0')).join(''); }
+  function flTheme(key, mode) {
+    const th = flThemeList().find(x => x[0] === flThemeKey(key)); if (!th || th[5]) return null; // Champagne keeps the original look
+    const dark = mode !== 'light', [bg, glow, ink, solid] = dark ? th[2] : th[3], m = th[4];
+    return { bg, glow, ink, solid, muted: dark ? flRgba(ink, .7) : flMix(ink, bg, .36), line: dark ? flRgba(ink, .16) : flMix(ink, bg, .8), panel: dark ? flRgba(ink, .05) : 'rgba(255,255,255,.55)', metal: `linear-gradient(115deg,${m[0]} 0%,${m[1]} 40%,${m[2]} 60%,${m[3]} 100%)`, glow2: flMix(solid, bg, dark ? .84 : .82) };
+  }
+  function flEpkColors() {
+    const opts = EPK.el && EPK.el.querySelector('.ssx-epk-opts'); if (!opts || !EPK.cfg) return;
+    const row = [...opts.querySelectorAll('.ssx-epk-row')].find(r => r.querySelector('[data-epk-pal], [data-fl-pal]')); if (!row) return;
+    const cur = flThemeKey(EPK.cfg.palette), dark = EPK.cfg.mode !== 'light', sig = cur + '|' + dark; if (row.dataset.fl === sig) return;
+    row.dataset.fl = sig; row.classList.add('ssx-fl-themes');
+    const sw = t => { const [bg, , , solid] = dark ? t[2] : t[3]; return `linear-gradient(90deg,${bg} 0 46%,${solid} 46% 76%,${t[4][1]} 76%)`; };
+    row.innerHTML = '<span class="ssx-epk-k">Colors</span>' + flThemeList().map(t => `<button type="button" class="ssx-chip" data-fl-pal="${t[0]}" aria-pressed="${cur === t[0]}"><span class="ssx-epk-sw" style="background:${sw(t)}"></span>${esc(t[1])}</button>`).join('');
+    row.querySelectorAll('[data-fl-pal]').forEach(b => b.onclick = () => { EPK.cfg.palette = b.dataset.flPal; try { if (st.db) st.db.doc('settings/epk').set(EPK.cfg).catch(() => {}); } catch (_) {} epkRender(); });
+  }
+
+  /* -- EPK layout: blocks always close up the space. Side-by-side blocks stack into the shorter column,
+        a block on its own takes the full width, and leftover room is shared out evenly instead of leaving holes */
+  const FL_HALF = { upcoming: 1, played: 1, music: 1, links: 1, press: 1, rider: 1, hosp: 1 };
+  function flEpkPack() {
+    const wrap = EPK.el && EPK.el.querySelector('.ssx-epk-pages'); if (!wrap || !EPK.cfg) return;
+    const pages = [...wrap.querySelectorAll('.epk-page')]; if (!pages.length) return;
+    const zoom = wrap.style.zoom; wrap.style.zoom = '1';
+    const recent = (EPK.cfg.showsView || 'recent') === 'recent', name = ((wrap.querySelector('h1.epk-name') || {}).textContent || '').trim();
+    const blocks = pages.flatMap(p => [...p.querySelectorAll('.epk-body .epk-blk')]);
+    blocks.forEach(b => { b.remove(); b.classList.remove('half', 'full'); b.classList.add(FL_HALF[b.dataset.blk] && (b.dataset.blk !== 'played' || recent) ? 'half' : 'full'); });
+    const tpl = pages[1] || null; pages.slice(1).forEach(p => p.remove());
+    const first = pages[0]; first.querySelector('.epk-body').innerHTML = '';
+    const mk = () => {
+      const p = (tpl || first).cloneNode(true);
+      if (!tpl) { const h = document.createElement('header'); h.className = 'epk-top'; h.innerHTML = `<span class="epk-label" style="color:${first.style.color};margin:0">${esc(name)}</span><span class="epk-label epk-pn" style="color:${first.style.color};opacity:.7;margin:0"></span>`; p.prepend(h); }
+      p.querySelector('.epk-body').innerHTML = ''; wrap.appendChild(p); return p;
+    };
+    let page = first, body = first.querySelector('.epk-body'), duo = null;
+    const over = () => body.scrollHeight > body.clientHeight + 2;
+    const newDuo = () => { duo = document.createElement('div'); duo.className = 'ssx-fl-duo'; duo.innerHTML = '<div class="ssx-fl-col"></div><div class="ssx-fl-col"></div>'; body.appendChild(duo); };
+    const newPage = () => { page = mk(); body = page.querySelector('.epk-body'); duo = null; };
+    for (const b of blocks) {
+      if (b.classList.contains('half')) {
+        if (!duo) newDuo();
+        const [a, c] = duo.children; (c.offsetHeight < a.offsetHeight ? c : a).appendChild(b);
+        if (over() && body.querySelectorAll('.epk-blk').length > 1) { b.remove(); if (!duo.querySelector('.epk-blk')) duo.remove(); newPage(); newDuo(); duo.children[0].appendChild(b); }
+      } else {
+        duo = null; body.appendChild(b);
+        if (over() && body.children.length > 1) { b.remove(); newPage(); body.appendChild(b); }
+      }
+    }
+    // a side-by-side block with no partner takes the full width
+    wrap.querySelectorAll('.ssx-fl-duo').forEach(d => { const bs = d.querySelectorAll('.epk-blk'); if (bs.length === 1) { bs[0].classList.replace('half', 'full'); d.replaceWith(bs[0]); } });
+    const all = [...wrap.querySelectorAll('.epk-page')], pad = n => String(n).padStart(2, '0');
+    let th = null; try { th = epkTheme(EPK.cfg.palette, EPK.cfg.mode); } catch (_) {}
+    all.forEach((p, i) => {
+      const bd = p.querySelector('.epk-body'), kids = [...bd.children];
+      p.classList.remove('epk-fill'); p.classList.toggle('epk-solo', kids.length === 1 && kids[0].dataset.blk === 'booking'); bd.style.rowGap = '';
+      if (i < all.length - 1 && kids.length > 1) { const free = bd.getBoundingClientRect().bottom - kids[kids.length - 1].getBoundingClientRect().bottom; if (free > 8) bd.style.rowGap = Math.round(Math.min(34 + free / (kids.length - 1), 72)) + 'px'; }
+      const pn = p.querySelector('.epk-pn'); if (pn) pn.textContent = `${pad(i + 1)} / ${pad(all.length)}`;
+      if (th && th.glow2) p.style.background = `radial-gradient(700px 520px at 78% 0%, ${th.glow} 0%, transparent 62%), radial-gradient(680px 560px at 0% 100%, ${th.glow2} 0%, transparent 66%), ${th.bg}`;
+    });
+    wrap.style.zoom = zoom;
+  }
+  // Highlights: count every show played, or only the shows on the EPK
+  function flEpkStatsOpt() {
+    const opts = EPK.el && EPK.el.querySelector('.ssx-epk-opts'), v = opts && opts.querySelector('[data-nh-view]'); if (!v || opts.querySelector('#ssx-fl-stats')) return;
+    const on = EPK.cfg.statsAll !== false, row = document.createElement('div'); row.className = 'ssx-epk-row'; row.id = 'ssx-fl-stats';
+    row.innerHTML = `<span class="ssx-epk-k">Highlights count</span><button type="button" class="ssx-chip" data-fl-sa="1" aria-pressed="${on}">Every show I've played</button><button type="button" class="ssx-chip" data-fl-sa="0" aria-pressed="${!on}">Only shows on my EPK</button>`;
+    v.closest('.ssx-epk-row').after(row);
+    row.querySelectorAll('[data-fl-sa]').forEach(b => b.onclick = () => { EPK.cfg.statsAll = b.dataset.flSa === '1'; try { if (st.db) st.db.doc('settings/epk').set(EPK.cfg).catch(() => {}); } catch (_) {} epkRender(); });
+  }
+  // run the layout and the color picker every time the EPK draws itself
+  function flEpkHook() {
+    if (typeof epkRender !== 'function' || epkRender.__fl) return;
+    const o = epkRender;
+    epkRender = function () { const out = o.apply(this, arguments); try { flEpkPack(); flEpkColors(); flEpkStatsOpt(); } catch (e) { console.error(e); } return out; };
+    epkRender.__fl = true;
+    try { if (EPK.el) epkRender(); } catch (_) {}
+  }
+
+  /* -- Media is an organizing hub: folders, links and photos from each show, easy to open and share. No new uploads */
+  async function flShare(url, title) {
+    try { if (navigator.share) { await navigator.share({ title: title || 'Media', url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+    try { await navigator.clipboard.writeText(url); toast('Link copied. Paste it anywhere to share.'); } catch (_) { toast("Couldn't copy the link. Press and hold it to copy instead."); }
+  }
+  const flHubWait = () => flWaiting().filter(b => !FL.media.some(m => m.bookingId === b.id));
+  const flHubRow = l => `<div class="ssx-fl-lrow"><span class="ssx-fl-lk">${esc(l.kind)}</span><span class="ssx-fl-lt"><b>${esc(l.label)}</b>${l.label === flHost(l.url) ? '' : `<span class="note">${esc(flHost(l.url))}</span>`}</span><span class="ssx-fl-lact"><a class="btn small" href="${esc(l.url)}" target="_blank" rel="noopener">Open</a><button type="button" class="btn small" data-fl-share="${esc(l.url)}" data-fl-st="${esc(l.label)}">Share</button>${l.auto ? '' : `<button type="button" class="btn small" data-fl-ledit="${esc(l.id)}">Edit</button>`}</span></div>`;
+  function flMediaHub() {
+    const sec = document.querySelector('section[data-view="media"]'), host = document.getElementById('ssx-fl-mhost'); if (!sec || !host || !st.db) return;
+    const hd = sec.querySelector('.head'); if (hd && !hd.dataset.flHub) {
+      hd.dataset.flHub = '1'; const n = hd.querySelector('p.note'); if (n) n.textContent = 'Every photo folder, video and link from your shows in one place. Open it, share it, or add it to your Kit.';
+      const up = hd.querySelector('[data-fl-add]'); if (up) up.remove(); const al = hd.querySelector('[data-fl-addlink]'); if (al) al.classList.add('primary');
+    }
+    const links = flMediaLinks(), old = flPhotos(), wait = flHubWait();
+    const sig = JSON.stringify([links.map(l => l.id + l.label + l.url + (l.b ? l.b.id : '')), old.map(m => m.id + m.bookingId), wait.map(b => b.id), flEpkAsset()]);
+    if (host.dataset.sig === sig) return; host.dataset.sig = sig;
+    // group everything by show, newest first; links with no show go last
+    const G = new Map(), grp = b => { const k = b ? b.id : ''; if (!G.has(k)) G.set(k, { b, links: [], photos: [] }); return G.get(k); };
+    links.forEach(l => grp(l.b || null).links.push(l));
+    old.forEach(m => grp(m.bookingId && flBk().find(x => x.id === m.bookingId) || null).photos.push(m));
+    const groups = [...G.values()].sort((a, b) => !a.b ? 1 : !b.b ? -1 : String(b.b.date || '').localeCompare(String(a.b.date || '')));
+    const folders = links.filter(l => l.kind === 'Folder').length;
+    host.innerHTML = `
+      ${wait.length ? `<div class="card ssx" id="ssx-fl-wait"><div class="ssx-head"><div><h3>Waiting on photos</h3><p class="note">Recent shows with a photographer or a photo folder, but no media saved yet. Ask for the files, then add the link here.</p></div></div>
+        <div class="ssx-fl-wait">${wait.map(b => { const m = contact(b.mediaId), f = flFolder(b); return `<div class="ssx-fl-wrow"><span><b>${esc(bookingName(b))}</b><span class="note">${esc(fmtD(b.date))}${m ? ' · ' + esc(cName(m)) : ''}</span></span><span class="ssx-fl-wact">${f ? `<a class="btn small" href="${esc(f)}" target="_blank" rel="noopener">Open folder</a>` : ''}${m && m.email ? `<button type="button" class="btn small" data-fl-ask="${esc(b.id)}">Ask for files</button>` : ''}<button type="button" class="btn small primary" data-fl-addl="${esc(b.id)}">Add the link</button><button type="button" class="btn small" data-fl-skip="${esc(b.id)}" aria-label="No photos coming for ${esc(bookingName(b))}">Skip</button></span></div>`; }).join('')}</div></div>` : ''}
+      <div class="card ssx" id="ssx-fl-hub"><div class="ssx-head"><div><h3>Your media</h3><p class="note">${links.length ? `${links.length} link${links.length === 1 ? '' : 's'}${folders ? `, ${folders} folder${folders === 1 ? '' : 's'}` : ''}, sorted by show. Share sends the link straight to a text, email or DM.` : 'Paste a link to a photo folder, video, mix or post and pick the show it came from. It lands here, sorted by show, ready to open and share.'}</p></div></div>
+        ${groups.length ? groups.map(g => `<div class="ssx-fl-gl">${esc(g.b ? `${bookingName(g.b)}${g.b.date ? ' · ' + dueShort(g.b.date) : ''}` : 'Not linked to a show')}${g.b ? `<button type="button" class="linkbtn" data-fl-addl="${esc(g.b.id)}">+ Add link</button>` : ''}</div>
+          ${g.links.length ? `<div class="ssx-fl-llist">${g.links.map(flHubRow).join('')}</div>` : ''}
+          ${g.photos.length ? `<div class="ssx-fl-grid">${g.photos.map(m => flThumb(m, true)).join('')}</div>` : ''}`).join('') : '<div class="empty">No media yet.</div>'}
+        <div class="ssx-row"><button type="button" class="btn small primary" data-fl-addl="">+ Add link</button></div></div>`;
+    host.querySelectorAll('[data-fl-addl]').forEach(x => x.onclick = () => flLinkSheet({ bookingId: x.dataset.flAddl }));
+    host.querySelectorAll('[data-fl-share]').forEach(x => x.onclick = () => flShare(x.dataset.flShare, x.dataset.flSt));
+    host.querySelectorAll('[data-fl-ledit]').forEach(x => x.onclick = () => flLinkSheet(FL.media.find(y => y.id === x.dataset.flLedit) || {}));
+    host.querySelectorAll('[data-fl-ask]').forEach(x => x.onclick = () => flAsk(x.dataset.flAsk));
+    host.querySelectorAll('[data-fl-skip]').forEach(x => x.onclick = () => { const id = x.dataset.flSkip; flSave({ mediaDone: { ...(flCfg().mediaDone || {}), [id]: true } }); flSoon(); toast('Skipped', () => { const md = { ...(flCfg().mediaDone || {}) }; delete md[id]; flSave({ mediaDone: md }); flSoon(); }); });
+    host.querySelectorAll('[data-fl-ph]').forEach(x => x.onclick = () => flPhotoSheet(x.dataset.flPh));
+    host.querySelectorAll('[data-fl-rm]').forEach(x => x.onclick = () => flTwoTap(x, 'Remove?', () => { const m = FL.media.find(y => y.id === x.dataset.flRm); if (m) flRemovePhoto('media', m.id, m.assetId); }));
+  }
+  // no photo uploads anywhere: a booking shows its media links instead, and the EPK picks from photos you already have
+  function flNoUploads() {
+    document.querySelectorAll('#sheetRoot .ssx-fl-phrow:not([data-fl-hub])').forEach(dd => {
+      const sh = dd.closest('[data-booking]'), id = sh && sh.dataset.booking; if (!id) return;
+      dd.dataset.flHub = '1'; const dt = dd.previousElementSibling; if (dt && dt.tagName === 'DT') dt.textContent = 'Media';
+      const n = FL.media.filter(m => m.bookingId === id).length;
+      dd.innerHTML = `${n ? `<button type="button" class="linkbtn" data-fl-goto>${n} in Media</button> ` : ''}<button type="button" class="btn small" data-fl-addl>Add a link</button>`;
+      dd.querySelector('[data-fl-addl]').onclick = () => flLinkSheet({ bookingId: id });
+      const g = dd.querySelector('[data-fl-goto]'); if (g) g.onclick = () => { close(); goTab('media'); };
+    });
+    let el = null; try { el = EPK.el; } catch (_) {}
+    const pic = el && el.querySelector('#ssx-fl-pic'); if (pic) {
+      const up = pic.querySelector('[data-fl-pup]'); if (up) up.remove();
+      if (!pic.querySelector('[data-fl-pick]') && !pic.querySelector('.ssx-fl-nopic')) { const s = document.createElement('span'); s.className = 'note ssx-fl-nopic'; s.textContent = 'Add a photo to your Kit files and it shows up here.'; (pic.querySelector('.ssx-fl-picks') || pic).appendChild(s); }
+    }
+  }  
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaPage, flEpkPicRow, flArtistUI]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
     sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker]) { try { f(root); } catch (e) { console.error(e); } } });
   }
@@ -3231,7 +3460,7 @@ function appExtras() {
     st.db.collection('posts').onSnapshot(s => { FL.posts = Object.fromEntries(s.docs.map(d => [d.id, d.data()])); flRefresh(); flSoon(); }, () => {});
     flWrapTasks(); flWrapForm(); flWrapView(); flWrapSave(); flWrapWords();
     document.addEventListener('click', flDocClick, true);
-    document.addEventListener('click', flFutureGuard, true); flWrapToast();
+    document.addEventListener('click', flNhGuard, true); flWrapToast(); flEpkHook();
     document.addEventListener('change', flDocChange, true);
     new MutationObserver(recs => { flSoon(); if (!FL.cfg || flArtist().label === 'DJ') return; for (const r of recs) for (const n of r.addedNodes) { try { flRelabel(n); } catch (_) {} } }).observe(document.body, { childList: true, subtree: true });
     flRefresh(true); flSoon(); flRelabel(document.body);
@@ -3363,7 +3592,8 @@ function appExtras() {
   }
   const hexMix = (a, b, t) => { const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)); const x = p(a), y = p(b); return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
   const lum = h => { const [r, g, b] = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255); return .2126 * r + .7152 * g + .0722 * b; };
-  function epkTheme(key, mode) {
+function epkTheme(key, mode) {
+    const flT = flTheme(key, mode); if (flT) return flT;
     const all = typeof PALETTES !== 'undefined' ? PALETTES : [];
     const pal = all.find(p => p[0] === key) || ['champagne', 'Champagne', ['#D4B26E', '#141711', '#EFE7D3']];
     const champ = pal[0] === 'champagne', cs = pal[2].filter(c => /^#[0-9a-f]{6}$/i.test(c) && lum(c) < .93), flag = cs.length > 3;
