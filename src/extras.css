@@ -788,3 +788,9 @@ html body #ssx-fl-lpick .chips { max-height: 132px; overflow-y: auto; }
 @media (max-width: 560px) {
   html body .ssx-fl-prow { flex-wrap: wrap; }
 }
+
+/* ===== Held-back shows: on-screen explanation ===== */
+html body .ssx-fl-why { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); border-left: 4px solid var(--accent); background: var(--surface); font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+html body .ssx-fl-why p { margin: 0; color: var(--muted); }
+html body .ssx-fl-why[data-kind="warn"] { border-left-color: var(--warn, #b4502a); }
+html body .ssx-fl-why .ssx-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
