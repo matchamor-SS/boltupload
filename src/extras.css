@@ -812,4 +812,7 @@ html body #ssx-fl-hub .ssx-fl-gl { display: flex; align-items: baseline; justify
 html body #ssx-fl-hub .ssx-fl-gl:first-of-type { border-top: 0; padding-top: 0; }
 html body #ssx-fl-hub .ssx-fl-gl .linkbtn { font-size: 13px; font-weight: 500; }
 html body .ssx-fl-lact { display: flex; flex-wrap: wrap; gap: 6px; }
-html body #ssx-fl-grid { margin: 6px 0 4px; }
+html body #ssx-fl-hub .ssx-fl-grid { margin: 6px 0 4px; }
+
+/* ===== New email: template picker warning note ===== */
+html body .ssx-fl-warnnote { color: var(--warn, #b4502a); }
