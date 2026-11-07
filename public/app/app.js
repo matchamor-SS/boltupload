@@ -1862,7 +1862,7 @@ function linkForm(l={}){const isNew=!l.id;
     root.querySelector("[data-save]").onclick=async()=>{const v=formVals(root);if(!v.label||!v.url){toast("Add a label and a link");return}
       if(await save("links",l.id,{...strip(l),...v})){close();toast("Saved")}}});
 }
-const FILLINS=SS.templates.FILLINS;
+const FILLINS=SS.templates.FILLINS.map(([g,items])=>[g,g==="Money & links"?[...items,["booking_link","My booking link"]]:items]);
 const fillSelect=id=>`<select id="${id}"><option value="">Choose one to add where your cursor is…</option>${FILLINS.map(([g,items])=>`<optgroup label="${g}">${items.map(([k,l])=>`<option value="${k}">${l}  ·  {{${k}}}</option>`).join("")}</optgroup>`).join("")}</select>`;
 function wireFill(root,subj,body,sel,note,after){let target=body;
   [subj,body].forEach(el=>el.addEventListener("focus",()=>{target=el;if(note)note.textContent=el===subj?"Goes into the subject at your cursor.":"Goes into the body at your cursor."}));
@@ -1937,7 +1937,7 @@ function templateForm(t={}){const isNew=!t.id;
       if(await save("templates",t.id,{...strip(t),...v})){close();toast("Saved")}}});
 }
 const tplCtx=()=>({contacts:S.contacts||[],profile:S.profile||{},kit:{...(S.kit||{}),promoFolderUrl:(S.kit&&S.kit.promoFolder&&S.kit.promoFolder.url)||""},links:sortedLinks(),promoFiles:(S.kitFiles||[]).filter(f=>f.shareUrl),openDates:openNights(),payHandles:PH()});
-const fill=(str,b,to)=>SS.templates.fill(str,tplCtx(),b,to);
+const fill=(str,b,to)=>SS.templates.fill(String(str||"").replace(/\{\{\s*booking_link\s*\}\}/g,()=>(window.ssBookingLink&&window.ssBookingLink())||""),tplCtx(),b,to);
 const defRecipient=(t,b)=>SS.templates.defaultRecipient(t,tplCtx(),b);
 function useTemplate(tid,bid){const t=S.templates.find(x=>x.id===tid);if(!t)return;
   let b=bid?S.bookings.find(x=>x.id===bid):null;
