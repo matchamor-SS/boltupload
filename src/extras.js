@@ -3447,9 +3447,53 @@ function appExtras() {
       if (!pic.querySelector('[data-fl-pick]') && !pic.querySelector('.ssx-fl-nopic')) { const s = document.createElement('span'); s.className = 'note ssx-fl-nopic'; s.textContent = 'Add a photo to your Kit files and it shows up here.'; (pic.querySelector('.ssx-fl-picks') || pic).appendChild(s); }
     }
   }  
+  /* -- email templates: a "Start from a template" pick list in every new email, and the booking link as a fill-in */
+  window.ssBookingLink = () => { try { const l = st.link || {}; return l.on && l.slug ? `${location.origin}/?book=${encodeURIComponent(l.slug)}` : ''; } catch (_) { return ''; } };
+  const FL_BK_TOKENS = /\{\{\s*(venue|promoter|media_name|show|date|set_time|city|address|fee|ticket_link|media_folder)\s*\}\}/;
+  function flTplOptions(bid) {
+    const list = (S.templates || []).filter(t => t && t.id); if (!list.length) return '';
+    const b = bid && S.bookings.find(x => x.id === bid);
+    let groups = [];
+    try { const d = SS.templates.templateDropdown(list, b || {}); groups = [...d.groups, ...(d.any ? [d.any] : [])]; } catch (_) { groups = [{ label: 'Your templates', options: list.map(t => ({ value: t.id, label: t.name || 'Untitled' })) }]; }
+    return `<option value="">Blank email</option>${groups.map(g => `<optgroup label="${esc(g.label)}">${g.options.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('')}</optgroup>`).join('')}`;
+  }
+  function flComposeTpl() {
+    const root = document.querySelector('#composeRoot .sheet'); if (!root || root.querySelector('#ssx-fl-tpl')) return;
+    const subj = root.querySelector('#cm-subj'), body = root.querySelector('#cm-body'), bk = root.querySelector('#cm-b'), to = root.querySelector('#cm-to'); if (!subj || !body) return;
+    const box = document.createElement('div'); box.className = 'f'; box.id = 'ssx-fl-tplbox';
+    const has = (S.templates || []).some(t => t && t.id);
+    box.innerHTML = has ? `<label for="ssx-fl-tpl">Start from a template</label><select id="ssx-fl-tpl" class="srch">${flTplOptions(bk && bk.value)}</select><span class="note" id="ssx-fl-tplnote">Pick one and it fills in the subject and message. ★ marks the best fit for the booking you pick.</span>`
+      : '<label>Start from a template</label><span class="note" id="ssx-fl-tpl">No templates yet. Write this email, then tap Save as template to reuse it.</span>';
+    const first = root.querySelector('.frow'); first ? first.before(box) : (root.querySelector('.head') || root.firstChild).after(box);
+    const sel = box.querySelector('select'); if (!sel) return;
+    const note = box.querySelector('#ssx-fl-tplnote'); let loaded = null;
+    const tell = () => {
+      const t = loaded, txt = subj.value + '\n' + body.value, msgs = [];
+      if (t && FL_BK_TOKENS.test(txt) && !(bk && bk.value)) msgs.push('Pick the booking under "About a booking" so the show details fill in.');
+      if (/\{\{\s*booking_link\s*\}\}/.test(txt) && !window.ssBookingLink()) msgs.push('Your booking link is turned off, so it will be left blank. Turn it on in Kit.');
+      note.textContent = msgs.length ? msgs.join(' ') : t ? `Using "${t.name || 'template'}". Fill-ins are swapped for the real details when you send.` : 'Pick one and it fills in the subject and message. ★ marks the best fit for the booking you pick.';
+      note.classList.toggle('ssx-fl-warnnote', msgs.length > 0);
+    };
+    const put = (el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+    sel.onchange = () => {
+      const t = (S.templates || []).find(x => x.id === sel.value), before = { s: subj.value, b: body.value };
+      const typed = (before.s.trim() || before.b.trim()) && !(loaded && before.s === (loaded.subject || '') && before.b === (loaded.body || ''));
+      if (!t) { if (loaded && !typed) { put(subj, ''); put(body, ''); } loaded = null; tell(); return; }
+      put(subj, t.subject || ''); put(body, t.body || ''); loaded = t;
+      try { if (to && !to.value && bk && bk.value) { const b = S.bookings.find(x => x.id === bk.value), r = b && defRecipient(t, b); if (r) { to.value = r; to.dispatchEvent(new Event('change', { bubbles: true })); } } } catch (_) {}
+      tell();
+      if (typed) toast(`Replaced your draft with "${t.name || 'the template'}"`, () => { put(subj, before.s); put(body, before.b); loaded = null; sel.value = ''; tell(); });
+    };
+    if (bk) bk.addEventListener('change', () => {
+      const v = sel.value; sel.innerHTML = flTplOptions(bk.value); sel.value = v;
+      try { if (loaded && to && !to.value) { const b = S.bookings.find(x => x.id === bk.value), r = b && defRecipient(loaded, b); if (r) { to.value = r; to.dispatchEvent(new Event('change', { bubbles: true })); } } } catch (_) {}
+      tell();
+    });
+    [subj, body].forEach(el => el.addEventListener('input', tell));
+  }
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
     sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker]) { try { f(root); } catch (e) { console.error(e); } } });
   }
