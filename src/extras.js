@@ -3515,9 +3515,16 @@ function appExtras() {
     const fin = dd.querySelector('[data-fl-fin]'); if (fin) fin.onclick = () => { closeAll(); goTab('money'); };
     dd.querySelectorAll('[data-fl-m]').forEach(x => x.onclick = () => { const [k, mid] = x.dataset.flM.split(':'); if (k === 'i') { const i = inc.find(y => y.id === mid); if (i) flAddIncome(b, i); } else { const e = exp.find(y => y.id === mid); if (e) flAddExpense(b, e); } });
   }
+    /* -- no browser or password-manager suggestions popping up over the app's text boxes (sign-in screen excluded) */
+  function flNoAutofill() {
+    document.querySelectorAll('input:not([data-fl-ac]), textarea:not([data-fl-ac])').forEach(el => {
+      el.dataset.flAc = '1'; if (el.closest('#ss-auth') || /^(password|checkbox|radio|file|hidden|range|color|submit|button)$/i.test(el.type || '')) return;
+      el.setAttribute('autocomplete', 'off'); el.setAttribute('data-lpignore', 'true'); el.setAttribute('data-1p-ignore', '');
+    });
+  }
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
     sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow]) { try { f(root); } catch (e) { console.error(e); } } });
   }
