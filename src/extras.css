@@ -794,3 +794,22 @@ html body .ssx-fl-why { display: flex; flex-direction: column; gap: 6px; padding
 html body .ssx-fl-why p { margin: 0; color: var(--muted); }
 html body .ssx-fl-why[data-kind="warn"] { border-left-color: var(--warn, #b4502a); }
 html body .ssx-fl-why .ssx-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+
+/* ===== Past shows: on-screen messages that move you forward ===== */
+html body .ssx-fl-msg { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; margin: 8px 0; border-radius: 12px; border: 1px solid var(--line); border-left: 4px solid var(--warn, #b4502a); background: var(--surface); font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+html body .ssx-fl-msg[data-kind="ok"] { border-left-color: var(--accent); }
+html body .ssx-fl-msg p { margin: 0; color: var(--muted); }
+html body .ssx-fl-msg .ssx-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+
+/* ===== EPK: blocks close up the space, bolder color themes ===== */
+html body .ssx-epk-pages .ssx-fl-duo { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 44px; align-items: start; min-width: 0; }
+html body .ssx-epk-pages .ssx-fl-col { display: flex; flex-direction: column; gap: 34px; min-width: 0; }
+html body .ssx-epk-pages .ssx-fl-col > .epk-blk { grid-column: auto; }
+html body .ssx-fl-themes .ssx-epk-sw { box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); }
+
+/* ===== Media hub ===== */
+html body #ssx-fl-hub .ssx-fl-gl { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--line); }
+html body #ssx-fl-hub .ssx-fl-gl:first-of-type { border-top: 0; padding-top: 0; }
+html body #ssx-fl-hub .ssx-fl-gl .linkbtn { font-size: 13px; font-weight: 500; }
+html body .ssx-fl-lact { display: flex; flex-wrap: wrap; gap: 6px; }
+html body #ssx-fl-grid { margin: 6px 0 4px; }
