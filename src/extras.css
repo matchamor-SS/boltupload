@@ -816,3 +816,14 @@ html body #ssx-fl-hub .ssx-fl-grid { margin: 6px 0 4px; }
 
 /* ===== New email: template picker warning note ===== */
 html body .ssx-fl-warnnote { color: var(--warn, #b4502a); }
+
+/* ===== Booking: extra income and expenses under the fee ===== */
+html body .ssx-fl-money { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+html body .ssx-fl-mlist { display: flex; flex-direction: column; gap: 4px; }
+html body .ssx-fl-mi { display: flex; align-items: baseline; gap: 10px; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px dashed var(--line); padding: 4px 0; font: inherit; color: inherit; cursor: pointer; min-width: 0; }
+html body .ssx-fl-mi > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+html body .ssx-fl-mi .num { flex: none; min-width: 72px; font-variant-numeric: tabular-nums; }
+html body .ssx-fl-mi .num.out { color: var(--hot); }
+html body .ssx-fl-mtot { display: flex; flex-direction: column; }
+html body .ssx-fl-mtot .note { margin: 0; }
+html body .ssx-fl-mact { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
