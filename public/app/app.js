@@ -1408,8 +1408,8 @@ function invoiceSheet(bid){navSheet("inv:"+bid,()=>invoiceSheet(bid));const b0=S
         const T=invTotals(inv),pc=S.contacts.find(c=>String(c.email||"").toLowerCase()===bi2.email.toLowerCase()&&!isColl(c)&&c.type!=="venue"),first=pc?(cName(pc).split(" ")[0]||"there"):"there";
         const body=`Hi ${first},\n\nThanks again for having me at ${showName(r.b)}${r.b.date?" on "+fmtD(r.b.date):""}. Attached is invoice ${inv.number} for ${money2(T.due)}, due ${fmtD(inv.dueDate)}.\n\n${invPayText(inv,me)?"How to pay:\n"+invPayText(inv,me)+"\n\n":""}Let me know if you need anything else from me.\n\nThanks,\n${me.name||me.biz}`;
         const subject=`Invoice ${inv.number} – ${showName(r.b)}`,fname=invFileName(r.b,inv);
-        busy(btn,true,"Review…");if(!(await confirmSend({to:[bi2.email],subject,body,attachName:fname})))return;busy(btn,true,"Sending…");
-        const res=await gmailSend({to:[bi2.email],subject,body,attachments:[{filename:fname,mimeType:"application/pdf",content:b64Pdf(doc)}],bookingId:bid,contactId:((S.contacts.find(c=>String(c.email||"").toLowerCase()===bi2.email.toLowerCase())||{}).id)||inv.billToId||"",kind:"invoice"});
+        busy(btn,true,"Review…");const ed=await confirmSend({to:[bi2.email],subject,body,attachName:fname});if(!ed)return;busy(btn,true,"Sending…");
+const res=await gmailSend({to:[bi2.email],subject:ed.subject,body:ed.body,attachments:[{filename:fname,mimeType:"application/pdf",content:b64Pdf(doc)}],bookingId:bid,contactId:((S.contacts.find(c=>String(c.email||"").toLowerCase()===bi2.email.toLowerCase())||{}).id)||inv.billToId||"",kind:"invoice"});
         inv.draftUrl=gmLink(res);inv.sentAt=today();await patch("bookings",bid,{invoice:{draftUrl:inv.draftUrl,sentAt:inv.sentAt}});status();
         notice({title:"Invoice sent",body:`${esc(inv.number)} for ${esc(money2(invTotals(inv).due))} went to ${esc(bi2.email)} with the PDF attached. Tick “Send invoice” on the booking when you're ready.`,link:inv.draftUrl,linkText:"Open in Gmail",extra:inv.fileUrl?`<a class="btn" href="${esc(inv.fileUrl)}" target="_blank" rel="noopener">View PDF in Drive</a>`:""})}
       catch(err){console.error(err);sendErr(err,"the invoice")}finally{if(btn.isConnected)busy(btn,false,"Email it")}};
@@ -1481,13 +1481,16 @@ function confirmSend(o){return new Promise(res=>{document.querySelector(".cs-bg"
   const to=[].concat(o.to||[]).filter(Boolean),cc=[].concat(o.cc||[]).filter(Boolean);
   const bg=document.createElement("div");bg.className="notice-bg cs-bg";
   bg.innerHTML=`<div class="notice" role="alertdialog" aria-modal="true" aria-labelledby="cs-t"><button class="x nx" data-no aria-label="Close">×</button>
-    <h4 id="cs-t">Send this email now?</h4>
-    <div class="cs"><div><span class="eyebrow">To</span>${esc(to.join(", "))}</div>${cc.length?`<div><span class="eyebrow">Cc</span>${esc(cc.join(", "))}</div>`:""}<div><span class="eyebrow">Subject</span>${esc(o.subject||"(no subject)")}</div>${o.attachName?`<div><span class="eyebrow">Attached</span>${esc(o.attachName)}</div>`:""}<div class="preview" style="max-height:200px;overflow:auto">${esc(o.body||"")}</div></div>
-    <p class="note" style="margin:0">Sends right away from your connected Gmail with your Gmail signature. Replies come back to your inbox.</p>
+    <h4 id="cs-t">Check it, then send</h4>
+    <div class="cs"><div><span class="eyebrow">To</span>${esc(to.join(", "))}</div>${cc.length?`<div><span class="eyebrow">Cc</span>${esc(cc.join(", "))}</div>`:""}
+    <div class="f" style="margin:0"><label for="cs-subj">Subject</label><input id="cs-subj" value="${esc(o.subject||"")}" autocomplete="off"></div>${o.attachName?`<div><span class="eyebrow">Attached</span>${esc(o.attachName)}</div>`:""}
+    <div class="f" style="margin:0"><label for="cs-body">Message</label><textarea id="cs-body" style="min-height:220px">${esc(o.body||"")}</textarea></div></div>
+    <p class="note" style="margin:0">Edit anything above. It sends from your connected Gmail with your Gmail signature, and replies come back to your inbox.</p>
     <div class="actions"><button class="btn" data-no>Keep editing</button><button class="btn primary" data-yes>Send now</button></div></div>`;
   document.body.appendChild(bg);const done=v=>{bg.remove();document.removeEventListener("keydown",k,true);res(v)};const k=e=>{if(e.key==="Escape"){e.stopPropagation();done(false)}};
-  bg.addEventListener("click",e=>{if(e.target===bg||e.target.closest("[data-no]"))done(false);else if(e.target.closest("[data-yes]"))done(true)});document.addEventListener("keydown",k,true);
-  setTimeout(()=>{const y=bg.querySelector("[data-yes]");y&&y.focus()},50)})}
+  const send=()=>{const s=bg.querySelector("#cs-subj").value.trim(),b=bg.querySelector("#cs-body").value;if(!s){toast("Add a subject");bg.querySelector("#cs-subj").focus();return}if(!b.trim()){toast("Write a message first");bg.querySelector("#cs-body").focus();return}done({subject:s,body:b})};
+  bg.addEventListener("click",e=>{if(e.target===bg||e.target.closest("[data-no]"))done(false);else if(e.target.closest("[data-yes]"))send()});document.addEventListener("keydown",k,true);
+  setTimeout(()=>{const b=bg.querySelector("#cs-body");if(b){b.focus();b.setSelectionRange(0,0);b.scrollTop=0}},50)})}
 function sentNotice(p,to,extra){notice({title:"Email sent",body:`Sent to ${esc(to.join(", "))}. Replies land in your Gmail inbox.`,link:gmLink(p),linkText:"Open in Gmail",extra})}
 function sendErr(err,what){if(err&&err.code){if(err.code!=="quiet")mailErr(err)}else toast("Couldn't send "+(what||"the email")+": "+(err&&err.message||"try again"))}
 const C_TYPES=[["venue","Venues & festivals"],["promoter","Promoters & collectives"],["media","Media"],["other","Other people"]];
@@ -1908,7 +1911,7 @@ function composeSheet(pre={}){
   $r("[data-send]").onclick=async e=>{const btn=e.currentTarget,m=built(),rcpt=splitMails(m.to),cc=splitMails(ccEm.value);
     if(!rcpt.length){toast("Add who it's going to");em.focus();return}const bad=[...rcpt,...cc].find(x=>!isMail(x));if(bad){toast(bad+" isn't a valid email address");return}
     if(!m.subj.trim()){toast("Add a subject");subj.focus();return}if(!m.body.trim()){toast("Write a message first");body.focus();return}
-    if(!(await confirmSend({to:rcpt,cc,subject:m.subj,body:m.body})))return;btn.disabled=true;btn.textContent="Sending…";
+const ed=await confirmSend({to:rcpt,cc,subject:m.subj,body:m.body});if(!ed)return;m.subj=ed.subject;m.body=ed.body;btn.disabled=true;btn.textContent="Sending…";
     try{const p=await gmailSend({to:rcpt,cc,subject:m.subj,body:m.body,bookingId:bk.value,contactId:to.value||"",label:pre.title||""});composeEnd();sentNotice(p,rcpt)}
     catch(err){if(btn.isConnected){btn.disabled=false;btn.textContent="Send…"}sendErr(err)}};
   const dis=$r("[data-discard]");dis.onclick=()=>{if(!subj.value.trim()&&!body.value.trim()){composeEnd();return}
@@ -1947,7 +1950,7 @@ function useTemplate(tid,bid){const t=S.templates.find(x=>x.id===tid);if(!t)retu
     <div class="actions"><button class="btn" data-cp>Copy text</button><button class="btn" data-tweak>Edit before sending</button><a class="btn" target="_blank" rel="noopener" href="https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}">Open in Gmail</a><button class="btn primary" data-usend>Send…</button></div>`;
     $("#u-out [data-usend]").onclick=async e=>{const btn=e.currentTarget;if(!isMail(String(email).toLowerCase())){toast(to?"No email saved for "+cName(to)+". Tap Edit before sending to type one.":"Pick who it's going to");return}
       if(!(await confirmSend({to:[email],subject:subj,body})))return;btn.disabled=true;btn.textContent="Sending…";
-      try{const p=await gmailSend({to:[email],subject:subj,body,bookingId:b&&b.id||"",contactId:to&&to.id||"",label:t.name});close();sentNotice(p,[email])}catch(err){if(btn.isConnected){btn.disabled=false;btn.textContent="Send…"}sendErr(err)}};
+      try{const p=await gmailSend({to:[email],subject:ed.subject,body:ed.body,bookingId:b&&b.id||"",contactId:to&&to.id||"",label:t.name});close();sentNotice(p,[email])}catch(err){if(btn.isConnected){btn.disabled=false;btn.textContent="Send…"}sendErr(err)}};
     $("#u-out [data-cp]").onclick=()=>copy(`Subject: ${subj}\n\n${body}`);
     $("#u-out [data-tweak]").onclick=()=>{close();composeSheet({title:t.name,to:to&&to.id||"",email:email,booking:b&&b.id||"",subject:subj,body,aud:t.audience==="media"?"media":""})}};
   const defTo=defRecipient(t,b);
