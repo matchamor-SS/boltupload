@@ -827,3 +827,13 @@ html body .ssx-fl-mi .num.out { color: var(--hot); }
 html body .ssx-fl-mtot { display: flex; flex-direction: column; }
 html body .ssx-fl-mtot .note { margin: 0; }
 html body .ssx-fl-mact { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+
+/* ===== Booking: contact phone row and the inline "More details" fields ===== */
+html body .ssx-fl-ph { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 4px; }
+html body .ssx-fl-ph input { flex: 1 1 140px; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 8px 10px; font: inherit; color: inherit; }
+html body .ssx-fl-new .ssx-fl-more { display: flex; flex-direction: column; gap: 10px; }
+html body .ssx-fl-new .ssx-fl-more[hidden] { display: none; }
+
+/* ===== Home Screen app: solid status-bar strip, no blur on the top bar ===== */
+html body #ssx-fl-sbar { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); background: var(--bg); z-index: 9999; pointer-events: none; }
+html.ssx-standalone body header.top { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; background: var(--bg) !important; }
