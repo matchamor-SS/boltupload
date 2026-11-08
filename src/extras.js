@@ -2666,13 +2666,17 @@ function appExtras() {
     const title = { venue: 'New venue or festival', promoter: 'New promoter or collective', media: 'New media person', talk: `New person at ${cName(promo) || 'this collective'}` }[kind];
     const fld = (id, label, attrs = '') => `<div class="f"><label for="${id}">${label}</label><input id="${id}" ${attrs}></div>`;
     const seg = (name, list) => `<div class="seg" data-fl-seg="${name}" style="flex-wrap:wrap">${list.map(([k, l], i) => `<button type="button" data-v="${k}" aria-pressed="${i === 0}">${l}</button>`).join('')}</div>`;
-    const email = fld('ssx-fl-email', 'Email (optional)', 'type="email" autocomplete="off"');
+    const email = fld('ssx-fl-email', 'Email (optional)', 'type="email" autocomplete="off"'), phone = fld('ssx-fl-phone', 'Phone (optional)', 'type="tel" inputmode="tel" autocomplete="off"');
+    const notes = '<div class="f"><label for="ssx-fl-notes">Notes (optional)</label><textarea id="ssx-fl-notes" style="min-height:60px"></textarea></div>';
+    const more = inner => `<div class="ssx-fl-more" hidden>${inner}${notes}</div>`;
     const body = {
       venue: `${fld('c-org', 'Venue name', 'autocomplete="off" placeholder="Start typing to look it up"')}${fld('c-addr', 'Address', 'autocomplete="off" placeholder="Fills in when you pick a place"')}
-        <div class="frow">${fld('c-city', 'City', `value="${esc(city)}"`)}${email}</div><input type="hidden" id="c-site"><input type="hidden" id="c-phone">`,
-      promoter: `${seg('pkind', [['person', 'Person'], ['collective', 'Collective or company']])}${fld('ssx-fl-name', 'Name')}<div class="frow">${email}${fld('ssx-fl-ig', 'Instagram (optional)', 'placeholder="@handle"')}</div>`,
-      media: `${fld('ssx-fl-name', 'Name')}${seg('mkind', [['photo', 'Photo'], ['video', 'Video'], ['both', 'Photo & video']])}<div class="frow">${email}${fld('ssx-fl-ig', 'Instagram (optional)', 'placeholder="@handle"')}</div>`,
-      talk: `${fld('ssx-fl-name', 'Name')}${email}`
+        <div class="frow">${fld('c-city', 'City', `value="${esc(city)}"`)}${email}</div><div class="frow">${fld('c-phone', 'Phone (optional)', 'type="tel" inputmode="tel" autocomplete="off"')}${fld('c-site', 'Website (optional)', 'type="url" autocomplete="off" placeholder="https://"')}</div>${more('')}`,
+      promoter: `${seg('pkind', [['person', 'Person'], ['collective', 'Collective or company']])}${fld('ssx-fl-name', 'Name')}<div class="frow">${email}${phone}</div>${fld('ssx-fl-ig', 'Instagram (optional)', 'placeholder="@handle"')}
+        ${more(`<div class="frow">${fld('ssx-fl-city', 'City (optional)', `value="${esc(city)}"`)}${fld('ssx-fl-site', 'Website (optional)', 'type="url" placeholder="https://"')}</div>`)}`,
+      media: `${fld('ssx-fl-name', 'Name')}${seg('mkind', [['photo', 'Photo'], ['video', 'Video'], ['both', 'Photo & video']])}<div class="frow">${email}${phone}</div>${fld('ssx-fl-ig', 'Instagram (optional)', 'placeholder="@handle"')}
+        ${more(`<div class="frow">${fld('ssx-fl-site', 'Portfolio link (optional)', 'type="url" placeholder="https://"')}${fld('ssx-fl-rate', 'Rate (optional)', 'placeholder="e.g. $150 per show"')}</div>${fld('ssx-fl-city', 'City (optional)', `value="${esc(city)}"`)}`)}`,
+      talk: `${fld('ssx-fl-name', 'Name')}<div class="frow">${email}${phone}</div>${more(fld('ssx-fl-ig', 'Instagram (optional)', 'placeholder="@handle"'))}`
     }[kind];
     const p = document.createElement('div'); p.id = 'ssx-fl-new'; p.className = 'ssx-fl-new';
     p.innerHTML = `<h4>${esc(title)}</h4>${body}<div class="ssx-row"><button type="button" class="btn primary small" data-fl-save>Add and pick</button><button type="button" class="btn small" data-fl-cancel>Cancel</button><button type="button" class="linkbtn" data-fl-more>More details</button></div>`;
@@ -2682,7 +2686,7 @@ function appExtras() {
     const first = q('#c-org') || q('#ssx-fl-name'); setTimeout(() => { try { first.focus(); p.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (_) {} }, 30);
     const done = () => { p.remove(); try { sel.focus(); } catch (_) {} };
     q('[data-fl-cancel]').onclick = done;
-    q('[data-fl-more]').onclick = () => { p.remove(); sel.__flBypass = true; sel.value = '__new__'; sel.dispatchEvent(new Event('change', { bubbles: true })); };
+    q('[data-fl-more]').onclick = () => { const m = q('.ssx-fl-more'), b = q('[data-fl-more]'); if (!m) return; m.hidden = !m.hidden; b.textContent = m.hidden ? 'More details' : 'Fewer details'; if (!m.hidden) { const f = m.querySelector('input, textarea'); if (f) f.focus(); } };
     const go = async () => {
       const name = (first.value || '').trim(), mail = (q('#ssx-fl-email') || {}).value || '', ig = ((q('#ssx-fl-ig') || {}).value || '').trim();
       if (!name) { toast(kind === 'venue' ? 'Add the venue name' : 'Add a name'); first.focus(); return; }
@@ -2697,6 +2701,7 @@ function appExtras() {
           : { type: 'promoter', pkind: 'person', name, email: mail.trim(), instagram: ig, city: c0, venueIds: vIds, collectiveIds: [] };
       } else if (kind === 'media') data = { type: 'media', mkind: segVal('mkind') || 'photo', name, email: mail.trim(), instagram: ig, city: c0 };
       else data = { type: 'promoter', pkind: 'person', name, email: mail.trim(), city: c0, venueIds: [], collectiveIds: promoId ? [promoId] : [] };
+      { const x = id => ((q(id) || {}).value || '').trim(), ex = { phone: x('#ssx-fl-phone'), notes: x('#ssx-fl-notes'), city: x('#ssx-fl-city'), rate: x('#ssx-fl-rate'), instagram: kind === 'talk' ? x('#ssx-fl-ig') : '' }; ex[kind === 'media' ? 'portfolio' : 'website'] = x('#ssx-fl-site'); Object.keys(ex).forEach(k => { if (ex[k]) data[k] = ex[k]; }); }
       const btn = q('[data-fl-save]'); btn.disabled = true; btn.textContent = 'Adding…';
       const id = await save('contacts', null, data);
       if (!id) { btn.disabled = false; btn.textContent = 'Add and pick'; return; }
@@ -3519,7 +3524,8 @@ function appExtras() {
   function flNoAutofill() {
     document.querySelectorAll('input:not([data-fl-ac]), textarea:not([data-fl-ac])').forEach(el => {
       el.dataset.flAc = '1'; if (el.closest('#ss-auth') || /^(password|checkbox|radio|file|hidden|range|color|submit|button)$/i.test(el.type || '')) return;
-      el.setAttribute('autocomplete', 'off'); el.setAttribute('data-lpignore', 'true'); el.setAttribute('data-1p-ignore', '');
+      el.setAttribute('autocomplete', 'off'); el.setAttribute('aria-autocomplete', 'none'); el.setAttribute('data-lpignore', 'true'); el.setAttribute('data-1p-ignore', ''); el.setAttribute('data-form-type', 'other');
+      el.setAttribute('name', 'ssx' + Math.random().toString(36).slice(2, 9));
     });
   }
   /* -- public booking page: "Who are you?" first, then only the questions that fit, so the request fills in the booking for the performer */
@@ -3674,12 +3680,85 @@ function appExtras() {
     if (box && box.dataset.sig === sig) return;
     if (!box) { box = document.createElement('div'); box.id = 'ssx-fl-lost'; box.className = 'ssx-fl-msg'; bar.after(box); }
     box.dataset.sig = sig; box.dataset.kind = 'warn';
-    box.innerHTML = `<b>${left.length} Lost show${left.length === 1 ? ' is' : 's are'} still on your Google Calendar.</b><p>${esc(left.slice(0, 4).map(x => `${showName(x.b)}  
+        box.innerHTML = `<b>${left.length} Lost show${left.length === 1 ? ' is' : 's are'} still on your Google Calendar.</b><p>${esc(left.slice(0, 4).map(x => `${showName(x.b)} (${fmtD(x.b.date)})`).join(', '))}${left.length > 4 ? ` and ${left.length - 4} more` : ''}. The bookings stay saved in Bookings under Lost.</p><div class="ssx-row"><button type="button" class="btn small primary" data-fl-lostgo>Remove from Google Calendar</button></div>`;
+    box.querySelector('[data-fl-lostgo]').onclick = async e => {
+      const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Removing…'; let ok = 0, bad = 0;
+      for (const x of left) { try { await G.mcp.callTool('Google Calendar', 'delete_event', { eventId: x.ev.id, ...(x.cal && x.cal !== 'primary' ? { calendarId: x.cal } : {}), notificationLevel: 'NONE' }); ok++; if (x.b.gcal && x.b.gcal.eventId === x.ev.id) await window.patch('bookings', x.b.id, { gcal: { eventId: '', calendarId: '', link: '' } }); } catch (_) { bad++; } }
+      box.dataset.kind = 'ok'; box.innerHTML = `<b>${ok ? `Removed ${ok} from Google Calendar.` : "Couldn't remove them."}</b>${bad ? `<p>${bad} couldn't be removed. Check that Google Calendar is connected in Settings, then try again.</p>` : ''}`;
+      try { gSync(true); } catch (_) {}
+    };
+  } 
+  /* -- Home Screen app on iPhone: a solid strip behind the clock and notch so the top bar never looks blurred */
+  function flStandalone() {
+    const sa = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    if (!sa || document.getElementById('ssx-fl-sbar')) return;
+    document.documentElement.classList.add('ssx-standalone');
+    const s = document.createElement('div'); s.id = 'ssx-fl-sbar'; s.setAttribute('aria-hidden', 'true'); document.body.appendChild(s);
+  }
+  /* -- booking view: the promoter's (and the person you're talking to's) phone, with a quick way to add one */
+  function flContactPhone(root) {
+    const id = root.dataset && root.dataset.booking, b = id && flBk().find(x => x.id === id), dl = root.querySelector('dl.kv'); if (!b || !dl) return;
+    [['Promoter', b.promoterId], ['Talking to', b.contactPersonId]].forEach(([label, cid]) => {
+      const c = cid && contact(cid), dt = [...dl.querySelectorAll('dt')].find(d => d.textContent.trim() === label), dd = dt && dt.nextElementSibling; if (!c || !dd || dd.querySelector('.ssx-fl-ph')) return;
+      const box = document.createElement('div'); box.className = 'ssx-fl-ph';
+      const draw = () => {
+        const ph = (contact(cid) || c).phone || '';
+        box.innerHTML = ph ? `<a href="tel:${esc(ph.replace(/[^\d+]/g, ''))}">${esc(ph)}</a> <button type="button" class="linkbtn" data-fl-phed>Edit</button>` : '<button type="button" class="linkbtn" data-fl-phed>+ Add phone</button>';
+        box.querySelector('[data-fl-phed]').onclick = () => {
+          box.innerHTML = `<input type="tel" inputmode="tel" autocomplete="off" value="${esc(ph)}" aria-label="Phone for ${esc(cName(c))}" placeholder="Phone number"><button type="button" class="btn small primary" data-fl-phsave>Save</button><button type="button" class="btn small" data-fl-phx>Cancel</button>`;
+          const inp = box.querySelector('input'); inp.focus();
+          const saveIt = async () => { const v = inp.value.trim(); if (v && v.replace(/\D/g, '').length < 7) { toast('That phone number looks too short'); inp.focus(); return; }
+            if (await window.patch('contacts', cid, { phone: v })) { try { const x = contact(cid); if (x) x.phone = v; } catch (_) {} toast(v ? `Phone saved for ${cName(c)}` : 'Phone removed'); } draw(); };
+          box.querySelector('[data-fl-phsave]').onclick = saveIt; box.querySelector('[data-fl-phx]').onclick = draw;
+          inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveIt(); } if (e.key === 'Escape') { e.stopPropagation(); draw(); } });
+        };
+      };
+      draw(); dd.appendChild(box);
+    });
+  }
+  /* -- first-run tour: 15 short stops (about 3 minutes). Set up the few things that fill in everything else, then a quick look at each page */
+  const FL_TOUR = [
+    { title: 'Welcome to Set & Settled', body: 'Your home base as an artist: shows, people, money, emails, media and your press kit in one place. This tour takes about 3 minutes. First we set up the few things that fill in everything else, then a quick look around.' },
+    { tab: 'settings', group: 'profile', target: '#ssx-fl-art, #ssx-profile', title: 'Start with you', body: 'Pick what kind of artist you are and how you want to be called. Then add your name, contact details and socials. They fill in your EPK, emails, invoices and booking page, so you only type them once.' },
+    { tab: 'settings', group: 'google', target: '#ss-google', title: 'Connect Google', body: 'Gmail sends emails and invoices from your own address, Drive keeps your files together, and Calendar shows your other plans next to your shows. Connect only what you want. You can change it anytime.' },
+    { tab: 'calendar', target: '#availEdit', title: 'When can you play?', body: 'Set the days you play and tap any date to block it. Your booking link uses this same list, so you only keep one calendar up to date.', action: ['Open Edit availability', () => { const n = document.getElementById('availEdit'), a = document.getElementById('availPanel'); if (n && (!a || a.hidden)) n.click(); }] },
+    { tab: 'bookings', target: '#ssx-bklink', title: 'Let promoters come to you', body: 'Share your booking link. People pick an open date and tell you who they are (a talent buyer, a venue, a collective, a private event). Their request lands here as a Lead with the venue and contacts already filled in.' },
+    { tab: 'bookings', target: '[data-new="booking"]', title: 'Every show in one place', body: 'Add a show, even a new venue or promoter, without leaving the form. Move it from Lead to Confirmed, Played and Paid, and each stage brings its own checklist. Add tips, merch or expenses under the fee. A Lost show leaves your calendar but stays saved.' },
+    { tab: 'home', target: '#ssx-upnext, #nextShow', title: 'Home keeps watch', body: 'Home suggests your next step for every show: an invoice to send, a thank-you, a late payment to chase. Your next show and open tasks are here too.' },
+    { tab: 'contacts', target: '[data-new="contact"]', title: 'Your people', body: 'Promoters, venues, collectives and photographers, each with their notes, phone and the shows you have done together. People you add from a booking land here on their own.' },
+    { tab: 'comms', target: '#composeBtn, [data-new="template"]', title: 'Emails in a tap', body: 'Tap New email and start from a template. Fill-ins like the venue, date and your booking link fill themselves in from the show. Every email opens for you to check before it goes out from your Gmail.' },
+    { tab: 'money', target: '[data-new="expense"]', title: 'Your money, organized', body: 'Fees, extra income and expenses in one list, with invoices, receipts and mileage. When tax time comes, it shows what to set aside and builds your tax packet. It keeps your records organized, and it is not tax advice.' },
+    { tab: 'media', target: '#ssx-fl-mhost, section[data-view="media"] .head', title: 'Media from every show', body: 'Photo folders, videos and links, sorted by show. Open them, share them in a tap, and ask your photographer for files when a show has none yet.' },
+    { tab: 'kit', target: '#ssx-hist', title: 'Bring your history', body: 'Add the shows you played before Set & Settled: one at a time, from a Google Sheet, or with our template. They build your EPK without touching your bookings or money.', action: ['Add past shows', () => { const b = document.querySelector('#ssx-hist [data-nh-import]'); if (b) b.click(); }] },
+    { tab: 'kit', target: '#ssx-epk-btn', title: 'Your EPK', body: 'Your Kit and shows become a designed press kit. Pick a color theme, choose and reorder the sections, edit any text, then download a PDF for venues.', action: ['Create my EPK', () => { const b = document.getElementById('ssx-epk-btn'); if (b) b.click(); }] },
+    { tab: 'settings', group: 'reminders', target: '#ssx-notify', title: 'Reminders', body: 'Choose phone and laptop alerts, a morning email, or both. They come from your checklists and goals, so nothing slips.' },
+    { title: "You're all set", body: 'Two shortcuts to remember: search anything with the magnifying glass (or press / on a computer), and use Arrange on any page to show only what you need. Take this tour again anytime from Settings, under Account. Have a great season!' },
+  ];
+  function flTourSetup() {
+    if (!FL.tour) { FL.tour = 1; try { TOUR.splice(0, TOUR.length, ...FL_TOUR); } catch (_) {} }
+    const offer = document.querySelector('.ssx-tour-offer .ssx-tour-card > p:not(.note)');
+    if (offer && !offer.dataset.fl) { offer.dataset.fl = '1'; offer.textContent = "A 3-minute walk-through. We'll set up the few things that fill in everything else (your profile, Google and when you can play), then show you around."; }
+  }
+
+  /* -- invoice: "Bill to" can add a new person or company right there, the same way the booking form does */
+  function flInvoiceHook(root) {
+    const s = root.querySelector('#iv-to'); if (!s || root.__flInv) return; root.__flInv = true;
+    if (!s.querySelector('option[value="__new__"]')) { const o = document.createElement('option'); o.value = '__new__'; o.textContent = '＋ Add new contact…'; const first = s.querySelector('option'); first ? first.after(o) : s.prepend(o); if (typeof s._sync === 'function') s._sync(); }
+    s.__flPrev = s.value;
+    root.addEventListener('change', e => {
+      if (e.target !== s) return;
+      if (s.value !== '__new__') { s.__flPrev = s.value; return; }
+      e.stopImmediatePropagation();
+      s.value = [...s.options].some(o => o.value === s.__flPrev) ? s.__flPrev : ''; if (typeof s._sync === 'function') s._sync();
+      flNewPanel(root, s, 'promoter');
+      const h = root.querySelector('#ssx-fl-new h4'); if (h) h.textContent = 'New person or company to bill';
+    }, true);
+  }
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
-    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow]) { try { f(root); } catch (e) { console.error(e); } } });
+    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook]) { try { f(root); } catch (e) { console.error(e); } } });
   }
   function hookFlow() {
     if (window.__ssxFL || !st.db) return; window.__ssxFL = true;
