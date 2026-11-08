@@ -837,3 +837,6 @@ html body .ssx-fl-new .ssx-fl-more[hidden] { display: none; }
 /* ===== Home Screen app: solid status-bar strip, no blur on the top bar ===== */
 html body #ssx-fl-sbar { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); background: var(--bg); z-index: 9999; pointer-events: none; }
 html.ssx-standalone body header.top { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; background: var(--bg) !important; }
+
+/* ===== Date fields: always show the picked date (it collapsed to just the icon on phones) ===== */
+html body .f > .pick-btn.date:not(.due) { width: 100%; align-self: stretch; }
