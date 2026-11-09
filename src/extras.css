@@ -936,3 +936,10 @@ html body #ssx-bf-set .ssx-bf-foot { margin-top: 10px; align-items: center; gap:
   html body #ssx-bf-set .ssx-bf-row { grid-template-columns: minmax(0, 1fr) auto; }
   html body #ssx-bf-set .ssx-bf-row .ssx-bf-place, html body #ssx-bf-set .ssx-bf-row > .note { grid-column: 1 / -1; grid-row: 2; }
 }
+/* Booking request page: hidden questions, Settings card */
+html body .ssx-bk-off { display: none !important; }
+html body #ssx-bkp-set .ssx-bkp-list { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 6px 0 14px; }
+html body #ssx-bkp-set .ssx-bkp-opt { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; text-transform: none; letter-spacing: 0; cursor: pointer; }
+html body #ssx-bkp-set .ssx-bkp-own { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+html body #ssx-bkp-set .ssx-bkp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; }
+html body #ssx-bkp-set .ssx-bkp-row > span { flex: 1 1 140px; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
