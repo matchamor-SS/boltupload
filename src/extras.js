@@ -2578,15 +2578,15 @@ function appExtras() {
       if (o == null) { const v = el.getAttribute(at); if (!on || !/\bDJs?\b/.test(v)) continue; o = el[k] = v; }
       const v = on ? flSwap(o) : o; if (el.getAttribute(at) !== v) el.setAttribute(at, v);
     }
-    if (on) root.querySelectorAll('#sheetRoot input:not([type]), #sheetRoot input[type="text"]').forEach(i => { if (/^DJ performance\b/.test(i.value)) { i.value = i.value.replace(/^DJ performance/, flArtist().label + ' performance'); i.dispatchEvent(new Event('input', { bubbles: true })); } });
+    if (on) root.querySelectorAll('#sheetRoot input:not([type]), #sheetRoot input[type="text"]').forEach(i => { if (/^DJ performance\b/.test(i.value)) { i.value = i.value.replace(/^DJ performance/, flPerf()); i.dispatchEvent(new Event('input', { bubbles: true })); } });
   }
   function flWrapWords() {
     const wrap = (name, fixOut) => { const o = window[name]; if (typeof o !== 'function' || o.__fl) return; const w = function () { const out = o.apply(this, arguments); try { if (!FL.cfg || flArtist().label === 'DJ') return out; return out && typeof out.then === 'function' ? out.then(fixOut) : fixOut(out); } catch (_) { return out; } }; w.__fl = true; window[name] = w; };
-    wrap('evPayload', p => { if (p && typeof p.summary === 'string') p.summary = p.summary.replace(/DJ set:/, flArtist().label + ' performance:'); return p; });
-    wrap('newInvoice', inv => { if (inv && Array.isArray(inv.lines)) inv.lines.forEach(l => { if (l && typeof l.desc === 'string') l.desc = l.desc.replace(/^DJ performance/, flArtist().label + ' performance'); }); return inv; });
+    wrap('evPayload', p => { if (p && typeof p.summary === 'string') p.summary = p.summary.replace(/DJ set:/, flArtist().group === 'service' ? 'Appointment:' : flArtist().label + ' performance:'); return p; });
+    wrap('newInvoice', inv => { if (inv && Array.isArray(inv.lines)) inv.lines.forEach(l => { if (l && typeof l.desc === 'string') l.desc = l.desc.replace(/^DJ performance/, flPerf()); }); return inv; });
     wrap('dmText', s => typeof s === 'string' ? flA(s) : s);
   }
-  function flArtistBox(id) {
+    function flArtistBox(id) {
     const A = flArtist(), c = flCfg().artist || {}, box = document.createElement('div'); box.id = id; box.className = 'ssx-fl-artist';
     box.innerHTML = `<div class="ssx-fl-k">What kind of artist are you?</div><div class="chips">${FL_KINDS.map(([k, l]) => `<button type="button" class="chip" data-fl-kind="${k}" aria-pressed="${A.kind === k}">${l}</button>`).join('')}</div>
       <div class="ssx-fl-other" ${A.kind === 'other' ? '' : 'hidden'}><input aria-label="How should the app refer to you?" placeholder="How should we refer to you? e.g. Poet, Drag artist, Choir" value="${esc(c.kind === 'other' ? c.label || '' : '')}" maxlength="30"><button type="button" class="btn small primary" data-fl-kok>Save</button></div>
@@ -2607,7 +2607,6 @@ function appExtras() {
     const card = document.createElement('div'); card.id = 'ssx-fl-ask'; card.className = 'card ssx';
     card.append(flArtistBox('ssx-fl-art2')); const w = document.getElementById('welcome'); w ? w.after(card) : home.prepend(card);
   }
-
   /* -- old stage tasks close on their own */
   function flWrapTasks() {
     const orig = window.tasksOf; if (typeof orig !== 'function' || orig.__fl) return;
