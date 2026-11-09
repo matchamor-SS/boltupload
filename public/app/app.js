@@ -1255,7 +1255,7 @@ function invPayLines(inv,k){const h=PH();let ms=(inv.payMethods||[]).filter(m=>m
   const extra=[...new Set(src.split("\n").map(x=>x.trim()).filter(Boolean))].filter(x=>{const l=x.toLowerCase();return !seen.some(([n,v])=>(v&&l.includes(v))||l===n)});
   return {rows,extra}}
 function invPayText(inv,k){const {rows,extra}=invPayLines(inv,k);return [...rows.map(([n,v])=>v?`${n}: ${v}`:n),...extra].join("\n")}
-function newInvoice(b){const k=INVSET(),h=PH();return {payInfo:payClean([b.payInfo,k.pay].filter(Boolean).join("\n")),payMethods:(b.payPrefs||[]).length?b.payPrefs:PH_DEF.filter(([m])=>h[m]).map(([m])=>m),issueDate:today(),,dueDate:b.payDue&&b.payDue>=today()?b.payDue:addDays(today(),Number(k.terms)||0),billToId:defaultBillTo(b),
+function newInvoice(b){const k=INVSET(),h=PH();return {payInfo:payClean([b.payInfo,k.pay].filter(Boolean).join("\n")),payMethods:(b.payPrefs||[]).length?b.payPrefs:PH_DEF.filter(([m])=>h[m]).map(([m])=>m),issueDate:today(),dueDate:b.payDue&&b.payDue>=today()?b.payDue:addDays(today(),Number(k.terms)||0),billToId:defaultBillTo(b),
   lines:[{desc:`DJ performance – ${showName(b)}`,qty:1,unit:"flat",rate:Number(b.fee)||0,kind:"service"}],deposit:"",notes:k.note}}
 const UNITS=[["flat","Flat fee"],["hours","Hours"],["each","Each"]];
 function billInfo(inv){const c=contact(inv.billToId);return {name:inv.billName||(c?cName(c):""),org:c&&c.org&&c.org!==cName(c)?c.org:"",email:inv.billEmail??(c&&c.email||""),address:inv.billAddr??(c&&c.address||"")}}
