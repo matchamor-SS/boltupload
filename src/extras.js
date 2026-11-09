@@ -4139,11 +4139,144 @@ function appExtras() {
     };
     if (off1) off1.onclick = async () => { off1.disabled = true; off1.textContent = 'Removing…'; await flTcDrop(tbid, key); delete box.dataset.state; off1.disabled = false; off1.textContent = 'Take it off'; };
   }  
+  /* -- Reach-outs: a log of every time you contact someone (email, DM, text, call, in person) with a follow-up date, saved on the contact.
+     Works for anyone in People, with or without a booking. Follow-ups that are due show at the top of People and on Home.
+     Emails the app sends to someone in People (not about a booking) and "Copy & open DM" are logged for you. */
+  const FL_RO_VIA = [['email', 'Email'], ['dm', 'Instagram DM'], ['text', 'Text'], ['call', 'Call'], ['inperson', 'In person'], ['other', 'Other']];
+  const FL_RO_ST = [['waiting', 'Waiting to hear back'], ['replied', 'They replied'], ['interested', 'Interested'], ['notnow', 'Not right now'], ['booked', 'Booked a show'], ['noreply', 'No reply']];
+  const FL_RO_OPEN = new Set(['waiting', 'replied', 'interested']);
+  const flRoList = c => (Array.isArray(c && c.outreach) ? c.outreach : []).filter(Boolean).sort((a, b) => String(b.at).localeCompare(String(a.at)) || String(b.id).localeCompare(String(a.id)));
+  const flRoVia = k => (FL_RO_VIA.find(x => x[0] === k) || [, 'Other'])[1];
+  const flRoSt = k => (FL_RO_ST.find(x => x[0] === k) || [, k])[1];
+  const flRoShort = d => { try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); } catch (_) { return d; } };
+  const flRoNext = c => { const l = flRoList(c)[0]; return l && l.follow && FL_RO_OPEN.has(l.status) ? l : null; };
+  const flRoDue = () => S.contacts.map(c => { const l = flRoNext(c); return l && l.follow <= todayStr() ? { c, l } : null; }).filter(Boolean).sort((a, b) => a.l.follow.localeCompare(b.l.follow));
+  async function flRoSave(cid, list) { const ok = await window.patch('contacts', cid, { outreach: list, updatedAt: new Date().toISOString() }); if (!ok) toast("Couldn't save that. Check your connection and try again."); return ok; }
+  async function flRoAdd(cid, e, quiet) {
+    const c = contact(cid); if (!c) return false;
+    const entry = { id: 'ro' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), at: todayStr(), via: 'email', note: '', status: 'waiting', follow: addDays(todayStr(), 7), ...e };
+    const ok = await flRoSave(cid, [entry, ...flRoList(c)].slice(0, 200)); if (ok && !quiet) toast(`Logged: ${flRoVia(entry.via)} to ${cName(c)}`); return ok;
+  }
+  async function flRoEdit(cid, id, upd) { const c = contact(cid); if (!c) return; return flRoSave(cid, flRoList(c).map(x => x.id === id ? { ...x, ...upd } : x)); }
+  // log automatically: emails sent from the app to someone in People (not about a booking), and Instagram DMs opened from a contact
+  function flRoWrap() {
+    const gs = window.gmailSend;
+    if (typeof gs === 'function' && !gs.__flRo) {
+      const w = async function (o) {
+        const r = await gs.apply(this, arguments);
+        try {
+          if (o && !o.bookingId) {
+            const mails = [...[].concat(o.to || []), ...[].concat(o.cc || [])].map(x => String(x).trim().toLowerCase()).filter(Boolean);
+            const hit = S.contacts.filter(c => c.email && mails.includes(String(c.email).trim().toLowerCase()));
+            for (const c of hit) await flRoAdd(c.id, { via: 'email', note: String(o.subject || '').slice(0, 200) }, true);
+          }
+        } catch (e) { console.error(e); }
+        return r;
+      };
+      w.__flRo = true; window.gmailSend = w;
+    }
+    const sv = window.save; // a contact saved from the edit form never overwrites reach-outs logged while the form was open
+    if (typeof sv === 'function' && !sv.__flRoSave) {
+      const w2 = async function (col, id, data) { if (col === 'contacts' && id && data && typeof data === 'object') { const cur = contact(id); if (cur && Array.isArray(cur.outreach)) arguments[2] = { ...data, outreach: cur.outreach }; } return sv.apply(this, arguments); };
+      w2.__flRoSave = true; Object.keys(sv).forEach(k => { try { w2[k] = sv[k]; } catch (_) {} }); window.save = w2;
+    }
+    if (!FL.roClick) {
+      FL.roClick = true;
+      document.addEventListener('click', e => {
+        const dm = e.target.closest && e.target.closest('#sheetRoot [data-dm]'); if (!dm) return;
+        const cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key; if (!cur || !/^r:/.test(cur)) return;
+        const cid = cur.slice(2), c = contact(cid), last = c && flRoList(c)[0];
+        if (c && !(last && last.via === 'dm' && last.at === todayStr())) setTimeout(() => flRoAdd(cid, { via: 'dm', note: 'Instagram DM' }, true), 300);
+      }, true);
+    }
+  }
+  const flRoRow = (c, l, who) => `<div class="ssx-ro-row" data-ro-id="${esc(l.id)}">
+      <div class="ssx-ro-main">${who ? `<button type="button" class="ssx-ro-who" data-reach="${esc(c.id)}">${esc(cName(c))}</button>` : ''}<span><b>${esc(flRoShort(l.at))}</b> · ${esc(flRoVia(l.via))}${l.note ? ` · ${esc(l.note)}` : ''}</span>
+        <span class="note">${FL_RO_OPEN.has(l.status) && l.follow ? `${l.follow < todayStr() ? 'Follow-up was due' : l.follow === todayStr() ? 'Follow up today' : 'Follow up'} ${esc(flRoShort(l.follow))}` : esc(flRoSt(l.status))}</span></div>
+      <div class="ssx-ro-act">${who ? `<button type="button" class="btn small" data-reach="${esc(c.id)}">Contact</button>` : `<select data-ro-st aria-label="How it went">${FL_RO_ST.map(([k, n]) => `<option value="${k}" ${k === l.status ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`}
+        ${FL_RO_OPEN.has(l.status) && l.follow ? `<button type="button" class="btn small" data-ro-snooze title="Push the follow-up a week">+1 week</button><button type="button" class="btn small" data-ro-clear title="No follow-up needed">Done</button>` : ''}
+        ${who ? '' : `<button type="button" class="x" data-ro-del aria-label="Delete this reach-out">×</button>`}</div></div>`;
+  function flRoWire(box, cidOf) {
+    box.onclick = async e => {
+      const row = e.target.closest('[data-ro-id]'); if (!row) return; const id = row.dataset.roId, cid = cidOf(row);
+      const l = flRoList(contact(cid)).find(x => x.id === id); if (!l) return;
+      if (e.target.closest('[data-ro-snooze]')) { const base = l.follow > todayStr() ? l.follow : todayStr(); if (await flRoEdit(cid, id, { follow: addDays(base, 7) })) toast(`Follow up ${flRoShort(addDays(base, 7))}`); }
+      else if (e.target.closest('[data-ro-clear]')) { if (await flRoEdit(cid, id, { follow: '' })) toast('No follow-up needed'); }
+      else if (e.target.closest('[data-ro-del]')) {
+        const c = contact(cid), before = flRoList(c);
+        if (await flRoSave(cid, before.filter(x => x.id !== id))) toast('Reach-out deleted', async () => { await flRoSave(cid, before); toast('Put back'); });
+      }
+    };
+    box.onchange = async e => {
+      const s = e.target.closest('[data-ro-st]'); if (!s) return; const row = s.closest('[data-ro-id]'), cid = cidOf(row), v = s.value;
+      if (await flRoEdit(cid, row.dataset.roId, { status: v, ...(FL_RO_OPEN.has(v) ? {} : { follow: '' }) })) toast(flRoSt(v));
+    };
+  }
+  // the Contact screen: log a reach-out, see the history, change how it went
+  function flRoSheet(root) {
+    const cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key; if (!cur || !/^r:/.test(cur) || !root.querySelector('[data-editc]')) return;
+    const cid = cur.slice(2), c = contact(cid); if (!c) return;
+    let box = root.querySelector('.ssx-ro');
+    if (!box) {
+      box = document.createElement('div'); box.className = 'card ssx-ro';
+      box.innerHTML = `<div class="head"><h3>Reach-outs</h3><button type="button" class="btn small" data-ro-add>＋ Log a reach-out</button></div>
+        <div class="ssx-ro-form" hidden>
+          <div class="f"><label>How</label><div class="chips" role="group" aria-label="How you reached out">${FL_RO_VIA.map(([k, n], i) => `<button type="button" class="chip" data-ro-via="${k}" aria-pressed="${i === 0}">${esc(n)}</button>`).join('')}</div></div>
+          <div class="frow"><div class="f"><label for="ssx-ro-at">When</label><input type="date" id="ssx-ro-at"></div><div class="f"><label for="ssx-ro-fu">Follow up on</label><input type="date" id="ssx-ro-fu"></div></div>
+          <div class="f"><label for="ssx-ro-note">What it was about (optional)</label><input id="ssx-ro-note" maxlength="200" placeholder="e.g. Pitched a Friday in March"></div>
+          <div class="actions"><button type="button" class="btn" data-ro-cancel>Cancel</button><button type="button" class="btn primary" data-ro-save>Save</button></div>
+        </div><p class="note ssx-ro-sum"></p><div class="ssx-ro-list"></div>`;
+      const acts = [...root.children].filter(x => x.classList.contains('actions')).pop(); acts ? acts.before(box) : root.append(box);
+      const form = box.querySelector('.ssx-ro-form'), addB = box.querySelector('[data-ro-add]');
+      addB.onclick = () => { form.hidden = false; addB.hidden = true; box.querySelector('#ssx-ro-at').value = todayStr(); box.querySelector('#ssx-ro-fu').value = addDays(todayStr(), 7); box.querySelector('#ssx-ro-note').focus(); };
+      box.querySelectorAll('[data-ro-via]').forEach(b => b.onclick = () => box.querySelectorAll('[data-ro-via]').forEach(x => x.setAttribute('aria-pressed', String(x === b))));
+      box.querySelector('[data-ro-cancel]').onclick = () => { form.hidden = true; addB.hidden = false; };
+      box.querySelector('[data-ro-save]').onclick = async e => {
+        const btn = e.currentTarget, via = (box.querySelector('[data-ro-via][aria-pressed="true"]') || {}).dataset?.roVia || 'other';
+        const at = box.querySelector('#ssx-ro-at').value || todayStr(), fu = box.querySelector('#ssx-ro-fu').value;
+        if (fu && fu < at) { toast('The follow-up date is before the reach-out. Pick a later date or clear it.'); return; }
+        btn.disabled = true; const ok = await flRoAdd(cid, { via, at, follow: fu, note: box.querySelector('#ssx-ro-note').value.trim().slice(0, 200) });
+        btn.disabled = false; if (ok) { form.hidden = true; addB.hidden = false; box.querySelector('#ssx-ro-note').value = ''; }
+      };
+      flRoWire(box.querySelector('.ssx-ro-list'), () => cid);
+    }
+    const list = flRoList(c), sig = JSON.stringify(list); if (box.dataset.sig === sig) return; box.dataset.sig = sig;
+    const n = flRoNext(c);
+    box.querySelector('.ssx-ro-sum').textContent = list.length ? `Last reached out ${flRoShort(list[0].at)} by ${flRoVia(list[0].via).toLowerCase()}.${n ? ` Follow up ${flRoShort(n.follow)}.` : ''}` : 'Nothing logged yet. Log each time you email, DM, text or call so follow-ups never slip.';
+    box.querySelector('.ssx-ro-list').innerHTML = list.slice(0, 20).map(l => flRoRow(c, l, false)).join('') + (list.length > 20 ? `<p class="note">Showing the latest 20 of ${list.length}.</p>` : '');
+  }
+  // follow-ups that are due: top of People and on Home; a "Follow up" note on people in the list
+  function flRoDueCards() {
+    const due = flRoDue(), sig = JSON.stringify(due.map(x => [x.c.id, x.l.id, x.l.follow, x.l.status]));
+    for (const [view, max] of [['contacts', 50], ['home', 3]]) {
+      const sec = document.querySelector(`section[data-view="${view}"]`); if (!sec) continue;
+      let card = sec.querySelector(':scope > .ssx-ro-due');
+      if (!due.length) { if (card) card.remove(); continue; }
+      if (!card) {
+        card = document.createElement('div'); card.className = 'card ssx-ro-due';
+        const anchor = view === 'contacts' ? sec.querySelector('#contactList') && sec.querySelector('#contactList').closest('.card') : sec.querySelector(':scope > #welcome');
+        if (anchor && view === 'contacts') anchor.before(card); else if (anchor) anchor.after(card); else sec.prepend(card);
+        flRoWire(card, row => row.dataset.roCid);
+      }
+      if (card.dataset.sig === sig) continue; card.dataset.sig = sig;
+      card.innerHTML = `<div class="head"><h3>Follow-ups due</h3><span class="note">${due.length} ${due.length === 1 ? 'person' : 'people'}</span></div>
+        <div class="ssx-ro-list">${due.slice(0, max).map(({ c, l }) => flRoRow(c, l, true).replace('class="ssx-ro-row"', `class="ssx-ro-row" data-ro-cid="${esc(c.id)}"`)).join('')}</div>
+        ${due.length > max ? `<button type="button" class="btn small" data-goto="contacts">See all ${due.length} in People</button>` : ''}`;
+    }
+    const lst = document.getElementById('contactList'); if (!lst) return;
+    lst.querySelectorAll('[data-open-contact]').forEach(b => {
+      const c = contact(b.dataset.openContact), n = c && flRoNext(c), main = b.querySelector('.main'); if (!main) return;
+      const txt = n ? `${n.follow < todayStr() ? 'Follow-up due' : 'Follow up'} ${flRoShort(n.follow)}` : '', pill = main.querySelector('.ssx-ro-pill');
+      if (!txt) { if (pill) pill.remove(); return; }
+      const cls = 'ssx-ro-pill' + (n.follow <= todayStr() ? ' due' : '');
+      if (pill) { if (pill.textContent !== txt) pill.textContent = txt; if (pill.className !== cls) pill.className = cls; } else main.insertAdjacentHTML('beforeend', `<span class="${cls}">${esc(txt)}</span>`);
+    });
+  }  
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
-    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal]) { try { f(root); } catch (e) { console.error(e); } } });
+    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet]) { try { f(root); } catch (e) { console.error(e); } } });
   }
   function hookFlow() {
     if (window.__ssxFL || !st.db) return; window.__ssxFL = true;
