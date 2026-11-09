@@ -8,12 +8,14 @@ export const SCOPE = {
   drive: 'https://www.googleapis.com/auth/drive.file',                       // Non-sensitive: only app-created or user-picked files
   calEvents: 'https://www.googleapis.com/auth/calendar.events',              // Sensitive
   calList: 'https://www.googleapis.com/auth/calendar.calendarlist.readonly', // Sensitive
+  tasks: 'https://www.googleapis.com/auth/tasks',                            // Sensitive: the app only uses its own "Set & Settled" list
 };
 export const TIERS: Record<string, string[]> = {
   base: ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
   mail: [SCOPE.send],
   drive: [SCOPE.drive],
   calendar: [SCOPE.calEvents, SCOPE.calList],
+  tasks: [SCOPE.tasks],
 };
 
 export async function connection(ownerId: string) {
