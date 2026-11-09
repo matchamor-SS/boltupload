@@ -2586,26 +2586,142 @@ function appExtras() {
     wrap('newInvoice', inv => { if (inv && Array.isArray(inv.lines)) inv.lines.forEach(l => { if (l && typeof l.desc === 'string') l.desc = l.desc.replace(/^DJ performance/, flPerf()); }); return inv; });
     wrap('dmText', s => typeof s === 'string' ? flA(s) : s);
   }
-    function flArtistBox(id) {
-    const A = flArtist(), c = flCfg().artist || {}, box = document.createElement('div'); box.id = id; box.className = 'ssx-fl-artist';
-    box.innerHTML = `<div class="ssx-fl-k">What kind of artist are you?</div><div class="chips">${FL_KINDS.map(([k, l]) => `<button type="button" class="chip" data-fl-kind="${k}" aria-pressed="${A.kind === k}">${l}</button>`).join('')}</div>
-      <div class="ssx-fl-other" ${A.kind === 'other' ? '' : 'hidden'}><input aria-label="How should the app refer to you?" placeholder="How should we refer to you? e.g. Poet, Drag artist, Choir" value="${esc(c.kind === 'other' ? c.label || '' : '')}" maxlength="30"><button type="button" class="btn small primary" data-fl-kok>Save</button></div>
-      <p class="note" style="margin:0">The app uses this everywhere it used to say "DJ": labels, invoices, calendar events and pitch messages.</p>`;
-    const set = (kind, label) => { flSave({ artist: { kind, label } }); flRelabel(document.body); toast(`Got it. The app will call you ${(/^[aeiou]/i.test(label) ? 'an ' : 'a ') + flLow(label)}.`); flSoon(); };
+  /* -- starter sets: tasks, stage names and the six stage emails for each kind of work. Switching asks first, saves a backup you can go
+     back to, and freezes the tasks on every booking you already have, so existing bookings never change. */
+  const FL_TPL_DJ = [
+    ['stage-lead', 'Lead · First outreach', 'lead', '{{dj_name}} for {{venue}} – [month] dates', "Hi {{contact_first}},\n\nI'm {{my_name}}, and I DJ as {{dj_name}}. [One line on why you fit: a night they host, an artist they've booked, or the crowd you'd bring.]\n\n{{bio_short}}\n\nI'd love to play {{venue}}. These dates are open, and I'm flexible on the slot:\n{{availability}}\n\nMix / EPK: {{epk}}\nInstagram: {{instagram}}\n\nWould any of these work? I'm easy to work with and will promote the night on my channels.\n\nThanks,\n{{my_name}}\n{{dj_name}} · {{phone}}"],
+    ['stage-pitched', 'Pitched · Follow-up (no reply)', 'pitched', 'Re: {{dj_name}} for {{venue}}', "Hi {{contact_first}},\n\nBumping this back up in case it got buried. I'd still love to bring {{dj_name}} to {{venue}}.\n\n[One new thing since your first email: a recent show, a new mix or a release.]\n\nDates I'm holding open:\n{{availability}}\n\nMix / EPK: {{epk}}\n\nIf you're not the right person for bookings, could you point me to who is?\n\nThanks so much,\n{{my_name}}\n{{dj_name}} · {{phone}}"],
+    ['stage-confirmed', 'Confirmed · Booking confirmation', 'confirmed', 'Confirmed: {{dj_name}} at {{venue}}, {{date}}', "Hi {{contact_first}},\n\nThank you for having me! Here's what I have so we're on the same page:\n\nEvent: {{show}}\nDate: {{date}}\nVenue: {{venue}}, {{address}}\nSet time: {{set_time}}\nFee: {{fee}}\n\nCould you confirm or fill in:\n1. Contract or written agreement\n2. Payment: any deposit, plus how and when the balance is paid\n3. Load-in and soundcheck time, and parking\n4. Gear on site (my tech rider is below)\n5. Guest list spots\n6. Your day-of contact number\n\nTech rider:\n{{rider}}\n\nFor promo, here are my links and photos:\n{{links}}\n{{files}}\n\nTickets: {{ticket_link}}\n\nI'll share the event on my socials as soon as the flyer is ready.\n\nThanks,\n{{my_name}}\n{{dj_name}} · {{phone}}"],
+    ['stage-played', 'Played · Thank you & follow-up', 'played', 'Thank you for {{date}} at {{venue}}', "Hi {{contact_first}},\n\nThank you again for having me at {{venue}}. [One specific highlight: the crowd, a moment, or the team.]\n\nPhotos and video will land here as they come in: {{media_folder}}\nFeel free to use them, and please tag {{instagram}} if you post.\n\nAs agreed, the fee was {{fee}}. [Invoice attached, or how to pay: Zelle, Venmo or ACH details.]\n\nI'd love to come back. Here are some open dates:\n{{availability}}\n\nAny feedback on the night is always welcome.\n\nThanks,\n{{my_name}}\n{{dj_name}} · {{phone}}"],
+    ['stage-paid', 'Paid · Payment received', 'paid', 'Payment received, thank you!', "Hi {{contact_first}},\n\nJust confirming I received {{fee}} for {{show}} on {{date}}. Thank you for the smooth payment.\n\nIt was a pleasure working with you and the {{venue}} team. Keep me in mind for future nights; I'll keep you posted on new mixes and open dates.\n\nThanks,\n{{my_name}}\n{{dj_name}} · {{phone}}"],
+    ['stage-lost', 'Lost · Keep the door open', 'lost', 'Thanks for considering {{dj_name}}', "Hi {{contact_first}},\n\nThanks for letting me know, and for taking the time to consider me. I completely understand.\n\nI'd love to stay on your radar for future nights at {{venue}}. Here's my EPK for your files: {{epk}}\n\nI'll check back in a few months with new mixes and dates.\n\nAll the best,\n{{my_name}}\n{{dj_name}} · {{phone}}"]];
+  const FL_TPL_SVC = [
+    ['stage-lead', 'Inquiry · Reply to a new client', 'lead', 'Your appointment with {{dj_name}}', "Hi {{contact_first}},\n\nThanks for reaching out! I'm {{my_name}} with {{dj_name}}. [One line about what they asked for and how you can help.]\n\nHere are my open dates:\n{{availability}}\n\nBook anytime here: {{booking_link}}\nSee my work: {{website}}\nInstagram: {{instagram}}\n\nLet me know which day works and I'll get you booked.\n\nThanks,\n{{my_name}}\n{{dj_name}} · {{phone}}"],
+    ['stage-pitched', 'Quoted · Follow-up (no reply)', 'pitched', 'Following up on your appointment', "Hi {{contact_first}},\n\nJust checking in on the quote I sent. [Quick recap: what's included and the price.]\n\nHappy to answer any questions. These dates are still open:\n{{availability}}\n\nBook anytime here: {{booking_link}}\n\nThanks,\n{{my_name}}\n{{dj_name}} · {{phone}}"],
+    ['stage-confirmed', 'Booked · Appointment confirmation', 'confirmed', 'Confirmed: your appointment on {{date}}', "Hi {{contact_first}},\n\nYou're booked! Here are the details:\n\nDate: {{date}}\nTime: {{set_time}}\nWhere: {{address}}\nPrice: {{fee}}\n\nBefore your appointment:\n1. [Prep instructions]\n2. Deposit: [amount and how to pay]\n3. Please let me know at least 48 hours ahead if you need to reschedule.\n\nPayment options:\n{{pay_handles}}\n\nSee you soon,\n{{my_name}}\n{{dj_name}} · {{phone}}"],
+    ['stage-played', 'Done · Thank you & aftercare', 'played', 'Thank you for coming in', "Hi {{contact_first}},\n\nThank you for trusting me with your appointment. [Aftercare or follow-up notes.]\n\nThe total was {{fee}}. Payment options:\n{{pay_handles}}\n\nIf you loved it, a quick review means a lot: [review link]\n\nReady for your next one? Here are some open dates:\n{{availability}}\n\nThanks,\n{{my_name}}\n{{dj_name}} · {{phone}}"],
+    ['stage-paid', 'Paid · Payment received', 'paid', 'Payment received, thank you!', "Hi {{contact_first}},\n\nJust confirming I received {{fee}} for your appointment on {{date}}. Thank you!\n\nIt was a pleasure working with you. I'd love to see you again anytime: {{booking_link}}\n\nThanks,\n{{my_name}}\n{{dj_name}} · {{phone}}"],
+    ['stage-lost', "Didn't book · Keep the door open", 'lost', 'Thanks for considering {{dj_name}}', "Hi {{contact_first}},\n\nThanks for letting me know. I completely understand.\n\nWhenever you're ready, I'd love to work with you. You can book anytime here: {{booking_link}}\n\nAll the best,\n{{my_name}}\n{{dj_name}} · {{phone}}"]];
+  const flTplSwap = rep => FL_TPL_DJ.map(([id, name, stage, s, b]) => [id, name, stage, rep.reduce((x, [a, c]) => x.split(a).join(c), s), rep.reduce((x, [a, c]) => x.split(a).join(c), b)]);
+  const FL_REP_PERF = [['and I DJ as', 'and I perform as'], ["I'd love to play {{venue}}", "I'd love to perform at {{venue}}"], ['for future nights', 'for future events']];
+  const flCl = rows => rows.map(([key, label, offset]) => ({ key, label, offset }));
+  const FL_CL_BASE = [['contract', 'Contract signed', -21], ['deposit', 'Deposit received', -14]];
+  const FL_PRESETS = {
+    dj: { title: 'DJ', blurb: 'The original DJ tasks, stage names and emails.', tpl: FL_TPL_DJ },
+    music: { title: 'Music', blurb: 'Tasks and emails for singers, rappers, bands and players.',
+      checklist: flCl([...FL_CL_BASE, ['media', 'Media person booked', -14], ['loadin', 'Confirm set time & load-in', -3], ['promo', 'Promo posted', -7], ['music', 'Set list ready', -2]]),
+      tpl: flTplSwap([['and I DJ as', 'and I perform as'], ['Mix / EPK', 'Music / EPK'], ['a new mix or a release', 'a new song or a release'], ['new mixes', 'new music']]) },
+    comedy: { title: 'Comedy & hosting', blurb: 'Set length, call time and set-writing tasks, with emails written for comics and hosts.',
+      checklist: flCl([...FL_CL_BASE, ['cm_time', 'Confirm set length & call time', -3], ['promo', 'Promo posted', -7], ['cm_set', 'Set written & timed', -2], ['media', 'Someone booked to film the set', -14]]),
+      tpl: flTplSwap([...FL_REP_PERF, ["I'd love to perform at {{venue}}", "I'd love to do a set at {{venue}}"], ['Mix / EPK', 'Clips / EPK'], ['a new mix or a release', 'a new clip, a special or a festival spot'], ['new mixes', 'new clips'], ["a night they host, an artist they've booked, or the crowd you'd bring", "a show they run, a comic they've booked, or the crowd you'd bring"], ['Load-in and soundcheck time, and parking', 'Call time, set length and parking'], ['Gear on site (my tech rider is below)', 'Mic and sound setup (my tech rider is below)']]) },
+    movement: { title: 'Movement & visual', blurb: 'Rehearsal, space, cue and costume tasks, with emails written for dancers and visual artists.',
+      checklist: flCl([...FL_CL_BASE, ['mv_space', 'Confirm stage or floor space & call time', -7], ['mv_cues', 'Send music or tech cues to the venue', -3], ['mv_rehearse', 'Final rehearsal', -2], ['mv_costume', 'Costume, props & supplies ready', -1], ['promo', 'Promo posted', -7], ['media', 'Media person booked', -14]]),
+      tpl: flTplSwap([...FL_REP_PERF, ['Mix / EPK', 'Reel / EPK'], ['a new mix or a release', 'a new reel or a recent piece'], ['new mixes', 'new work'], ["a night they host, an artist they've booked, or the crowd you'd bring", "an event they host, an artist they've booked, or what you'd bring to the night"], ['Load-in and soundcheck time, and parking', 'Call time, rehearsal, stage or floor space, and parking'], ['Set time', 'Performance time']]) },
+    service: { title: 'Services', blurb: 'Stages become Inquiry, Quoted, Booked, Done and Paid, with deposit, intake and aftercare tasks and client emails.',
+      names: { lead: 'Inquiry', pitched: 'Quoted', confirmed: 'Booked', played: 'Done', paid: 'Paid', lost: "Didn't book" },
+      checklist: flCl([['sv_deposit', 'Deposit received', -7], ['sv_intake', 'Intake or consult form completed', -3], ['sv_prep', 'Send prep instructions', -2], ['sv_confirm', 'Confirm time & address', -1], ['sv_supplies', 'Supplies & setup ready', -1]]),
+      stages: { lead: flCl([['sv_reply', 'Reply to the inquiry', 0], ['sv_avail', 'Check the date and time work', 0], ['sv_quote', 'Send a quote or your booking link', 1]]),
+        pitched: flCl([['sv_follow1', 'Follow up if no reply', 3], ['sv_follow2', 'Second follow-up', 7]]),
+        played: flCl([['sv_after', 'Send aftercare or follow-up notes', 0], ['sv_invoice', 'Send invoice or receipt', 0], ['sv_review', 'Ask for a review', 2], ['sv_next', 'Offer their next appointment', 7]]),
+        paid: flCl([['sv_check', 'Check payment matches the invoice', 0], ['sv_thanks', 'Thank them for payment', 1]]) },
+      tpl: FL_TPL_SVC },
+    other: { title: 'General performer', blurb: 'Tasks and emails that work for any kind of performer.',
+      checklist: flCl([...FL_CL_BASE, ['media', 'Media person booked', -14], ['loadin', 'Confirm call time & setup', -3], ['promo', 'Promo posted', -7], ['music', 'Performance prepped', -2]]),
+      tpl: flTplSwap([...FL_REP_PERF, ['Mix / EPK', 'EPK'], ['a new mix or a release', 'a new video or project'], ['new mixes', 'new work'], ['Load-in and soundcheck time, and parking', 'Call time, setup and parking'], ['Set time', 'Performance time']]) },
+  };
+  const flPresetFor = (group, kind) => group === 'music' ? (kind === 'dj' ? 'dj' : 'music') : FL_PRESETS[group] ? group : 'other';
+  const flPlain = x => x == null ? null : JSON.parse(JSON.stringify(x));
+  // every booking you already have keeps the exact tasks it shows today
+  async function flFreezeBookings() {
+    for (const b of flBk()) {
+      const own = b.checklists || {}, add = {};
+      for (const s0 of STAGES) {
+        if (Array.isArray(own[s0]) || (s0 === 'confirmed' && Array.isArray(b.checklist))) continue;
+        add[s0] = flPlain(clFor(b, s0).map(it => ({ ...it, offset: offOf(it) })));
+      }
+      if (Object.keys(add).length) await st.db.collection('bookings').doc(b.id).update({ checklists: add });
+    }
+  }
+  const flPut = (path, data) => data == null ? st.db.doc(path).delete() : st.db.doc(path).set(data);
+  async function flApplyPreset(pid) {
+    const P = FL_PRESETS[pid], ids = P.tpl.map(t => t[0]), pl = S.pipeline && Array.isArray(S.pipeline.stages) && S.pipeline.stages.length ? S.pipeline : null;
+    const prev = {
+      preset: flArtist().preset, checklist: flPlain(S.checklist), stages: flPlain(S.stages), pipeline: flPlain(pl),
+      stageNames: S.stageNames && Object.keys(S.stageNames).length ? flPlain(S.stageNames) : null,
+      templates: ids.map(id => { const t = (S.templates || []).find(x => x.id === id); return t ? { id, name: t.name || '', stage: t.stage || '', audience: t.audience || 'venue', subject: t.subject || '', body: t.body || '' } : { id, gone: true }; }),
+      at: new Date().toISOString(),
+    };
+    await st.db.doc('settings/presetBackup').set(prev); FL.hasBackup = true;
+    await flFreezeBookings();
+    await flPut('settings/checklist', P.checklist ? { items: P.checklist } : null);
+    await flPut('settings/stages', P.stages || null);
+    if (pl) await st.db.doc('settings/pipeline').set({ stages: pl.stages.map(p => KINDS.includes(p.key) && (p.like || p.key) === p.key ? { ...p, name: (P.names || {})[p.key] || STAGE_DEFAULT_NAMES[p.key] } : p) });
+    else await flPut('settings/stageNames', P.names || null);
+    for (const [id, name, stage, subject, body] of P.tpl) await st.db.collection('templates').doc(id).set({ name, stage, audience: 'venue', subject, body });
+    await flSave({ artist: { ...(flCfg().artist || {}), preset: pid } });
+  }
+  async function flRestorePreset() {
+    const s = await st.db.doc('settings/presetBackup').get(); if (!s.exists) { toast('Nothing to go back to'); return false; }
+    const B = s.data();
+    await flPut('settings/checklist', B.checklist ? { items: B.checklist } : null);
+    await flPut('settings/stages', B.stages || null);
+    if (B.pipeline) await st.db.doc('settings/pipeline').set(B.pipeline); else await flPut('settings/stageNames', B.stageNames || null);
+    for (const t of B.templates || []) { const { id, gone, ...rest } = t; if (gone) await st.db.collection('templates').doc(id).delete(); else await st.db.collection('templates').doc(id).set(rest); }
+    await flSave({ artist: { ...(flCfg().artist || {}), preset: B.preset || 'dj' } });
+    await st.db.doc('settings/presetBackup').delete(); FL.hasBackup = false;
+    return true;
+  }
+  async function flSwitchPreset(pid, btn) {
+    if (FL.switching) return; FL.switching = true; if (btn) { btn.disabled = true; btn.textContent = 'Switching…'; }
+    try {
+      await flApplyPreset(pid); FL.askPreset = null; FL.switching = false;
+      toast(`Switched to the ${FL_PRESETS[pid].title} starter set. Your current bookings kept their tasks.`, async () => { try { await flRestorePreset(); toast('Back to your previous tasks and emails'); } catch (e) { console.error(e); toast("Couldn't undo that. Try again from Settings → Profile."); } flSoon(); });
+    } catch (e) {
+      console.error(e); FL.switching = false; if (btn) { btn.disabled = false; btn.textContent = 'Use the new set'; }
+      toast(`Couldn't finish switching. Tap "Go back to my previous tasks & emails" in Settings → Profile to undo any part that changed.`);
+    }
+    flSoon();
+  }
+  function flArtistBox(id) {
+    const A = flArtist(), c = flCfg().artist || {}, g = FL.artGroup || A.group, grp = FL_GROUPS.find(x => x[0] === g) || FL_GROUPS[4];
+    const custom = A.kind === 'other' && A.group === g, ask = FL.askPreset && FL_PRESETS[FL.askPreset], box = document.createElement('div'); box.id = id; box.className = 'ssx-fl-artist';
+    box.innerHTML = `<div class="ssx-fl-k">What kind of work do you do?</div>
+      <div class="chips ssx-fl-grps">${FL_GROUPS.map(([k, l]) => `<button type="button" class="chip" data-fl-grp="${k}" aria-pressed="${g === k}">${l}</button>`).join('')}</div>
+      ${grp[2].length ? `<div class="chips">${grp[2].map(([k, l]) => `<button type="button" class="chip" data-fl-kind="${k}" aria-pressed="${A.kind === k}">${l}</button>`).join('')}<button type="button" class="chip" data-fl-kind="other" aria-pressed="${custom}">Something else</button></div>` : ''}
+      <div class="ssx-fl-other" ${custom || !grp[2].length ? '' : 'hidden'}><input aria-label="How should the app refer to you?" placeholder="${g === 'service' ? 'e.g. Nail artist, Esthetician, Barber' : 'How should we refer to you? e.g. Poet, Choir, Puppeteer'}" value="${esc(custom ? c.label || '' : '')}" maxlength="30"><button type="button" class="btn small primary" data-fl-kok>Save</button></div>
+      ${ask ? `<div class="ssx-fl-ask2" role="group" aria-label="Starter set"><b>Use the ${esc(ask.title)} starter set?</b><p class="note">${esc(ask.blurb)} Bookings you already have keep the tasks they have now. Only the six stage emails are replaced; your other emails stay as they are.</p>
+        <div class="ssx-row"><button type="button" class="btn small primary" data-fl-yes ${FL.switching ? 'disabled' : ''}>${FL.switching ? 'Switching…' : 'Use the new set'}</button><button type="button" class="btn small" data-fl-no>Keep my current ones</button></div></div>` : ''}
+      <p class="note" style="margin:0">${A.kind ? `The app calls you ${(/^[aeiou]/i.test(A.label) ? 'an ' : 'a ') + esc(flLow(A.label))} in labels, invoices, calendar events and pitch messages.` : 'Pick one and the app uses it in labels, invoices, calendar events and pitch messages.'}</p>
+      ${FL.hasBackup && !ask ? '<button type="button" class="linkbtn ssx-fl-undo" data-fl-undo>Go back to my previous tasks &amp; emails</button>' : ''}`;
+    const redraw = () => { const old = document.getElementById(id); if (old) { const nb = flArtistBox(id); nb.dataset.sig = old.dataset.sig; old.replaceWith(nb); } };
+    const set = (kind, label) => {
+      const pid = flPresetFor(g, kind);
+      flSave({ artist: { kind, label, group: g, preset: A.preset } }); flRelabel(document.body); FL.artGroup = null;
+      FL.askPreset = pid !== A.preset ? pid : null;
+      toast(`Got it. The app will call you ${(/^[aeiou]/i.test(label) ? 'an ' : 'a ') + flLow(label)}.`); flSoon();
+    };
+    box.querySelectorAll('[data-fl-grp]').forEach(b => b.onclick = () => { FL.artGroup = b.dataset.flGrp; redraw(); });
     box.querySelectorAll('[data-fl-kind]').forEach(b => b.onclick = () => { const k = b.dataset.flKind; if (k === 'other') { box.querySelector('.ssx-fl-other').hidden = false; box.querySelector('.ssx-fl-other input').focus(); return; } set(k, (FL_KINDS.find(x => x[0] === k) || [])[1]); });
     const inp = box.querySelector('.ssx-fl-other input'), ok = () => { const v = inp.value.trim().replace(/\s+/g, ' '); if (!v) { toast('Type how we should refer to you'); inp.focus(); return; } set('other', v.charAt(0).toUpperCase() + v.slice(1)); };
     box.querySelector('[data-fl-kok]').onclick = ok; inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); ok(); } };
+    const yes = box.querySelector('[data-fl-yes]'), no = box.querySelector('[data-fl-no]'), undo = box.querySelector('[data-fl-undo]');
+    if (yes) yes.onclick = () => flSwitchPreset(FL.askPreset, yes);
+    if (no) no.onclick = () => { FL.askPreset = null; toast('Kept your current tasks and emails'); flSoon(); };
+    if (undo) undo.onclick = () => flTwoTap(undo, 'Tap again to go back', async () => { undo.disabled = true; try { if (await flRestorePreset()) toast('Back to your previous tasks and emails'); } catch (e) { console.error(e); toast("Couldn't go back. Check your connection and try again."); } undo.disabled = false; flSoon(); });
     return box;
   }
   function flArtistUI() {
-    const sig = JSON.stringify(flCfg().artist || {});
+    if (FL.hasBackup === undefined && st.db) { FL.hasBackup = false; st.db.doc('settings/presetBackup').get().then(s => { FL.hasBackup = !!s.exists; flSoon(); }).catch(() => {}); }
+    const sig = JSON.stringify([flCfg().artist || {}, FL.askPreset || '', !!FL.hasBackup, !!FL.switching]);
+    const busy = b => b && b.contains(document.activeElement) && document.activeElement.matches('input');
     const prof = document.getElementById('ssx-profile');
-    if (prof) { let b = prof.querySelector('#ssx-fl-art'); if (!b || b.dataset.sig !== sig) { if (b && b.contains(document.activeElement)) return; const nb = flArtistBox('ssx-fl-art'); nb.dataset.sig = sig; if (b) b.replaceWith(nb); else { const h = prof.querySelector('.ssx-head, .head, h3'); h ? h.after(nb) : prof.prepend(nb); } } }
+    if (prof) { let b = prof.querySelector('#ssx-fl-art'); if ((!b || b.dataset.sig !== sig) && !busy(b)) { const nb = flArtistBox('ssx-fl-art'); nb.dataset.sig = sig; if (b) b.replaceWith(nb); else { const h = prof.querySelector('.ssx-head, .head, h3'); h ? h.after(nb) : prof.prepend(nb); } } }
     const home = document.querySelector('section[data-view="home"]'), q = document.getElementById('ssx-fl-ask');
-    if (flCfg().artist) { if (q) q.remove(); return; }
-    if (!home || q || !FL.cfg) return;
+    if (flCfg().artist && !FL.askPreset) { if (q) q.remove(); return; }
+    if (q) { const b = q.querySelector('#ssx-fl-art2'); if (b && b.dataset.sig !== sig && !busy(b)) { const nb = flArtistBox('ssx-fl-art2'); nb.dataset.sig = sig; b.replaceWith(nb); } return; }
+    if (!home || !FL.cfg || flCfg().artist) return;
     const card = document.createElement('div'); card.id = 'ssx-fl-ask'; card.className = 'card ssx';
-    card.append(flArtistBox('ssx-fl-art2')); const w = document.getElementById('welcome'); w ? w.after(card) : home.prepend(card);
+    const nb = flArtistBox('ssx-fl-art2'); nb.dataset.sig = sig; card.append(nb); const w = document.getElementById('welcome'); w ? w.after(card) : home.prepend(card);
   }
   /* -- old stage tasks close on their own */
   function flWrapTasks() {
