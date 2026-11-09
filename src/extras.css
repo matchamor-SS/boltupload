@@ -882,3 +882,6 @@ html body #sheetRoot .sheet > .ssx-sbar .sheet-back { margin: 0; padding: 8px 6p
 html body #sheetRoot .sheet > .ssx-sbar .ssx-sx { margin-left: auto; width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
 html body #sheetRoot .sheet > .ssx-sbar .ssx-sx:hover { border-color: var(--accent); }
 html body #sheetRoot .sheet > .actions.ssx-stick { position: sticky; bottom: calc(-1 * var(--ssx-pt, 16px) - env(safe-area-inset-bottom, 0px)); z-index: 5; margin-left: calc(-1 * var(--ssx-px, 16px)); margin-right: calc(-1 * var(--ssx-px, 16px)); padding: 10px var(--ssx-px, 16px) calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--surface); border-top: 1px solid var(--line); }
+html body .ssx-tcal .ssx-tcal-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+html body .ssx-tcal .ssx-tcal-row .note { flex: 1 1 200px; margin: 0; }
+html body .ssx-tcmark { font-size: .85em; }
