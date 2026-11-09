@@ -908,3 +908,9 @@ html body .ssx-gtmark { font-size: .85em; color: var(--accent); }
 /* Settings → Google: Google Tasks card */
 html body #ssx-gt-set .ssx-gt-auto { display: flex; gap: 10px; align-items: center; margin: 4px 0 8px; font-weight: 600; cursor: pointer; }
 html body #ssx-gt-set .ssx-gt-auto input { width: auto; flex: none; margin: 0; }
+/* Artist type: group chips, starter-set question, go-back link */
+html body .ssx-fl-artist .ssx-fl-grps .chip { font-weight: 600; }
+html body .ssx-fl-artist .ssx-fl-ask2 { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 10%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+html body .ssx-fl-artist .ssx-fl-ask2 .note { margin: 0; }
+html body .ssx-fl-artist .ssx-fl-ask2 .ssx-row { display: flex; flex-wrap: wrap; gap: 8px; }
+html body .ssx-fl-artist .ssx-fl-undo { align-self: flex-start; }
