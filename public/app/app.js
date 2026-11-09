@@ -1247,14 +1247,22 @@ const isInvStep=(it,st)=>K(st)==="played"&&(it.key==="pl_invoice"||/invoice/i.te
 const INVSET=()=>{const p=S.profile||{},k=S.invset||{};return {biz:k.biz??(p.djName||""),name:k.name??(p.myName||""),email:k.email||"",phone:k.phone??(p.phone||""),address:k.address||"",website:k.website??(p.website||""),pay:k.pay||"",terms:k.terms??15,hourly:k.hourly||"",prefix:cleanPrefix(k.prefix),next:Number(k.next)||1,note:k.note??"Thank you for having me!"}};
 function invTotals(inv){const sub=(inv.lines||[]).reduce((t,l)=>t+(Number(l.qty)||0)*(Number(l.rate)||0),0),dep=Number(inv.deposit)||0;return {sub,dep,due:Math.max(0,sub-dep)}}
 function defaultBillTo(b){const v=contact(b.venueId);return b.contactPersonId||b.promoterId||(v&&v.bookingContactId)||b.venueId||""}
-function invPayText(inv,k){const parts=[handlesText(inv.payMethods||[]),inv.payInfo].filter(x=>String(x||"").trim());return parts.length?parts.join("\n"):((k&&k.pay)||"")}
-function newInvoice(b){const k=INVSET();return {payInfo:b.payInfo||"",payMethods:b.payPrefs||[],issueDate:today(),dueDate:b.payDue&&b.payDue>=today()?b.payDue:addDays(today(),Number(k.terms)||0),billToId:defaultBillTo(b),
+/* how to pay, once: each chosen way to pay with your saved username, then any other details that don't repeat them */
+const payClean=t=>{const hs=Object.values(PH()).map(v=>String(v||"").trim().toLowerCase()).filter(Boolean);return String(t||"").split("\n").map(x=>x.trim()).filter(x=>x&&!hs.some(v=>x.toLowerCase().includes(v))).join("\n")};
+function invPayLines(inv,k){const h=PH();let ms=(inv.payMethods||[]).filter(m=>m!=="other");if(!ms.length)ms=PH_DEF.filter(([m])=>h[m]).map(([m])=>m);
+  const rows=ms.map(m=>[pmName(m),h[m]||""]),seen=rows.map(([n,v])=>[n.toLowerCase(),String(v).toLowerCase()]);
+  let src=String(inv.payInfo||"").trim();if(!src&&!rows.length&&k&&k.pay)src=k.pay;
+  const extra=[...new Set(src.split("\n").map(x=>x.trim()).filter(Boolean))].filter(x=>{const l=x.toLowerCase();return !seen.some(([n,v])=>(v&&l.includes(v))||l===n)});
+  return {rows,extra}}
+function invPayText(inv,k){const {rows,extra}=invPayLines(inv,k);return [...rows.map(([n,v])=>v?`${n}: ${v}`:n),...extra].join("\n")}
+function newInvoice(b){const k=INVSET(),h=PH();return {payInfo:payClean([b.payInfo,k.pay].filter(Boolean).join("\n")),payMethods:(b.payPrefs||[]).length?b.payPrefs:PH_DEF.filter(([m])=>h[m]).map(([m])=>m),issueDate:today(),,dueDate:b.payDue&&b.payDue>=today()?b.payDue:addDays(today(),Number(k.terms)||0),billToId:defaultBillTo(b),
   lines:[{desc:`DJ performance – ${showName(b)}`,qty:1,unit:"flat",rate:Number(b.fee)||0,kind:"service"}],deposit:"",notes:k.note}}
 const UNITS=[["flat","Flat fee"],["hours","Hours"],["each","Each"]];
 function billInfo(inv){const c=contact(inv.billToId);return {name:inv.billName||(c?cName(c):""),org:c&&c.org&&c.org!==cName(c)?c.org:"",email:inv.billEmail??(c&&c.email||""),address:inv.billAddr??(c&&c.address||"")}}
 let JSPDF=null;
 function loadJsPDF(){if(window.jspdf&&window.jspdf.jsPDF)return Promise.resolve(window.jspdf.jsPDF);if(JSPDF)return JSPDF;
-  JSPDF=new Promise((res,rej)=>{const sc=document.createElement("script");sc.src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";sc.onload=()=>window.jspdf?res(window.jspdf.jsPDF):rej(new Error("load"));sc.onerror=()=>{JSPDF=null;rej(new Error("load"))};document.head.appendChild(sc)});return JSPDF}
+  /* the PDF maker ships with the site (src/extras.js); the site's security rules block scripts from other sites */
+  JSPDF=(typeof window.ssxJsPDF==="function"?window.ssxJsPDF():Promise.reject(new Error("load"))).then(J=>{if(!J)throw new Error("load");window.jspdf={jsPDF:J};return J}).catch(()=>{JSPDF=null;throw new Error("the PDF maker didn't load. Refresh the page and try again")});return JSPDF}
 async function invoicePdf(b,inv){const jsPDF=await loadJsPDF(),k=INVSET(),bi=billInfo(inv),T=invTotals(inv);
   const PC=pdfColors(),doc=new jsPDF({unit:"pt",format:"letter"}),W=612,H=792,M=54,R=W-M;
   /* readability: all details in near-black; the palette only colors headings, the table header, rules and tints */
@@ -1297,7 +1305,13 @@ async function invoicePdf(b,inv){const jsPDF=await loadJsPDF(),k=INVSET(),bi=bil
   label("Balance due",bx+18,y+23,{size:9.5});tx(money2(T.due),R-12,y+25,{bold:1,size:16,align:"right"});y+=66;
   const block=(h,t)=>{if(!String(t||"").trim())return;doc.setFont("helvetica","normal");doc.setFontSize(10.5);const d=doc.splitTextToSize(String(t),R-M);if(y+d.length*15+30>H-50){doc.addPage();frame();y=74}
     label(h,M,y);y+=17;d.forEach(x=>{tx(x,M,y,{});y+=15});y+=16};
-  block("Payment",[(inv.payMethods||[]).length?"Accepted: "+inv.payMethods.map(pmName).join(", "):"",invPayText(inv,k),inv.dueDate?`Please pay by ${fmtD(inv.dueDate)}. Reference ${inv.number||"this invoice"} with your payment.`:""].filter(x=>String(x).trim()).join("\n"));
+  const pay=invPayLines(inv,k);
+  if(pay.rows.length||pay.extra.length||inv.dueDate){if(y>H-200){doc.addPage();frame();y=74}
+    label("How to pay",M,y);y+=19;
+    pay.rows.forEach(([n,v])=>{if(v){tx(n,M,y,{color:sub});tx(v,M+92,y,{bold:1})}else tx(n,M,y,{});y+=17});
+    if(pay.extra.length){if(pay.rows.length)y+=5;doc.setFont("helvetica","normal");doc.setFontSize(10.5);pay.extra.forEach(t=>doc.splitTextToSize(t,R-M).forEach(x=>{tx(x,M,y,{});y+=16}))}
+    if(inv.dueDate){y+=9;tx(`Please pay by ${fmtD(inv.dueDate)} and include ${inv.number||"the invoice number"} with your payment.`,M,y,{size:10,color:sub});y+=16}
+    y+=22}
   block("Notes",inv.notes);
   return doc}
 function pdfColors(){const r=document.documentElement,prev=r.getAttribute("data-mode");if(prev!=="light")r.setAttribute("data-mode","light");
@@ -1309,7 +1323,7 @@ const invFileName=(b,inv)=>safeName(`${inv.number||"Invoice"} ${showName(b)}`)+"
 const b64Pdf=doc=>doc.output("datauristring").split(",")[1];
 
 function invoiceSheet(bid){navSheet("inv:"+bid,()=>invoiceSheet(bid));const b0=S.bookings.find(x=>x.id===bid);if(!b0)return;
-  const k=INVSET();let inv=JSON.parse(JSON.stringify(b0.invoice||newInvoice(b0)));let me={...k};
+  const k=INVSET();let inv=JSON.parse(JSON.stringify(b0.invoice||newInvoice(b0)));inv.payInfo=payClean(inv.payInfo);let me={...k};
   const exps=S.expenses.filter(e=>e.bookingId===bid);
   const lineHtml=(l,i)=>`<div class="inv-line" data-li="${i}"><div class="d"><input data-lf="desc" value="${esc(l.desc)}" placeholder="${l.kind==="expense"?"What was the expense?":"Description"}" aria-label="Line ${i+1} description">${l.kind==="expense"?`<span class="pill" style="color:var(--muted);flex:none">Expense</span>`:""}</div>
     <select data-lf="unit" aria-label="Line ${i+1} type">${UNITS.map(([u,n])=>`<option value="${u}" ${l.unit===u?"selected":""}>${n}</option>`).join("")}</select>
@@ -1330,15 +1344,15 @@ function invoiceSheet(bid){navSheet("inv:"+bid,()=>invoiceSheet(bid));const b0=S
   <div class="frow">${field("iv-dep","Deposit already received ($)",inv.deposit,"number",'inputmode="decimal" min="0" step="0.01"')}<div class="f"><label>&nbsp;</label><div class="inv-tot" id="iv-tot">${totHtml()}</div></div></div>
   <div class="f"><label>How they can pay you</label><div class="chips" id="iv-pm">${PAYM.filter(([m])=>m!=="other").map(([m,l])=>{const h=PH()[m];return `<button type="button" class="chip" data-ivpm="${m}" aria-pressed="${(inv.payMethods||[]).includes(m)}">${esc(l)}${h?` <span style="opacity:.7;font-weight:500">${esc(h)}</span>`:""}</button>`}).join("")}</div>
     <span class="note" id="iv-pmnote"></span></div>
-  <div class="f"><label for="iv-pay">Extra payment details (optional)</label><textarea id="iv-pay" data-fincheck style="min-height:52px" placeholder="e.g. Checks payable to … or bank transfer details for this invoice">${esc(inv.payInfo||"")}</textarea><span class="note">Bank or card numbers go on this invoice but aren't saved in the app.</span></div>
+<div class="f"><label for="iv-pay">Anything else about paying (optional)</label><textarea id="iv-pay" data-fincheck style="min-height:52px" placeholder="e.g. Checks payable to … or bank transfer details">${esc(inv.payInfo||"")}</textarea><span class="note">Shows under the ways to pay you picked above, so there's no need to repeat your usernames here. Bank or card numbers go on this invoice but aren't saved in the app.</span></div>
   <div class="f"><label for="iv-notes">Note on the invoice</label><textarea id="iv-notes" style="min-height:56px">${esc(inv.notes)}</textarea></div>
   <label class="note" id="iv-feew" style="display:${feeDiff()?"flex":"none"};gap:8px;align-items:center"><input type="checkbox" id="iv-fee" checked> Update this booking's fee to the invoice total so Financials match</label>
-  <details ${k.pay&&k.email?"":"open"}><summary style="cursor:pointer;font-weight:600;padding:6px 0">Your details on every invoice</summary>
+<details ${k.email?"":"open"}><summary style="cursor:pointer;font-weight:600;padding:6px 0">Your details on every invoice</summary>
     <div class="frow">${field("ivs-biz","Business or DJ name",me.biz)}${field("ivs-name","Your legal name",me.name)}</div>
     <div class="frow">${field("ivs-email","Email",me.email,"email")}${field("ivs-phone","Phone",me.phone,"tel")}</div>
     <div class="f"><label for="ivs-addr">Mailing address</label><textarea id="ivs-addr" style="min-height:52px" placeholder="Street, city, state ZIP">${esc(me.address)}</textarea></div>
     ${field("ivs-web","Website",me.website)}
-    <div class="f"><label for="ivs-pay">How to pay you</label><textarea id="ivs-pay" data-fincheck style="min-height:62px" placeholder="e.g. Zelle: you@email.com · Venmo: @yourname · Checks payable to …">${esc(me.pay)}</textarea></div>
+    <p class="note" style="margin:0">Your Venmo, Zelle, Cash App and PayPal come from Settings → How you get paid. Pick which ones go on each invoice under “How they can pay you”.</p><input type="hidden" id="ivs-pay" value="${esc(me.pay)}">
     <div class="frow">${field("ivs-hourly","Default hourly rate ($)",me.hourly,"number",'min="0" step="0.01"')}${field("ivs-prefix","Number prefix",me.prefix,"text",'placeholder="INV-" maxlength="8"')}</div>
 </details>
   <p class="note" id="iv-drivenote" style="margin:0"></p>
@@ -1385,9 +1399,9 @@ function invoiceSheet(bid){navSheet("inv:"+bid,()=>invoiceSheet(bid));const b0=S
     const hashStr=t=>{let h=5381;for(let i=0;i<t.length;i++)h=((h<<5)+h+t.charCodeAt(i))|0;return (h>>>0).toString(36)};
     const sigNow=()=>{read();return hashStr(JSON.stringify(scrubFin([q("#iv-num").value.trim(),inv.issueDate,inv.dueDate,q("#iv-to").value,q("#iv-name").value.trim(),q("#iv-email").value.trim(),q("#iv-addr").value.trim(),(inv.lines||[]).map(l=>[String(l.desc||""),String(l.unit||""),Number(l.qty)||0,Number(l.rate)||0]),Number(inv.deposit)||0,String(inv.notes||""),String(inv.payInfo||""),[...(inv.payMethods||[])].sort(),handlesText(inv.payMethods||[]),[me.biz,me.name,me.email,me.phone,me.address,me.website,me.pay].map(x=>String(x||""))])))};
     const driveBtns=()=>{const op=q("[data-ivopen]"),dv=q("[data-ivdrive]"),nt=q("#iv-drivenote");if(!op||!dv||dv.dataset.busy)return;
-      if(!inv.fileUrl||fileGone){op.hidden=true;dv.disabled=false;dv.textContent="Save PDF to Drive";if(nt)nt.innerHTML=fileGone?"The saved PDF was deleted from Drive. Save it again to make a new one.":"";return}
-      op.hidden=false;op.href=inv.fileUrl;const dirty=sigNow()!==inv.fileSig;dv.disabled=!dirty;dv.textContent="Update PDF in Drive";
-      if(nt)nt.innerHTML=dirty?"<b>You have changes that aren't in the Drive PDF yet.</b> Tap Update PDF in Drive to replace it.":"The PDF in Drive is up to date. Edit the invoice and Update PDF in Drive turns on.";};
+if(!inv.fileUrl||fileGone){op.hidden=true;dv.disabled=false;dv.hidden=false;dv.textContent="Save PDF to Drive";if(nt)nt.innerHTML=fileGone?"The saved PDF was deleted from Drive. Save it again to make a new one.":"";return}
+      op.hidden=false;op.href=inv.fileUrl;const dirty=sigNow()!==inv.fileSig;dv.disabled=false;dv.hidden=!dirty;dv.textContent="Update PDF in Drive";
+      if(nt)nt.innerHTML=dirty?"<b>You have changes that aren't in the Drive PDF yet.</b> Tap Update PDF in Drive to replace it.":"The PDF in Drive is up to date. If you change the invoice, an Update PDF in Drive button shows up.";};
     const toDrive=async b=>{const sig=sigNow();const doc=await invoicePdf(b,inv);const mcp=await driveReady();if(!mcp)return null;
       const title=safeName(`${b.date||inv.issueDate} ${showName(b)} – Invoice ${inv.number}`)+".pdf";const sv=((S.bookings.find(x=>x.id===bid)||{}).invoice)||{},old=!fileGone&&(inv.fileId||sv.fileId)||"";
       const ev=await ensureEvent(mcp,b,"biz");const f=await driveUpload(mcp,ev.subs.invoices,title,"application/pdf",b64Pdf(doc));
@@ -1398,7 +1412,7 @@ function invoiceSheet(bid){navSheet("inv:"+bid,()=>invoiceSheet(bid));const b0=S
     root.addEventListener("input",()=>driveBtns());root.addEventListener("change",()=>driveBtns());root.addEventListener("click",e=>{if(e.target.closest("[data-ivpm],[data-ldel],[data-addl]"))setTimeout(driveBtns,0)});
     if(inv.fileId)(async()=>{const mcp=await claude.use("mcp");if(!mcp)return;try{if(!(await folderAlive(mcp,inv.fileId))){fileGone=true;driveBtns()}}catch(e){}})();
     const pmNote=()=>{const sel=[...root.querySelectorAll("[data-ivpm]")].filter(x=>x.getAttribute("aria-pressed")==="true").map(x=>x.dataset.ivpm),h=PH(),miss=sel.filter(m=>PH_DEF.some(([k2])=>k2===m)&&!h[m]);
-      const t=handlesText(sel," · ");q("#iv-pmnote").innerHTML=(t?"On the invoice: "+esc(t):"Pick how they can pay you. Your saved usernames are added to the invoice.")+(miss.length?`<br>No ${esc(miss.map(pmName).join(", "))} username saved yet. Add it in Settings → How you get paid.`:"")};
+const t=invPayLines({payMethods:sel}).rows.map(([n,v])=>v?n+" "+v:n).join(" · ");q("#iv-pmnote").innerHTML=(t?(sel.length?"On the invoice: ":"Nothing picked, so all your saved usernames go on the invoice: ")+esc(t):"Pick how they can pay you. Your saved usernames are added to the invoice.")+(miss.length?`<br>No ${esc(miss.map(pmName).join(", "))} username saved yet. Add it in Settings → How you get paid.`:"")};
     root.querySelectorAll("[data-ivpm]").forEach(x=>x.onclick=()=>{x.setAttribute("aria-pressed",x.getAttribute("aria-pressed")!=="true");pmNote()});pmNote();
     q("[data-ivdrive]").onclick=async e=>{const btn=e.currentTarget;btn.dataset.busy=1;busy(btn,true,"Saving…");const r=await persist();if(!r){busy(btn,false,"Save PDF to Drive");delete btn.dataset.busy;driveBtns();return}
       try{const d=await toDrive(r.b);if(d){toast(d.updated?"PDF in Drive updated":`Filed in Business / ${yearOf(r.b)} / ${eventLabel(r.b)} / Invoices`);status();if(!root.isConnected&&SH_CUR&&SH_CUR.key==="inv:"+bid)invoiceSheet(bid)}}catch(err){console.error(err);err&&err.code?(err.code!=="quiet"&&driveErr(err)):toast("Couldn't make the PDF: "+(err&&err.message||"try again"))}finally{busy(btn,false,"Save PDF to Drive");delete btn.dataset.busy;driveBtns()}};
