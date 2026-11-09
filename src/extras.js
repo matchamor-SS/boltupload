@@ -4559,11 +4559,213 @@ function appExtras() {
     if (card.parentElement !== grp) grp.appendChild(card);
     const chk = card.querySelector('[data-gt-auto]'); if (document.activeElement !== chk && chk.checked !== FL_GT.auto) chk.checked = FL_GT.auto;
   }
+  /* -- Booking form you can arrange: every field can sit in the main form, under "More details", or be hidden; fields can be renamed and
+     reordered; performers can add their own fields (saved on each booking as cf_<id>). The starting layout and wording follow the artist type.
+     Settings → Bookings → "Booking form". Saved in settings/bookingform { fields: [{ key, place, label? }], custom: [{ id, label, type, options }] }. */
+  const FL_BF = [
+    // key, default label, wrapper finder, half width, required
+    ['title', 'Show / event name', r => r.querySelector('#b-title'), 0, 1],
+    ['status', 'Status', r => r.querySelector('#b-status'), 1, 1],
+    ['date', 'Date', r => r.querySelector('#b-date'), 1, 1],
+    ['times', 'Set times', null, 0, 0],
+    ['venue', 'Venue / festival', r => r.querySelector('#b-venue'), 1, 0],
+    ['promoter', 'Promoter / collective', r => r.querySelector('#b-promo'), 1, 0],
+    ['city', 'City', r => r.querySelector('#b-city'), 1, 0],
+    ['address', 'Event address', r => r.querySelector('#b-addr'), 1, 0],
+    ['fee', 'Fee ($)', r => r.querySelector('#b-fee'), 1, 0],
+    ['payDue', 'Payment due on', r => r.querySelector('#b-due'), 1, 0],
+    ['incomeType', 'Income type', r => r.querySelector('#b-inctype'), 0, 0],
+    ['pay', "How you'd like to be paid", r => r.querySelector('#b-pp'), 0, 0],
+    ['media', 'Media person', r => r.querySelector('#b-media'), 1, 0],
+    ['ticket', 'Ticket / event link', r => r.querySelector('#b-tix'), 1, 0],
+    ['drive', 'Media folder (Google Drive)', r => r.querySelector('#b-drive'), 0, 0],
+    ['notes', 'Notes', r => r.querySelector('#b-notes'), 0, 0]];
+  const FL_BF_TYPES = [['text', 'Short text'], ['long', 'Long text'], ['number', 'Number'], ['yesno', 'Yes / No'], ['choice', 'Dropdown']];
+  const flBfDefault = group => group === 'service'
+    ? [['title', 'main'], ['status', 'main'], ['date', 'main'], ['times', 'main'], ['promoter', 'main'], ['address', 'main'], ['fee', 'main'], ['payDue', 'main'], ['venue', 'more'], ['city', 'more'], ['incomeType', 'more'], ['pay', 'more'], ['notes', 'more'], ['media', 'hidden'], ['ticket', 'hidden'], ['drive', 'hidden']]
+    : [['title', 'main'], ['status', 'main'], ['date', 'main'], ['times', 'main'], ['venue', 'main'], ['promoter', 'main'], ['city', 'main'], ['fee', 'main'], ['payDue', 'main'], ['address', 'more'], ['incomeType', 'more'], ['pay', 'more'], ['media', 'more'], ['ticket', 'more'], ['drive', 'more'], ['notes', 'more']];
+  // wording that follows the artist type (your own renames always win)
+  const flBfWords = group => group === 'service'
+    ? { title: 'Appointment', times: 'Appointment time', venue: 'Studio / location', promoter: 'Client', address: 'Address', fee: 'Price ($)', ph: 'e.g. Half-sleeve session with Ana', start: 'Starts', end: 'Ends', view: { Venue: 'Location', Promoter: 'Client', Fee: 'Price' } }
+    : group === 'movement' || group === 'other' ? { times: 'Performance times', start: 'Starts', end: 'Ends', view: {} } : { view: {} };
+  const FL_BFS = { cfg: null, hooked: false, edit: '' };
+  const flBfCustom = () => ((FL_BFS.cfg || {}).custom || []).filter(c => c && c.id && c.label);
+  // the full ordered list: saved layout (or the artist type's default), new built-in fields added at their default place, deleted custom fields dropped
+  function flBfList() {
+    const g = flArtist().group, def = flBfDefault(g), cust = flBfCustom(), saved = FL_BFS.cfg && Array.isArray(FL_BFS.cfg.fields) ? FL_BFS.cfg.fields : null;
+    const ok = k => FL_BF.some(f => f[0] === k) || (k.startsWith('cf:') && cust.some(c => 'cf:' + c.id === k));
+    let list = saved ? saved.filter(x => x && ok(x.key)).map(x => ({ key: x.key, place: ['main', 'more', 'hidden'].includes(x.place) ? x.place : 'more', label: x.label || '' })) : def.map(([key, place]) => ({ key, place, label: '' }));
+    for (const [key, place] of def) if (!list.some(x => x.key === key)) list.push({ key, place, label: '' });
+    for (const c of cust) if (!list.some(x => x.key === 'cf:' + c.id)) list.push({ key: 'cf:' + c.id, place: 'more', label: '' });
+    for (const x of list) { const f = FL_BF.find(y => y[0] === x.key); if (f && f[4]) x.place = 'main'; }
+    return list;
+  }
+  function flBfLabel(x) {
+    if (x.label) return x.label;
+    if (x.key.startsWith('cf:')) return (flBfCustom().find(c => 'cf:' + c.id === x.key) || {}).label || 'Field';
+    return flBfWords(flArtist().group)[x.key] || (FL_BF.find(f => f[0] === x.key) || [])[1] || x.key;
+  }
+  const flBfSave = patch => { FL_BFS.cfg = { ...(FL_BFS.cfg || {}), ...patch }; return st.db ? st.db.doc('settings/bookingform').set(FL_BFS.cfg).catch(() => toast("Couldn't save your booking form. Check your connection and try again.")) : null; };
+  function flBfHook() {
+    if (FL_BFS.hooked || !st.db) return; FL_BFS.hooked = true;
+    st.db.doc('settings/bookingform').onSnapshot(s => { FL_BFS.cfg = s.exists ? s.data() : null; flSoon(); }, () => {});
+  }
+  // set a label's own text without removing buttons inside it (Income type has "Edit types")
+  function flBfSetLabel(lab, text) {
+    if (!lab) return; const t = [...lab.childNodes].find(n => n.nodeType === 3 && n.nodeValue.trim());
+    if (t) { if (t.__flBf == null) t.__flBf = t.nodeValue; const v = text + (lab.children.length ? ' ' : ''); if (t.nodeValue !== v) t.nodeValue = v; } else if (!lab.children.length) lab.textContent = text;
+  }
+  function flBfCustomEl(c, b) {
+    const id = 'cf-' + c.id, k = 'cf_' + c.id, v = b && b[k] != null ? b[k] : '', wrap = document.createElement('div'); wrap.className = 'f ssx-bf-cf';
+    const opts = list => list.map(o => `<option ${String(o) === String(v) ? 'selected' : ''}>${esc(o)}</option>`).join('');
+    const input = c.type === 'long' ? `<textarea id="${id}" data-k="${k}" style="min-height:64px">${esc(v)}</textarea>`
+      : c.type === 'yesno' ? `<select id="${id}" data-k="${k}"><option value=""></option>${opts(['Yes', 'No'])}</select>`
+      : c.type === 'choice' ? `<select id="${id}" data-k="${k}"><option value=""></option>${opts([...(c.options || []), ...(v && !(c.options || []).includes(v) ? [v] : [])])}</select>`
+      : `<input id="${id}" data-k="${k}" type="${c.type === 'number' ? 'number' : 'text'}" ${c.type === 'number' ? 'inputmode="decimal"' : ''} value="${esc(v)}">`;
+    wrap.innerHTML = `<label for="${id}">${esc(c.label)}</label>${input}`;
+    if (c.type !== 'long') wrap.classList.add('ssx-bf-half');
+    return wrap;
+  }
+  // pieces that belong right after a field and must travel with it
+  const flBfAttach = (root, blocks) => {
+    const after = (key, els) => { const a = blocks[key]; if (!a || !a.isConnected) return; let at = a; for (const e of els) { if (!e) continue; if (at.nextElementSibling !== e) at.after(e); at = e; } };
+    const note = [...root.querySelectorAll('p.note')].find(p => /Venues and promoters come from People/.test(p.textContent));
+    const epk = root.querySelector('#ssx-b-epk'), prefill = root.querySelector('.ssx-prefill');
+    after('date', [root.querySelector('#ssx-fl-rep'), root.querySelector('#b-warn')]);
+    after('times', [epk && epk.closest('label')]);
+    after('promoter', [root.querySelector('#b-talkWrap'), flArtist().group === 'service' ? null : note]);
+    if (note && flArtist().group === 'service') note.hidden = true;
+    if (prefill && blocks.venue && prefill.parentElement !== blocks.venue) blocks.venue.appendChild(prefill);
+    after('pay', [root.querySelector('#b-paidBlock')]);
+  };
+  // lay out the booking form the performer's way
+  function flBookForm(root) {
+    const ti = root.querySelector('#b-title'), ve = root.querySelector('#b-venue'), acts = root.querySelector('.actions'); if (!ti || !ve || !acts) return;
+    const g = flArtist().group, W = flBfWords(g);
+    if (root.__flBf) { flBfAttach(root, root.__flBf); flBfWords2(root, W); return; }
+    const blocks = {};
+    for (const [key, , find] of FL_BF) { if (!find) continue; const el = find(root), w = el && el.closest('.f'); if (w) blocks[key] = w; }
+    const ts = root.querySelector('#b-ts'), tRow = ts && ts.closest('.frow');
+    if (tRow) {
+      const tw = document.createElement('div'); tw.className = 'ssx-bf-times'; tRow.before(tw); tw.appendChild(tRow);
+      const gl = root.querySelector('#b-gcal'), gLab = gl && gl.closest('label'), am = [...root.querySelectorAll('p.note')].find(p => /Start times before 6 AM/.test(p.textContent));
+      if (gLab) tw.appendChild(gLab); if (am) tw.appendChild(am); blocks.times = tw;
+    }
+    const b = FL.formB || {}, list = flBfList();
+    for (const c of flBfCustom()) blocks['cf:' + c.id] = flBfCustomEl(c, b);
+    // containers: main grid where the title was, "More details" above the buttons, hidden holder (hidden fields keep their saved values)
+    const main = document.createElement('div'); main.className = 'ssx-bf-grid'; (blocks.title || ti).before(main);
+    const old = root.querySelector('.ssx-more'), det = document.createElement('details'); det.className = 'ssx-more ssx-bf-more';
+    det.innerHTML = '<summary>More details <span class="note"></span></summary><div class="ssx-morebody ssx-bf-grid"></div>';
+    const more = det.querySelector('.ssx-morebody'), hid = document.createElement('div'); hid.className = 'ssx-bf-hidden'; hid.hidden = true;
+    for (const x of list) {
+      const el = blocks[x.key]; if (!el) continue;
+      const f = FL_BF.find(y => y[0] === x.key); if (f && f[3]) el.classList.add('ssx-bf-half');
+      el.dataset.bf = x.key; (x.place === 'main' ? main : x.place === 'hidden' ? hid : more).appendChild(el);
+      if (x.key !== 'times') flBfSetLabel(el.querySelector('label'), flBfLabel(x));
+    }
+    if (old) old.remove();
+    root.querySelectorAll('.frow').forEach(r => { if (!r.closest('.ssx-bf-times') && !r.querySelector('input, select, textarea, button')) r.remove(); });
+    acts.before(det); acts.before(hid);
+    const inMore = list.filter(x => x.place === 'more' && blocks[x.key]);
+    det.hidden = !inMore.length;
+    const filled = inMore.some(x => [...blocks[x.key].querySelectorAll('input:not([type=checkbox]), textarea, select:not(#b-inctype)')].some(i => i.value && i.value !== '__new__') || blocks[x.key].querySelector('[aria-pressed="true"]'));
+    det.querySelector('summary .note').textContent = inMore.slice(0, 4).map(x => flBfLabel(x).replace(/\s*\(.*\)$/, '').toLowerCase()).join(', ') + (inMore.length > 4 ? '…' : '') + (filled ? ' · has info' : '');
+    root.__flBf = blocks; flBfAttach(root, blocks); flBfWords2(root, W);
+  }
+  // type wording inside fields (placeholders, start/end, client choices)
+  function flBfWords2(root, W) {
+    if (W.ph) { const t = root.querySelector('#b-title'); if (t && t.placeholder !== W.ph) t.placeholder = W.ph; }
+    const tw = root.querySelector('.ssx-bf-times');
+    if (tw && W.start) { const ls = tw.querySelectorAll('.frow > .f > label'); if (ls[0]) flBfSetLabel(ls[0], W.start); if (ls[1]) flBfSetLabel(ls[1], W.end); }
+    const gl = root.querySelector('#b-gcal'), gLab = gl && gl.closest('label');
+    if (gLab && W.start) for (const n of gLab.childNodes) if (n.nodeType === 3 && /this set/.test(n.nodeValue)) n.nodeValue = n.nodeValue.replace('this set', 'this');
+    if (flArtist().group === 'service') {
+      const p = root.querySelector('#b-promo');
+      if (p) { let ch = 0; for (const o of p.options) { const v = o.value === '' ? 'No client picked' : o.value === '__new__' ? 'Add new client…' : null; if (v && o.textContent !== v) { o.textContent = v; ch = 1; } } if (ch && typeof p._sync === 'function') p._sync(); }
+      const h = root.querySelector('#ssx-fl-new h4'); if (h && /^New promoter or collective$/.test(h.textContent)) h.textContent = 'New client';
+      const epk = root.querySelector('#ssx-b-epk'); if (epk) epk.closest('label').hidden = true;
+    }
+  }
+  // the opened booking shows your own fields, and the type's wording
+  function flBfView(root) {
+    const bid = root.dataset && root.dataset.booking, dl = bid && root.querySelector('dl.kv'); if (!dl) return;
+    const b = flBk().find(x => x.id === bid); if (!b) return;
+    const list = flBfList(), cust = flBfCustom(), W = flBfWords(flArtist().group);
+    const rows = list.filter(x => x.key.startsWith('cf:') && x.place !== 'hidden').map(x => { const c = cust.find(y => 'cf:' + y.id === x.key), v = b['cf_' + (c || {}).id]; return c && v !== '' && v != null ? [flBfLabel(x), String(v)] : null; }).filter(Boolean);
+    const sig = JSON.stringify([rows, list.map(x => x.key + x.place + x.label), flArtist().group]); if (dl.dataset.bf === sig) return; dl.dataset.bf = sig;
+    dl.querySelectorAll('.ssx-bf-v').forEach(x => x.remove());
+    const dts = [...dl.children].filter(x => x.tagName === 'DT');
+    const byText = t => dts.find(d => (d.__flBfT || d.textContent.trim()) === t);
+    // built-in rows: your label (or the type's word), hidden fields with nothing in them drop out
+    for (const [key, txt] of [['venue', 'Venue'], ['promoter', 'Promoter'], ['city', 'City'], ['address', 'Address'], ['fee', 'Fee'], ['media', 'Media'], ['ticket', 'Tickets'], ['notes', 'Notes']]) {
+      const dt = byText(txt); if (!dt) continue; if (dt.__flBfT == null) dt.__flBfT = txt;
+      const x = list.find(y => y.key === key), dd = dt.nextElementSibling, empty = dd && dd.textContent.trim() === '—';
+      dt.hidden = !!(x && x.place === 'hidden' && empty); if (dd) dd.hidden = dt.hidden;
+      const lab = x && x.label ? x.label.replace(/\s*\(\$\)$/, '') : W.view[txt] || txt; if (dt.textContent !== lab) dt.textContent = lab;
+    }
+    if (!rows.length) return;
+    const notes = byText('Notes'), html = rows.map(([l, v]) => `<dt class="ssx-bf-v">${esc(l)}</dt><dd class="ssx-bf-v" style="white-space:pre-wrap">${esc(v)}</dd>`).join('');
+    if (notes) notes.insertAdjacentHTML('beforebegin', html); else dl.insertAdjacentHTML('beforeend', html);
+  }
+  // Settings → Bookings: the "Booking form" card
+  function flBfSettings(force) {
+    const grp = document.querySelector('section[data-view="settings"] > .ssg[data-ssg="bookings"]'); if (!grp || !FL.cfg) return;
+    let card = document.getElementById('ssx-bf-set');
+    if (!card) { card = document.createElement('div'); card.className = 'card'; card.id = 'ssx-bf-set'; }
+    if (card.parentElement !== grp) grp.appendChild(card);
+    const list = flBfList(), cust = flBfCustom(), A = flArtist(), sig = JSON.stringify([list, cust, A.group, FL_BFS.edit]);
+    if (!force && (card.dataset.sig === sig || card.contains(document.activeElement) && document.activeElement.matches('input, select'))) return; card.dataset.sig = sig;
+    const kind = (FL_PRESETS[flPresetFor(A.group, A.kind)] || {}).title || 'default';
+    const row = (x, i) => {
+      const f = FL_BF.find(y => y[0] === x.key), req = f && f[4], c = x.key.startsWith('cf:') && cust.find(y => 'cf:' + y.id === x.key), name = flBfLabel(x);
+      const seg = req ? '<span class="note">Always shown</span>' : `<div class="seg ssx-bf-place">${[['main', 'Main'], ['more', 'More'], ['hidden', 'Hidden']].map(([p, l]) => `<button type="button" data-bf-place="${p}" aria-pressed="${x.place === p}">${l}</button>`).join('')}</div>`;
+      return `<div class="ssx-bf-row" data-bf-key="${esc(x.key)}" data-place="${x.place}">
+        <div class="ssx-bf-name">${FL_BFS.edit === x.key ? `<input class="ssx-bf-ren" value="${esc(name)}" maxlength="40" aria-label="New name for ${esc(name)}">` : `<span>${esc(name)}</span>`}${c ? ` <span class="note">${esc((FL_BF_TYPES.find(t => t[0] === c.type) || [])[1] || '')}</span>` : ''}</div>
+        ${seg}
+        <div class="ssx-bf-tools">${x.key !== 'times' ? `<button type="button" class="x" data-bf-ren aria-label="Rename ${esc(name)}" title="Rename"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>` : ''}<button type="button" class="x" data-bf-up aria-label="Move ${esc(name)} up" ${i ? '' : 'disabled'}>↑</button><button type="button" class="x" data-bf-down aria-label="Move ${esc(name)} down" ${i < list.length - 1 ? '' : 'disabled'}>↓</button>${c ? `<button type="button" class="x" data-bf-del aria-label="Delete ${esc(name)}" title="Delete">×</button>` : ''}</div></div>`;
+    };
+    card.innerHTML = `<div class="head"><h3>Booking form</h3></div>
+      <p class="note">Choose what shows on your booking form: up top, under "More details", or hidden. Use ↑ ↓ to change the order, the pencil to rename, and add your own fields. Hidden fields keep anything already saved.</p>
+      <div class="ssx-bf-list">${list.map(row).join('')}</div>
+      <div class="ssx-bf-add"><div class="ssx-fl-k">Add your own field</div>
+        <div class="ssx-bf-addrow"><input id="ssx-bf-nl" maxlength="40" placeholder="Field name, e.g. Placement, Dress code, Hours" aria-label="New field name">
+        <select id="ssx-bf-nt" aria-label="Kind of field">${FL_BF_TYPES.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></div>
+        <input id="ssx-bf-no" hidden maxlength="300" placeholder="Choices, separated by commas" aria-label="Dropdown choices">
+        <div class="ssx-row"><button type="button" class="btn small primary" data-bf-add>Add field</button></div></div>
+      <div class="ssx-row ssx-bf-foot"><button type="button" class="linkbtn" data-bf-reset>Reset to the ${esc(kind)} layout</button><span class="note">Your own fields stay.</span></div>`;
+    const keyOf = el => el.closest('[data-bf-key]').dataset.bfKey, put = list2 => flBfSave({ fields: list2.map(({ key, place, label }) => ({ key, place, ...(label ? { label } : {}) })) });
+    card.querySelectorAll('[data-bf-place]').forEach(b => b.onclick = () => { const k = keyOf(b), l = flBfList(); const x = l.find(y => y.key === k); x.place = b.dataset.bfPlace; put(l); flBfSettings(true); });
+    card.querySelectorAll('[data-bf-up],[data-bf-down]').forEach(b => b.onclick = () => { const k = keyOf(b), l = flBfList(), i = l.findIndex(y => y.key === k), j = i + (b.hasAttribute('data-bf-up') ? -1 : 1); if (j < 0 || j >= l.length) return; [l[i], l[j]] = [l[j], l[i]]; put(l); flBfSettings(true); const nb = card.querySelector(`[data-bf-key="${CSS.escape(k)}"] ${b.hasAttribute('data-bf-up') ? '[data-bf-up]' : '[data-bf-down]'}`); if (nb && !nb.disabled) nb.focus(); });
+    card.querySelectorAll('[data-bf-ren]').forEach(b => b.onclick = () => { FL_BFS.edit = keyOf(b); flBfSettings(true); const i = card.querySelector('.ssx-bf-ren'); if (i) { i.focus(); i.select(); } });
+    const ren = card.querySelector('.ssx-bf-ren');
+    if (ren) { const done = keep => { if (!FL_BFS.edit) return; const k = FL_BFS.edit; FL_BFS.edit = ''; if (keep) { const l = flBfList(), x = l.find(y => y.key === k), v = ren.value.trim().replace(/\s+/g, ' '); if (k.startsWith('cf:') && v) { flBfSave({ custom: flBfCustom().map(c => 'cf:' + c.id === k ? { ...c, label: v } : c) }); } else { x.label = v; put(l); } } flBfSettings(true); };
+      ren.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); done(true); } if (e.key === 'Escape') done(false); }; ren.onblur = () => done(true); }
+    card.querySelectorAll('[data-bf-del]').forEach(b => b.onclick = () => flTwoTap(b, 'Delete?', () => {
+      const k = keyOf(b), was = { custom: flBfCustom(), fields: flBfList() };
+      flBfSave({ custom: was.custom.filter(c => 'cf:' + c.id !== k), fields: was.fields.filter(x => x.key !== k).map(({ key, place, label }) => ({ key, place, ...(label ? { label } : {}) })) }); flBfSettings(true);
+      toast('Field deleted. Answers already saved on bookings are kept.', () => { flBfSave({ custom: was.custom, fields: was.fields.map(({ key, place, label }) => ({ key, place, ...(label ? { label } : {}) })) }); flBfSettings(true); });
+    }));
+    const nt = card.querySelector('#ssx-bf-nt'), no = card.querySelector('#ssx-bf-no'), nl = card.querySelector('#ssx-bf-nl');
+    nt.onchange = () => { no.hidden = nt.value !== 'choice'; };
+    const add = () => {
+      const label = nl.value.trim().replace(/\s+/g, ' '); if (!label) { toast('Type a name for the field'); nl.focus(); return; }
+      const options = nt.value === 'choice' ? [...new Set(no.value.split(',').map(s => s.trim()).filter(Boolean))].slice(0, 30) : [];
+      if (nt.value === 'choice' && options.length < 2) { toast('Add at least two choices, separated by commas'); no.focus(); return; }
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5), l = flBfList();
+      l.push({ key: 'cf:' + id, place: 'main', label: '' });
+      FL_BFS.cfg = { ...(FL_BFS.cfg || {}), custom: [...flBfCustom(), { id, label, type: nt.value, options }] }; put(l);
+      flBfSettings(true); toast(`Added "${label}" to your booking form`);
+    };
+    card.querySelector('[data-bf-add]').onclick = add; nl.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
+    const rs = card.querySelector('[data-bf-reset]');
+    rs.onclick = () => flTwoTap(rs, 'Tap again to reset', () => { const was = flBfList(); flBfSave({ fields: [] }); FL_BFS.cfg.fields = null; flBfSettings(true); toast('Booking form reset', () => { put(was); flBfSettings(true); }); });
+  }
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
-    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet, flGtRow]) { try { f(root); } catch (e) { console.error(e); } } });
+    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet, flGtRow, flBookForm, flBfView]) { try { f(root); } catch (e) { console.error(e); } } });
   }
   function hookFlow() {
     if (window.__ssxFL || !st.db) return; window.__ssxFL = true;
