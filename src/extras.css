@@ -914,3 +914,25 @@ html body .ssx-fl-artist .ssx-fl-ask2 { display: flex; flex-direction: column; g
 html body .ssx-fl-artist .ssx-fl-ask2 .note { margin: 0; }
 html body .ssx-fl-artist .ssx-fl-ask2 .ssx-row { display: flex; flex-wrap: wrap; gap: 8px; }
 html body .ssx-fl-artist .ssx-fl-undo { align-self: flex-start; }
+/* Booking form you can arrange */
+html body .ssx-bf-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 12px; }
+html body .ssx-bf-grid > * { grid-column: 1 / -1; min-width: 0; }
+html body .ssx-bf-grid > .ssx-bf-half { grid-column: auto; }
+@media (max-width: 520px) { html body .ssx-bf-grid > .ssx-bf-half { grid-column: 1 / -1; } }
+html body .ssx-bf-times { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+html body #ssx-bf-set .ssx-bf-list { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 14px; }
+html body #ssx-bf-set .ssx-bf-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; }
+html body #ssx-bf-set .ssx-bf-row[data-place="hidden"] .ssx-bf-name > span:first-child { color: var(--muted); text-decoration: line-through; }
+html body #ssx-bf-set .ssx-bf-name { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+html body #ssx-bf-set .ssx-bf-name input { width: 100%; }
+html body #ssx-bf-set .ssx-bf-place button { padding: 6px 10px; font-size: 13px; }
+html body #ssx-bf-set .ssx-bf-tools { display: flex; gap: 2px; }
+html body #ssx-bf-set .ssx-bf-tools .x:disabled { opacity: .3; }
+html body #ssx-bf-set .ssx-bf-add { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; }
+html body #ssx-bf-set .ssx-bf-addrow { display: flex; gap: 8px; flex-wrap: wrap; }
+html body #ssx-bf-set .ssx-bf-addrow input { flex: 1 1 200px; min-width: 0; }
+html body #ssx-bf-set .ssx-bf-foot { margin-top: 10px; align-items: center; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 560px) {
+  html body #ssx-bf-set .ssx-bf-row { grid-template-columns: minmax(0, 1fr) auto; }
+  html body #ssx-bf-set .ssx-bf-row .ssx-bf-place, html body #ssx-bf-set .ssx-bf-row > .note { grid-column: 1 / -1; grid-row: 2; }
+}
