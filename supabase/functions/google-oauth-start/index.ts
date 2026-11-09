@@ -5,7 +5,7 @@ import { TIERS } from '../_shared/google.ts';
 handler(async req => {
   const user = await userFrom(req);
   const { tier } = await req.json().catch(() => ({}));
-  if (!['mail', 'drive', 'calendar'].includes(tier)) throw new HttpError(400, 'invalid_tier');
+  if (!['mail', 'drive', 'calendar', 'tasks'].includes(tier)) throw new HttpError(400, 'invalid_tier');
   await admin.from('oauth_states').delete().lt('created_at', new Date(Date.now() - 3_600_000).toISOString()); // tidy old states
   const state = crypto.randomUUID() + crypto.randomUUID();
   const origin = req.headers.get('Origin');
