@@ -841,8 +841,18 @@ html.ssx-standalone body header.top { -webkit-backdrop-filter: none !important; 
 /* ===== Date fields: always show the picked date (it collapsed to just the icon on phones) ===== */
 html body .f > .pick-btn.date:not(.due) { width: 100%; align-self: stretch; }
 html body .ssx-fl-rep { margin-top: 2px; }
-html body .ssx-fl-rep .ssx-fl-replbl { display: block; font-weight: 600; margin-bottom: 2px; }
 html body .ssx-fl-rep .ssx-fl-repnote { margin: 4px 0 0; }
-html body .ssx-fl-warnnote { display: block; margin-top: 2px; color: var(--warn, #b26a00); }
+html body .ssx-fl-warnnote { display: block; margin-top: 2px; color: var(--warn, #B7791F); }
+html body .ssx-fl-repcu { display: flex; flex-direction: column; gap: 10px; margin: 8px 0; padding: 12px; border: 1px solid var(--line, #E3D9C6); border-radius: 12px; }
+html body .ssx-fl-repcu .frow { margin: 0; }
+html body .ssx-fl-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+html body .ssx-fl-day { min-width: 0; min-height: 38px; padding: 6px 0; border-radius: 999px; border: 1px solid var(--line, #E3D9C6); background: transparent; color: var(--ink, inherit); font: inherit; cursor: pointer; }
+html body .ssx-fl-day[aria-pressed="true"] { background: var(--accent, #8A6A35); border-color: var(--accent, #8A6A35); color: #fff; }
+html body .ssx-fl-addd { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+html body .ssx-fl-addd input[type="date"] { flex: 1 1 160px; min-width: 0; }
+html body .ssx-fl-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+html body .ssx-fl-chips:empty { display: none; }
+html body .ssx-fl-chip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 10px; border-radius: 999px; border: 1px solid var(--line, #E3D9C6); font-size: .9em; }
+html body .ssx-fl-chip button { border: 0; background: transparent; color: inherit; font: inherit; min-width: 30px; min-height: 30px; cursor: pointer; }
 html body dd.ssx-fl-ser { display: flex; flex-direction: column; gap: 6px; }
 html body dd.ssx-fl-ser .ssx-fl-mact { display: flex; flex-wrap: wrap; gap: 6px; }
