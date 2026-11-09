@@ -3779,7 +3779,7 @@ function appExtras() {
     }
     if (k === 'private' && person && person.type !== 'other' && person.createdAt && person.createdAt === b.createdAt) await window.patch('contacts', person.id, { type: 'other' }); // only a contact this request just made
     // a clean note: who they are, plus the extra answers
-    lines.push(`From: ${person ? cName(person) : (venueAsPerson ? venueAsPerson.name || cName(venueAsPerson) : 'the booking link')}${d.t ? ', ' + d.t : ''} (${flKindLabel(k)})`);
+    lines.push(`From: ${person ? cName(person) : (venueAsPerson ? venueAsPerson.name || cName(venueAsPerson) : 'the booking link')}${d.t ? ', ' + d.t : ''} (${flArtist().group === 'service' ? 'Client' : flKindLabel(k)})`);
     if (d.et || d.g) lines.push(`Event: ${[d.et, d.g ? d.g + ' guests' : ''].filter(Boolean).join(' · ')}`);
     if (d.cap || d.ages) lines.push(`Room: ${[d.cap ? 'capacity ' + d.cap : '', d.ages || ''].filter(Boolean).join(' · ')}`);
     if (d.lineup) lines.push(`Also playing: ${d.lineup}`);
@@ -4761,9 +4761,35 @@ function appExtras() {
     const rs = card.querySelector('[data-bf-reset]');
     rs.onclick = () => flTwoTap(rs, 'Tap again to reset', () => { const was = flBfList(); flBfSave({ fields: [] }); FL_BFS.cfg.fields = null; flBfSettings(true); toast('Booking form reset', () => { put(was); flBfSettings(true); }); });
   }
+  /* -- Settings → Bookings: "Booking request page" card. Which built-in questions show, and which of your own fields to ask (and require).
+     Saved in settings/bookingform.page { hide: [...], ask: [ids], req: [ids] }; the book function sends it to the public page. */
+  const FL_BKP = [['phone', 'Their phone'], ['address', 'Address'], ['fee', 'Their offer / budget'], ['title', 'Their job title'], ['ig', 'Their Instagram'], ['site', 'Their website'], ['vsite', 'Venue website'], ['cap', 'Venue capacity'], ['ages', 'Ages'], ['lineup', 'Who else is playing'], ['etype', 'Type of private event'], ['guests', 'Guest count'], ['rep', 'Does it repeat?']];
+  function flBkpSettings(force) {
+    const grp = document.querySelector('section[data-view="settings"] > .ssg[data-ssg="bookings"]'); if (!grp || !FL.cfg) return;
+    let card = document.getElementById('ssx-bkp-set');
+    if (!card) { card = document.createElement('div'); card.className = 'card'; card.id = 'ssx-bkp-set'; }
+    const bf = document.getElementById('ssx-bf-set'); if (bf && bf.parentElement === grp) { if (bf.nextElementSibling !== card) bf.after(card); } else if (card.parentElement !== grp) grp.appendChild(card);
+    const P = (FL_BFS.cfg || {}).page || {}, hide = new Set(P.hide || []), ask = new Set(P.ask || []), req = new Set(P.req || []), cust = flBfCustom(), svc = flArtist().group === 'service';
+    const sig = JSON.stringify([P, cust, svc]); if (!force && card.dataset.sig === sig) return; card.dataset.sig = sig;
+    const items = svc ? FL_BKP.filter(([k]) => ['phone', 'address', 'fee'].includes(k)) : FL_BKP;
+    card.innerHTML = `<div class="head"><h3>Booking request page</h3></div>
+      <p class="note">What people answer when they request you through your booking link.${svc ? ' As a service provider, your page skips venue and event questions and asks about the appointment.' : ''} Name, email, date, time${svc ? '' : ', event name'} and city are always asked.</p>
+      <div class="ssx-fl-k">Questions on your page</div>
+      <div class="ssx-bkp-list">${items.map(([k, l]) => `<label class="ssx-bkp-opt"><input type="checkbox" data-bkp-show="${k}" ${hide.has(k) ? '' : 'checked'}> ${esc(l)}</label>`).join('')}</div>
+      <div class="ssx-fl-k">Your own fields</div>
+      ${cust.length ? `<div class="ssx-bkp-own">${cust.map(c => `<div class="ssx-bkp-row"><span>${esc(c.label)}</span><label class="ssx-bkp-opt"><input type="checkbox" data-bkp-ask="${esc(c.id)}" ${ask.has(c.id) ? 'checked' : ''}> Ask on my page</label><label class="ssx-bkp-opt"><input type="checkbox" data-bkp-req="${esc(c.id)}" ${req.has(c.id) ? 'checked' : ''} ${ask.has(c.id) ? '' : 'disabled'}> Required</label></div>`).join('')}</div>
+        <p class="note">Their answers fill in those fields on the booking.</p>` : '<p class="note">Add your own fields in "Booking form" above, then choose which ones to ask here.</p>'}`;
+    const save = () => {
+      const p = { hide: [...card.querySelectorAll('[data-bkp-show]')].filter(x => !x.checked).map(x => x.dataset.bkpShow).concat([...hide].filter(k => !items.some(([i]) => i === k))),
+        ask: [...card.querySelectorAll('[data-bkp-ask]')].filter(x => x.checked).map(x => x.dataset.bkpAsk), req: [] };
+      p.req = [...card.querySelectorAll('[data-bkp-req]')].filter(x => x.checked && p.ask.includes(x.dataset.bkpReq)).map(x => x.dataset.bkpReq);
+      flBfSave({ page: p }); flBkpSettings(true); toast('Saved. Your booking page shows this right away.');
+    };
+    card.querySelectorAll('input[type="checkbox"]').forEach(x => x.onchange = save);
+  }
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
     sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet, flGtRow, flBookForm, flBfView]) { try { f(root); } catch (e) { console.error(e); } } });
   }
@@ -5260,7 +5286,7 @@ async function bookingPage(rawSlug) {
   try {
     const { data, error } = await sb.functions.invoke(`book?slug=${encodeURIComponent(slug)}`, { method: 'GET' });
     if (error || !data || !data.today) throw new Error('nf');
-    P = data;
+    P = data; window.__ssxBookForm = data.form || null;
   } catch (_) {
     root.innerHTML = `<div class="bk-wrap">${brand()}<div class="bk-card bk-center"><h1>This booking link isn't active</h1><p class="bk-muted">Check the link with the performer who sent it.</p></div></div>`;
     return;
@@ -5340,4 +5366,125 @@ async function bookingPage(rawSlug) {
     btn.disabled = false; btn.textContent = 'Send request';
   }
   draw();
+}
+
+/* ============================================================== booking request page upgrades
+   Runs on the public booking page itself (appExtras doesn't run there). "Who are you?" first, then only the questions that fit; the
+   performer's own questions and hidden questions (from the book function's `form`), and service wording for service providers. */
+const BKX_KINDS = [
+  ['booker', 'I book talent for a venue'], ['venue', 'I run or own a venue'], ['collective', 'I lead a collective or crew'],
+  ['promoter', "I'm an independent promoter"], ['private', "I'm planning a private event"], ['other', 'Something else']];
+// what the booking server understands: venue, promoter, coordinator, other
+const BKX_ROLE = { booker: 'promoter', venue: 'venue', collective: 'promoter', promoter: 'promoter', private: 'coordinator', other: 'other' };
+function bkxPage() {
+  const main = document.getElementById('ss-book'), form = main && main.querySelector('#bk-form'); if (!form || form.dataset.fl) return;
+  form.dataset.fl = '1';
+  const $ = s => form.querySelector(s), lab = id => { const i = $('#' + id); return i && i.closest('label'); };
+  const two = $('.bk-step:nth-of-type(3) .bk-two'), step3 = two && two.closest('.bk-step'); if (!two) return;
+  const V = main.__vals || {}, kindIn = document.createElement('input'); kindIn.type = 'hidden'; kindIn.id = 'bk-x-kind'; kindIn.value = V['bk-x-kind'] || '';
+  const fld = (id, label, attrs = '', span) => `<label class="bk-f${span ? ' bk-span' : ''}" data-flk>${label}<input id="${id}" ${attrs}></label>`;
+  const opt = ' <i>(optional)</i>';
+  // step 3 becomes "About you"; a new step 4 holds the event and the venue
+  step3.querySelector('h2').innerHTML = '<span>3</span>About you';
+  const who = document.createElement('div'); who.className = 'bk-f'; who.innerHTML = `<span>Who are you?</span><div class="bk-chips ssx-bk-who" role="group" aria-label="Who are you?">${BKX_KINDS.map(([k, l]) => `<button type="button" class="bk-chip" data-flk-who="${k}" aria-pressed="false">${l}</button>`).join('')}</div>`;
+  two.before(who, kindIn);
+  const me = document.createElement('div'); me.className = 'bk-two ssx-bk-me';
+  me.innerHTML = fld('bk-x-title', 'Your title' + opt, 'maxlength="60" placeholder="e.g. Talent buyer, GM"') + fld('bk-x-ig', 'Instagram' + opt, 'maxlength="60" placeholder="@handle"') + fld('bk-x-site', 'Website' + opt, 'type="url" maxlength="200" placeholder="https://"');
+  two.after(me);
+  const s4 = document.createElement('section'); s4.className = 'bk-step ssx-bk-ev';
+  s4.innerHTML = `<h2><span>4</span>About the event</h2><div class="bk-two ssx-bk-ev2"></div><div class="bk-two ssx-bk-ven"></div><div class="bk-two ssx-bk-more"></div>`;
+  step3.after(s4);
+  const ev2 = s4.querySelector('.ssx-bk-ev2'), ven = s4.querySelector('.ssx-bk-ven'), more = s4.querySelector('.ssx-bk-more');
+  ev2.append(lab('bk-event'));
+  ev2.insertAdjacentHTML('beforeend', `<label class="bk-f" data-flk="private">Type of event<select id="bk-x-etype"><option value="">Choose…</option>${['Wedding', 'Birthday', 'Corporate event', 'Holiday party', 'House party', 'Other'].map(x => `<option>${x}</option>`).join('')}</select></label>` + fld('bk-x-guests', 'How many guests?' + opt, 'inputmode="numeric" maxlength="6" placeholder="e.g. 120"').replace('data-flk', 'data-flk="private"'));
+  ven.append(lab('bk-venue'), lab('bk-city'), lab('bk-address'));
+  ven.insertAdjacentHTML('beforeend', fld('bk-x-vsite', 'Venue website or Instagram' + opt, 'maxlength="200"').replace('data-flk', 'data-flk="venue"') + fld('bk-x-cap', 'Capacity' + opt, 'inputmode="numeric" maxlength="6" placeholder="e.g. 300"').replace('data-flk', 'data-flk="venue"'));
+  more.insertAdjacentHTML('beforeend', `<label class="bk-f" data-flk="ages">Ages<select id="bk-x-ages"><option value="">Choose…</option><option>21+</option><option>18+</option><option>All ages</option></select></label>` + fld('bk-x-lineup', 'Who else is playing?' + opt, 'maxlength="200" placeholder="Other acts on the bill"').replace('data-flk', 'data-flk="lineup"'));
+  more.append(lab('bk-fee'));
+  more.insertAdjacentHTML('beforeend', `<label class="bk-f" data-flk="rep">Does this night repeat?<select id="bk-x-rep"><option value="">Just this once</option><option value="w1">Every week</option><option value="w2">Every 2 weeks</option><option value="mn">Once a month</option><option value="cu">Something else (tell us in your message)</option></select></label>` + fld('bk-x-repn', 'About how many dates?' + opt, 'inputmode="numeric" maxlength="2" placeholder="e.g. 6"').replace('data-flk', 'data-flk="repn"'));
+  const msgL = lab('bk-msg'); s4.append(msgL); const tail = [...step3.children].filter(x => x.matches('.bk-hp, p, button')); s4.append(...tail);
+  const msg = $('#bk-msg'); if (msg) msg.maxLength = 1400;
+  const roleL = lab('bk-role'); if (roleL) roleL.hidden = true;
+  // bring back anything typed before the page redrew (picking a date or a set length redraws it)
+  form.querySelectorAll('[id^="bk-x-"]').forEach(x => { if (V[x.id] != null && x.id !== 'bk-x-kind') x.value = V[x.id]; });
+  const setLab = (id, text) => { const l = lab(id); if (!l) return; const n = [...l.childNodes].find(c => c.nodeType === 3); if (n) n.textContent = text; const i = l.querySelector('i'); if (i) i.hidden = !/optional/.test(text) ? true : false; };
+  const apply = () => {
+    const k = kindIn.value, pick = form.querySelectorAll('[data-flk-who]');
+    pick.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.flkWho === k)));
+    const show = (sel, on) => form.querySelectorAll(sel).forEach(x => { x.hidden = !on; });
+    const orgL = lab('bk-org'), venL = lab('bk-venue');
+    const orgText = { booker: 'Company you work for', venue: 'Venue name', collective: 'Collective or crew name', promoter: 'Company or brand', private: 'Company', other: 'Company or organization' }[k] || 'Company or collective';
+    setLab('bk-org', orgText); orgL.querySelector('i') && (orgL.querySelector('i').hidden = k === 'venue' || k === 'collective');
+    if (orgL) orgL.hidden = k === 'private';
+    setLab('bk-venue', k === 'private' ? 'Where is it?' : k === 'booker' ? 'Venue you book for' : 'Venue');
+    if (venL) { venL.hidden = k === 'venue'; const i = venL.querySelector('i'); if (i) i.hidden = k === 'booker'; }
+    show('#bk-x-title', true); lab('bk-x-title').hidden = !(k === 'booker' || k === 'venue' || k === 'other');
+    lab('bk-x-ig').hidden = !(k === 'collective' || k === 'promoter'); lab('bk-x-site').hidden = !(k === 'collective' || k === 'promoter');
+    show('[data-flk="private"]', k === 'private'); show('[data-flk="venue"]', k !== 'private'); show('[data-flk="ages"]', k !== 'private'); show('[data-flk="lineup"]', k !== 'private');
+    setLab('bk-event', k === 'private' ? "What's the occasion?" : 'Event name');
+    const ev = $('#bk-event'); if (ev) ev.placeholder = k === 'private' ? "e.g. Maria's 30th birthday" : 'e.g. Saturday night at the club';
+    const role = $('#bk-role'); if (role) role.value = BKX_ROLE[k] || 'other';
+    me.hidden = !k || [...me.querySelectorAll('label')].every(l => l.hidden);
+    const rp = $('#bk-x-rep'); if (rp) rp.onchange = apply; show('[data-flk="rep"]', k !== 'private'); show('[data-flk="repn"]', k !== 'private' && !!(rp && rp.value));
+    s4.hidden = !k; two.hidden = !k;
+  };
+  form.querySelectorAll('[data-flk-who]').forEach(b => b.onclick = () => { kindIn.value = b.dataset.flkWho; apply(); const f = $('#bk-name'); if (f && !f.value) f.focus(); });
+  apply();
+  bkxCustom({ form, main, $, lab, s4, msgL, who, kindIn, apply });
+}
+// the performer's choices for this page
+const BKX_HIDE = { phone: 'bk-phone', title: 'bk-x-title', ig: 'bk-x-ig', site: 'bk-x-site', vsite: 'bk-x-vsite', cap: 'bk-x-cap', ages: 'bk-x-ages', lineup: 'bk-x-lineup', etype: 'bk-x-etype', guests: 'bk-x-guests', address: 'bk-address', fee: 'bk-fee', rep: 'bk-x-rep' };
+function bkxCustom(o) {
+  const F = window.__ssxBookForm; if (!F) return;
+  const { form, main, $, lab, s4, msgL, who, kindIn, apply } = o, svc = F.group === 'service';
+  const off = new Set(F.hide || []); if (svc) ['title', 'ig', 'site', 'vsite', 'cap', 'ages', 'lineup', 'etype', 'guests', 'rep'].forEach(k => off.add(k));
+  const hide = id => { const l = lab(id); if (l) l.classList.add('ssx-bk-off'); };
+  for (const [k, id] of Object.entries(BKX_HIDE)) if (off.has(k)) { hide(id); if (k === 'rep') hide('bk-x-repn'); }
+  const txt = (el, t) => { if (!el) return; const n = [...el.childNodes].find(c => c.nodeType === 3 && c.nodeValue.trim()); if (n) n.nodeValue = t; };
+  if (svc) {
+    // a client booking an appointment: no "who are you", no venue or company, appointment wording
+    hide('bk-venue'); hide('bk-org'); who.classList.add('ssx-bk-off'); kindIn.value = 'private'; apply();
+    const h2 = form.querySelectorAll('.bk-step h2'); if (h2[1]) h2[1].innerHTML = '<span>2</span>Time'; s4.querySelector('h2').innerHTML = '<span>4</span>About your appointment';
+    const len = [...form.querySelectorAll('.bk-f > span')].find(x => /Set length/.test(x.textContent)); if (len) len.textContent = 'How long';
+    txt(lab('bk-event'), "What's it for? "); const ev = $('#bk-event'); if (ev) ev.placeholder = 'e.g. Small forearm piece, 60-minute massage';
+    txt(lab('bk-fee'), 'Your budget in $ '); const m = $('#bk-msg'); if (m) m.placeholder = 'What you have in mind, references, any questions…';
+  }
+  // their own questions, just above "Anything else?"
+  if ((F.ask || []).length && !form.querySelector('.ssx-bk-q')) {
+    const V = main.__vals || {}, box = document.createElement('div'); box.className = 'bk-two ssx-bk-q';
+    box.innerHTML = F.ask.map(q => {
+      const id = 'bk-q-' + q.id, head = esc(q.label) + (q.req ? '' : ' <i>(optional)</i>');
+      const ctl = q.type === 'long' ? `<textarea id="${id}" rows="3" maxlength="200"></textarea>`
+        : q.type === 'yesno' || q.type === 'choice' ? `<select id="${id}"><option value="">Choose…</option>${(q.type === 'yesno' ? ['Yes', 'No'] : q.options || []).map(x => `<option>${esc(x)}</option>`).join('')}</select>`
+        : `<input id="${id}" maxlength="200" ${q.type === 'number' ? 'inputmode="decimal"' : ''}>`;
+      return `<label class="bk-f${q.type === 'long' ? ' bk-span' : ''}">${head}${ctl}</label>`;
+    }).join('');
+    msgL ? msgL.before(box) : s4.appendChild(box);
+    box.querySelectorAll('[id^="bk-q-"]').forEach(x => { if (V[x.id] != null) x.value = V[x.id]; });
+  }
+}
+// on send: pack the extra answers for the performer's app, then let the page send it as usual
+function bkxSubmit(e) {
+  const form = e.target; if (!form || form.id !== 'bk-form' || !form.dataset.fl) return;
+  const $ = s => form.querySelector(s), v = id => (($('#' + id) || {}).value || '').trim(), err = $('#bk-err'), k = v('bk-x-kind');
+  const stop = t => { e.preventDefault(); e.stopImmediatePropagation(); if (err) { err.textContent = t; err.scrollIntoView({ block: 'center', behavior: 'smooth' }); } };
+  if (!k) return stop('Tell us who you are: tap the option under "Who are you?".');
+  if ((k === 'venue' || k === 'collective') && !v('bk-org')) { $('#bk-org').focus(); return stop(k === 'venue' ? 'Add the venue name.' : 'Add the name of your collective or crew.'); }
+  if (k === 'booker' && !v('bk-venue')) { $('#bk-venue').focus(); return stop('Add the venue you book for.'); }
+  if (k === 'venue') $('#bk-venue').value = v('bk-org');
+  const F = window.__ssxBookForm;
+  for (const q of (F && F.ask) || []) if (q.req && !v('bk-q-' + q.id)) { const el = $('#bk-q-' + q.id); if (el) el.focus(); return stop(`Please answer "${q.label}".`); }
+  const d = { k }; [['t', 'bk-x-title'], ['ig', 'bk-x-ig'], ['site', 'bk-x-site'], ['vsite', 'bk-x-vsite'], ['cap', 'bk-x-cap'], ['ages', 'bk-x-ages'], ['lineup', 'bk-x-lineup'], ['et', 'bk-x-etype'], ['g', 'bk-x-guests'], ['rf', 'bk-x-rep'], ['rn', 'bk-x-repn']].forEach(([a, id]) => { const x = v(id); if (x) d[a] = x.slice(0, 200); });
+  const msg = $('#bk-msg'); if (!msg) return;
+  for (const q of (F && F.ask) || []) { const x = v('bk-q-' + q.id); if (x) (d.q = d.q || {})[q.id] = x.slice(0, 200); }
+  const own = msg.value.replace(/\n*\[details\]\{[\s\S]*$/, ''), full = (own.trim() ? own.trim() + '\n\n' : '') + '[details]' + JSON.stringify(d);
+  if (full.length > 2000) { msg.focus(); return stop(`Your message is ${full.length - 2000} characters too long. Shorten "Anything else?" and send again.`); }
+  msg.value = full;
+  setTimeout(() => { msg.value = own; }, 0); // the page reads the message right away; put back what they typed
+}
+if (/[?&]book=/.test(location.search)) {
+  const mo = new MutationObserver(() => { try { bkxPage(); } catch (err) { console.error(err); } });
+  const start = () => { mo.observe(document.body, { childList: true, subtree: true }); bkxPage(); };
+  document.body ? start() : document.addEventListener('DOMContentLoaded', start);
+  document.addEventListener('submit', bkxSubmit, true);
 }
