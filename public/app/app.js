@@ -1013,7 +1013,7 @@ function renderWriteTo(){const n=$("#writeToNote");if(n)n.innerHTML=`Booked sets
 function evPayload(b){const s1=setStartOf(b),e1=setEndOf(b)||addMin(s1,60);const sd=toMin(s1)<360?addDays(b.date,1):b.date;const end=toMin(e1)<=toMin(s1)?addDays(sd,1):sd;const v=contact(b.venueId),pr=contact(b.promoterId);
   const hold=!["confirmed","played","paid"].includes(K(b.status));
   return {summary:`${hold?"HOLD · ":""}DJ set: ${showName(b)}`,startTime:`${sd}T${s1}:00`,endTime:`${end}T${e1}:00`,location:bAddr(b)||"",
-    description:[`Stage: ${STAGE_L[b.status]||b.status}`,v?`Venue: ${cName(v)}`:"",pr?`Promoter: ${cName(pr)}`:"",b.fee?`Fee: ${money(b.fee)}`:"","Added from your booking app."].filter(Boolean).join("\n"),notificationLevel:"NONE"}}
+    description:[`Stage: ${STAGE_L[b.status]||b.status}`,v?`Venue: ${cName(v)}`:"",pr?`Promoter: ${cName(pr)}`:"",b.fee?`Fee: ${money(b.fee)}`:"","Added from your booking app."].filter(Boolean).join("\n"),notificationLevel:"NONE",timeZone:(()=>{try{return Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC"}catch(e){return "UTC"}})()}}
 async function dropEvent(ge){const mcp=G.mcp||await claude.use("mcp");if(!mcp||!ge||!ge.eventId)return false;try{await mcp.callTool(GC,"delete_event",{eventId:ge.eventId,...(ge.calendarId?{calendarId:ge.calendarId}:{}),notificationLevel:"NONE"});return true}catch(e){return !!(e&&e.code==="tool_error"&&/not.?found|deleted|gone|404|410/i.test(String(e.message||"")))}}
 async function syncBookingEvent(id,given){const b=given?{...given,id}:S.bookings.find(x=>x.id===id);if(!b)return;const ge=b.gcal;
   const want=!b.gcalOff&&b.date&&setStartOf(b)&&K(b.status)!=="lost";const mcp=G.mcp||await claude.use("mcp");if(!mcp)return;
