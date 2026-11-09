@@ -3758,32 +3758,60 @@ function appExtras() {
     }, true);
   }
   /* -- repeating gigs (residencies, monthly nights): set a repeat in the booking form, each date becomes its own booking in one series */
-  const FL_REP_DEF = { w1: 12, w2: 8, mn: 6, md: 6 };
-  const FL_REP_NAMES = { w1: 'every week', w2: 'every 2 weeks', mn: 'once a month', md: 'once a month' };
+  const FL_REP_DEF = { w1: 12, w2: 8, mn: 6, md: 6, cu: 6 };
+  const FL_REP_NAMES = { w1: 'every week', w2: 'every 2 weeks', mn: 'once a month', md: 'once a month', cu: 'on a custom schedule' };
   const flYmd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const flPD = s => { const [y, m, d] = String(s).split('-').map(Number); return new Date(y, m - 1, d, 12); };
   const FL_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const FL_DS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const flOrd = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : n % 10] || 'th');
+  const flAnd = a => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' & ' + a[a.length - 1];
   function flNth(d) { const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); return d.getDate() + 7 > last ? -1 : Math.ceil(d.getDate() / 7); }
-  function flRepLabel(freq, date) {
+  // rule (custom only): { unit: 'w' | 'm' | 'd', every, days: [0-6], mon: 'nth' | 'date', dates: ['YYYY-MM-DD'] }
+  function flRepLabel(freq, date, rule) {
+    if (freq === 'cu') {
+      const r = rule || {}; if (r.unit === 'd') return 'On dates you picked';
+      if (!date) return 'Custom';
+      const e = Math.max(1, (r.every | 0) || 1), d = flPD(date), n = flNth(d);
+      if (r.unit === 'm') { const on = r.mon === 'date' ? `the ${flOrd(d.getDate())}` : `the ${n < 0 ? 'last' : flOrd(n)} ${FL_DAYS[d.getDay()]}`; return e === 1 ? `Monthly on ${on}` : `Every ${e} months on ${on}`; }
+      const days = [...new Set((r.days && r.days.length ? r.days : [d.getDay()]).map(Number))].sort((a, b) => a - b);
+      const dn = days.length === 1 ? FL_DAYS[days[0]] : flAnd(days.map(x => FL_DS[x]));
+      return e === 1 ? `Every ${dn}` : `Every ${e} weeks on ${dn}`;
+    }
     if (!date) return { w1: 'Every week', w2: 'Every 2 weeks', mn: 'Once a month, same weekday', md: 'Once a month, same date' }[freq];
     const d = flPD(date), wd = FL_DAYS[d.getDay()], n = flNth(d);
     return { w1: `Every ${wd}`, w2: `Every other ${wd}`, mn: `Monthly on the ${n < 0 ? 'last' : flOrd(n)} ${wd}`, md: `Monthly on the ${flOrd(d.getDate())}` }[freq] || '';
   }
-  function flRepDates(start, freq, count) {
-    const out = [], s = flPD(start), n = flNth(s), wd = s.getDay(), dom = s.getDate(); count = Math.max(1, Math.min(52, count | 0));
-    for (let i = 0; out.length < count && i < 200; i++) {
+  // every date in the series, starting with the first show; stops at count shows or the last date (until), whichever comes first
+  function flRepDates(start, freq, count, rule, until) {
+    const s = flPD(start), n = flNth(s), wd = s.getDay(), dom = s.getDate(), r = freq === 'cu' ? (rule || { unit: 'w' }) : null;
+    count = Math.max(1, Math.min(52, (count | 0) || 52));
+    const ok = y => !until || y <= until, out = [];
+    const fin = () => { if (out[0] !== start) out.unshift(start); return [...new Set(out)].slice(0, count); };
+    if (r && r.unit === 'd') { out.push(...(r.dates || []).filter(x => x > start)); out.sort(); return fin(); }
+    const every = r ? Math.max(1, Math.min(12, (r.every | 0) || 1)) : 1;
+    if (r && r.unit !== 'm') {
+      const days = [...new Set((r.days && r.days.length ? r.days : [wd]).map(Number))].sort((a, b) => a - b), sow = new Date(s); sow.setDate(s.getDate() - wd);
+      for (let k = 0; out.length < count && k < 600; k += every) for (const day of days) {
+        if (out.length >= count) break;
+        const d = new Date(sow); d.setDate(sow.getDate() + k * 7 + day); const y = flYmd(d);
+        if (y < start) continue; if (!ok(y)) return fin(); out.push(y);
+      }
+      return fin();
+    }
+    const byDate = freq === 'md' || (r && r.mon === 'date');
+    for (let i = 0; out.length < count && i < 600; i += every) {
       let d;
       if (freq === 'w1' || freq === 'w2') { d = new Date(s); d.setDate(s.getDate() + i * (freq === 'w1' ? 7 : 14)); }
       else {
         const y = s.getFullYear(), m = s.getMonth() + i;
-        if (freq === 'md') { const last = new Date(y, m + 1, 0).getDate(); d = new Date(y, m, Math.min(dom, last), 12); }
+        if (byDate) { const last = new Date(y, m + 1, 0).getDate(); d = new Date(y, m, Math.min(dom, last), 12); }
         else if (n < 0) { d = new Date(y, m + 1, 0, 12); while (d.getDay() !== wd) d.setDate(d.getDate() - 1); }
         else { d = new Date(y, m, 1, 12); while (d.getDay() !== wd) d.setDate(d.getDate() + 1); d.setDate(d.getDate() + (n - 1) * 7); if (d.getMonth() !== ((m % 12) + 12) % 12) continue; }
       }
-      out.push(flYmd(d));
+      const y = flYmd(d); if (!ok(y)) break; out.push(y);
     }
-    return out;
+    return fin();
   }
   const flSeriesOf = sid => flBk().filter(x => x.seriesId === sid).sort((a, b) => String(a.date).localeCompare(String(b.date)));
   // the Repeats box in the booking form
@@ -3794,28 +3822,82 @@ function appExtras() {
     const box = document.createElement('div'); box.id = 'ssx-fl-rep'; box.className = 'ssx-fl-rep';
     const frow = dateIn.closest('.frow') || dateIn.closest('.f'); frow.after(box);
     if (sid && sibs.length > 1) {
-      const later = sibs.filter(x => x.date > (b.date || '') && !['lost', 'paid', 'played'].includes(flKind(x.status))).length;
-      box.innerHTML = `<div class="f"><span class="ssx-fl-replbl">Repeats</span><span class="note">${esc(b.series && b.series.freq ? flRepLabel(b.series.freq, sibs[0].date) : 'Part of a series')} · show ${sibs.findIndex(x => x.id === b.id) + 1} of ${sibs.length}</span>
+      const later = sibs.filter(x => x.date > (b.date || '') && !['lost', 'paid', 'played'].includes(flKind(x.status))).length, ser = b.series || {};
+      box.innerHTML = `<div class="f"><label class="ssx-fl-replbl">Repeats</label><span class="note">${esc(ser.freq ? flRepLabel(ser.freq, sibs[0].date, ser.rule) : 'Part of a series')} · show ${sibs.findIndex(x => x.id === b.id) + 1} of ${sibs.length}</span>
         ${later ? `<div class="seg" data-fl-apply style="flex-wrap:wrap;margin-top:6px"><button type="button" data-v="one" aria-pressed="true">Change this show only</button><button type="button" data-v="future" aria-pressed="false">This and the ${later} later show${later === 1 ? '' : 's'}</button></div><span class="note">Dates and status always stay per show.</span>` : ''}</div>`;
       box.querySelectorAll('[data-fl-apply] [data-v]').forEach(x => x.onclick = () => box.querySelectorAll('[data-fl-apply] [data-v]').forEach(y => y.setAttribute('aria-pressed', String(y === x))));
       box.dataset.mode = 'series'; return;
     }
     box.innerHTML = `<div class="frow"><div class="f"><label for="ssx-fl-repf">Repeats</label><select id="ssx-fl-repf"></select></div>
-      <div class="f" data-fl-repn hidden><label for="ssx-fl-repc">How many shows</label><input id="ssx-fl-repc" type="number" inputmode="numeric" min="2" max="52" value="12"></div></div>
+      <div class="f" data-fl-rpend hidden><label for="ssx-fl-repe">Ends</label><select id="ssx-fl-repe"><option value="n">After a number of shows</option><option value="u">On a date</option></select></div></div>
+      <div class="ssx-fl-repcu" data-fl-rpcu hidden>
+        <div class="frow"><div class="f"><label for="ssx-fl-cuu">Custom repeat</label><select id="ssx-fl-cuu"><option value="w">By the week</option><option value="m">By the month</option><option value="d">I'll pick each date</option></select></div>
+        <div class="f" data-fl-cuev><label for="ssx-fl-cue">Every</label><select id="ssx-fl-cue"></select></div></div>
+        <div class="f" data-fl-cuw><label class="ssx-fl-replbl">On</label><div class="ssx-fl-days" role="group" aria-label="Days of the week">${FL_DS.map((x, i) => `<button type="button" class="ssx-fl-day" data-d="${i}" aria-pressed="false">${x}</button>`).join('')}</div></div>
+        <div class="f" data-fl-cum hidden><label for="ssx-fl-cum">On</label><select id="ssx-fl-cum"></select></div>
+        <div class="f" data-fl-cud hidden><label for="ssx-fl-cud">Add the other dates</label><div class="ssx-fl-addd"><input id="ssx-fl-cud" type="date"><button type="button" class="btn small" data-fl-cuadd>Add</button></div><div class="ssx-fl-chips"></div></div>
+      </div>
+      <div class="frow" data-fl-rpn hidden><div class="f" data-fl-repn><label for="ssx-fl-repc">How many shows</label><input id="ssx-fl-repc" type="number" inputmode="numeric" min="2" max="52" value="12"></div>
+        <div class="f" data-fl-repu hidden><label for="ssx-fl-repu">Last show on or before</label><input id="ssx-fl-repu" type="date"></div></div>
       <p class="note ssx-fl-repnote" hidden></p>`;
-    const sel = box.querySelector('#ssx-fl-repf'), cnt = box.querySelector('#ssx-fl-repc'), wrapN = box.querySelector('[data-fl-repn]'), note = box.querySelector('.ssx-fl-repnote');
-    let lastDate = null, lastF = '';
+    const q = s => box.querySelector(s), sel = q('#ssx-fl-repf'), endSel = q('#ssx-fl-repe'), cnt = q('#ssx-fl-repc'), untilIn = q('#ssx-fl-repu'), note = q('.ssx-fl-repnote');
+    const cuU = q('#ssx-fl-cuu'), cuE = q('#ssx-fl-cue'), cuM = q('#ssx-fl-cum'), cuD = q('#ssx-fl-cud'), chips = q('.ssx-fl-chips');
+    const R = { days: [], dates: [], daysTouched: false };
+    let lastDate = null, lastF = '', lastU = '';
+    const rule = () => sel.value === 'cu' ? { unit: cuU.value, every: +cuE.value || 1, days: R.days.slice(), mon: cuM.value || 'nth', dates: R.dates.slice() } : null;
+    box.__rep = () => {
+      const f = sel.value; if (!f) return null;
+      const r = rule(), u = endSel.value === 'u' && !(r && r.unit === 'd') ? untilIn.value : '';
+      const c = r && r.unit === 'd' ? 52 : u ? 52 : Math.max(2, Math.min(52, +cnt.value || FL_REP_DEF[f]));
+      return { freq: f, count: c, until: u, rule: r };
+    };
     const draw = () => {
-      const d = dateIn.value, f = sel.value;
-      if (d !== lastDate) { lastDate = d; const keep = sel.value; sel.innerHTML = `<option value="">${isNew ? "Doesn't repeat" : "Doesn't repeat (just this show)"}</option>` + ['w1', 'w2', 'mn', 'md'].map(k => `<option value="${k}">${esc(flRepLabel(k, d))}</option>`).join(''); sel.value = keep; }
-      if (f !== lastF) { if (f && (!cnt.dataset.touched)) cnt.value = FL_REP_DEF[f]; lastF = f; }
-      wrapN.hidden = !f; note.hidden = !f;
+      const d = dateIn.value, f = sel.value, cu = f === 'cu', unit = cuU.value;
+      if (d !== lastDate) {
+        lastDate = d; const keep = sel.value, keepM = cuM.value;
+        sel.innerHTML = `<option value="">${isNew ? "Doesn't repeat" : "Doesn't repeat (just this show)"}</option>` + ['w1', 'w2', 'mn', 'md'].map(k => `<option value="${k}">${esc(flRepLabel(k, d))}</option>`).join('') + '<option value="cu">Custom…</option>';
+        sel.value = keep;
+        if (d) { const x = flPD(d), n = flNth(x); cuM.innerHTML = `<option value="nth">the ${n < 0 ? 'last' : flOrd(n)} ${FL_DAYS[x.getDay()]}</option><option value="date">the ${flOrd(x.getDate())}</option>`; cuM.value = keepM || 'nth'; if (!R.daysTouched) R.days = [x.getDay()]; }
+        untilIn.min = d || '';
+        cuD.min = d || '';
+      }
+      if (unit !== lastU) { const keepE = cuE.value || '1', w = unit !== 'm'; cuE.innerHTML = Array.from({ length: w ? 8 : 12 }, (_, i) => `<option value="${i + 1}">${i + 1} ${w ? 'week' : 'month'}${i ? 's' : ''}</option>`).join(''); cuE.value = +keepE <= (w ? 8 : 12) ? keepE : '1'; lastU = unit; }
+      if (f !== lastF) { if (f && !cnt.dataset.touched) cnt.value = FL_REP_DEF[f]; lastF = f; }
+      const picks = cu && unit === 'd';
+      q('[data-fl-rpcu]').hidden = !cu;
+      q('[data-fl-cuw]').hidden = unit !== 'w'; q('[data-fl-cum]').hidden = unit !== 'm'; q('[data-fl-cud]').hidden = unit !== 'd'; q('[data-fl-cuev]').hidden = unit === 'd';
+      q('[data-fl-rpend]').hidden = !f || picks; q('[data-fl-rpn]').hidden = !f || picks;
+      q('[data-fl-repn]').hidden = endSel.value === 'u'; q('[data-fl-repu]').hidden = endSel.value !== 'u';
+      box.querySelectorAll('.ssx-fl-day').forEach(x => x.setAttribute('aria-pressed', String(R.days.includes(+x.dataset.d))));
+      chips.innerHTML = R.dates.map(x => `<span class="ssx-fl-chip">${esc(fmtD(x))}<button type="button" data-fl-cux="${x}" aria-label="Remove ${esc(fmtD(x))}">×</button></span>`).join('');
+      note.hidden = !f;
       if (!f) return;
       if (!d) { note.textContent = 'Pick the first date above.'; return; }
-      const ds = flRepDates(d, f, +cnt.value || FL_REP_DEF[f]), busy = ds.filter(x => flBk().some(o => o.date === x && flKind(o.status) !== 'lost' && (!b || o.id !== b.id)));
-      note.innerHTML = `<b>${ds.length} shows</b>: ${esc(fmtD(ds[0]))} to ${esc(fmtD(ds[ds.length - 1]))}. ${isNew ? 'Each one is its own booking, so you can mark them Played or Paid one by one.' : 'This show stays as it is; the later dates are added as their own bookings.'}${busy.length ? ` <span class="ssx-fl-warnnote">${busy.length === 1 ? 'One of these dates already has a show' : `${busy.length} of these dates already have shows`}: ${esc(busy.slice(0, 3).map(x => fmtD(x)).join(', '))}${busy.length > 3 ? '…' : ''}.</span>` : ''}`;
+      const j = box.__rep();
+      if (!picks && endSel.value === 'u' && !j.until) { note.textContent = 'Pick the last date the series can run to.'; return; }
+      const ds = flRepDates(d, f, j.count, j.rule, j.until);
+      if (ds.length < 2) { note.textContent = picks ? 'Add the other dates above. The date at the top is the first show.' : 'That only makes one show. Pick a later end date or more shows.'; return; }
+      const busy = ds.filter(x => flBk().some(o => o.date === x && flKind(o.status) !== 'lost' && (!b || o.id !== b.id)));
+      note.innerHTML = `<b>${ds.length} shows</b>${cu ? ` (${esc(flRepLabel('cu', d, j.rule))})` : ''}: ${esc(fmtD(ds[0]))} to ${esc(fmtD(ds[ds.length - 1]))}. ${isNew ? 'Each one is its own booking, so you can mark them Played or Paid one by one.' : 'This show stays as it is; the later dates are added as their own bookings.'}${busy.length ? ` <span class="ssx-fl-warnnote">${busy.length === 1 ? 'One of these dates already has a show' : `${busy.length} of these dates already have shows`}: ${esc(busy.slice(0, 3).map(x => fmtD(x)).join(', '))}${busy.length > 3 ? '…' : ''}.</span>` : ''}`;
     };
-    sel.onchange = draw; cnt.oninput = () => { cnt.dataset.touched = '1'; draw(); };
+    sel.onchange = draw; endSel.onchange = draw; cuU.onchange = draw; cuE.onchange = draw; cuM.onchange = draw; untilIn.onchange = draw; untilIn.oninput = draw;
+    cnt.oninput = () => { cnt.dataset.touched = '1'; draw(); };
+    box.querySelectorAll('.ssx-fl-day').forEach(x => x.onclick = () => {
+      const v = +x.dataset.d; R.daysTouched = true;
+      R.days = R.days.includes(v) ? R.days.filter(y => y !== v) : [...R.days, v];
+      if (!R.days.length) { R.days = [v]; toast('Keep at least one day picked'); }
+      draw();
+    });
+    const addDate = () => {
+      const v = cuD.value;
+      if (!v) { toast('Pick a date first, then tap Add'); return; }
+      if (dateIn.value && v <= dateIn.value) { toast('Pick a date after the first show. The first show is the date at the top.'); return; }
+      if (!R.dates.includes(v)) { R.dates.push(v); R.dates.sort(); }
+      cuD.value = ''; draw();
+    };
+    q('[data-fl-cuadd]').onclick = addDate;
+    cuD.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addDate(); } });
+    chips.onclick = e => { const x = e.target.closest('[data-fl-cux]'); if (!x) return; R.dates = R.dates.filter(y => y !== x.dataset.flCux); draw(); };
     const t = setInterval(() => { if (!box.isConnected) return clearInterval(t); if (dateIn.value !== lastDate) draw(); }, 400);
     draw();
   }
@@ -3824,22 +3906,36 @@ function appExtras() {
     const sv = e.target && e.target.closest && e.target.closest('#sheetRoot [data-save]'); if (!sv) return;
     const root = sv.closest('.sheet'), box = root && root.querySelector('#ssx-fl-rep'), dateIn = root && root.querySelector('#b-date'); if (!box || !dateIn) { FL.rep = null; return; }
     if (box.dataset.mode === 'series') { const fut = box.querySelector('[data-fl-apply] [aria-pressed="true"]'); FL.rep = fut && fut.dataset.v === 'future' ? { mode: 'future', date: dateIn.value, at: Date.now() } : null; return; }
-    const f = (box.querySelector('#ssx-fl-repf') || {}).value || '', c = +((box.querySelector('#ssx-fl-repc') || {}).value) || FL_REP_DEF[f];
-    FL.rep = f && dateIn.value ? { mode: 'create', freq: f, count: Math.max(2, Math.min(52, c)), date: dateIn.value, at: Date.now() } : null;
+    const j = box.__rep ? box.__rep() : null;
+    FL.rep = j && dateIn.value ? { mode: 'create', ...j, date: dateIn.value, at: Date.now() } : null;
   }
   const FL_SER_SHARED = ['title', 'venueId', 'promoterId', 'contactPersonId', 'city', 'address', 'fee', 'setStart', 'setEnd', 'setTime', 'payPrefs', 'incType', 'mediaId', 'gcalOff'];
-  async function flSeriesCreate(id, data, freq, count) {
-    const sid = data.seriesId || 'sr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), series = { freq, count, start: data.date };
-    await window.patch('bookings', id, { seriesId: sid, series });
-    const all = flRepDates(data.date, freq, count).filter(d => d !== data.date && !flBk().some(o => o.seriesId === sid && o.date === d)), now = new Date().toISOString(), t = todayStr();
+  const FL_SER_DROP = ['invoice', 'gcal', 'driveUrl', 'driveId', 'folders', 'paidDate', 'payMethod', 'payRef', 'mediaSharedWith', 'checklists', 'repeatReq', 'source'];
+  async function flSeriesCreate(id, data, freq, count, rule, until) {
+    const sid = data.seriesId || 'sr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const series = { freq, count, start: data.date, ...(rule ? { rule } : {}), ...(until ? { until } : {}) };
+    await window.patch('bookings', id, { seriesId: sid, series, ...(data.repeatReq ? { repeatReq: null } : {}) });
+    const all = flRepDates(data.date, freq, count, rule, until).filter(d => d !== data.date && !flBk().some(o => o.seriesId === sid && o.date === d)), now = new Date().toISOString(), t = todayStr();
     let made = 0;
     for (const d of all) {
       const c = { ...data, date: d, seriesId: sid, series, tasks: {}, stageAt: { [data.status]: t }, createdAt: now, updatedAt: now };
-      ['invoice', 'gcal', 'driveUrl', 'driveId', 'folders', 'paidDate', 'payMethod', 'payRef', 'mediaSharedWith', 'checklists', 'repeatReq', 'source'].forEach(k => delete c[k]);
+      FL_SER_DROP.forEach(k => delete c[k]);
       const nid = await window.save('bookings', null, c);
       if (nid) { made++; try { syncBookingEvent(nid, c); } catch (_) {} }
     }
-    toast(made < all.length ? `Added ${made} of ${all.length} dates. The rest couldn't be saved. Check your connection, then tap "+ 4 more dates" on the show.` : made ? `Added ${made} more date${made === 1 ? '' : 's'} to this series` : 'Those dates were already in the series');
+    toast(made < all.length ? `Added ${made} of ${all.length} dates. The rest couldn't be saved. Check your connection, then add them from the show.` : made ? `Added ${made} more date${made === 1 ? '' : 's'} to this series` : 'Those dates were already in the series');
+    return made;
+  }
+  // more dates for a series, copied from its last show
+  async function flSeriesAdd(sibs, dates) {
+    const last = sibs[sibs.length - 1], base = flBk().find(x => x.id === last.id) || last, now = new Date().toISOString(), t = todayStr(); let made = 0;
+    for (const d of dates) {
+      const c = { ...base, date: d, tasks: {}, createdAt: now, updatedAt: now }; delete c.id;
+      FL_SER_DROP.forEach(k => delete c[k]);
+      if (['played', 'paid', 'lost'].includes(flKind(c.status))) c.status = STAGES.find(s => flKind(s) === 'confirmed') || 'confirmed';
+      c.stageAt = { [c.status]: t };
+      const nid = await window.save('bookings', null, c); if (nid) { made++; try { syncBookingEvent(nid, c); } catch (_) {} }
+    }
     return made;
   }
   async function flSeriesFuture(data) {
@@ -3856,7 +3952,7 @@ function appExtras() {
         const j = FL.rep;
         if (r && col === 'bookings' && j && Date.now() - j.at < 20000 && data && data.date === j.date) {
           FL.rep = null;
-          setTimeout(() => { (j.mode === 'create' ? flSeriesCreate(r, data, j.freq, j.count) : data.seriesId ? flSeriesFuture(data) : null); }, 0);
+          setTimeout(() => { (j.mode === 'create' ? flSeriesCreate(r, data, j.freq, j.count, j.rule, j.until) : data.seriesId ? flSeriesFuture(data) : null); }, 0);
         }
       } catch (e) { console.error(e); }
       return r;
@@ -3872,22 +3968,33 @@ function appExtras() {
     const dateDt = [...dl.querySelectorAll('dt')].find(d => d.textContent.trim() === 'Date'), dateDd = dateDt && dateDt.nextElementSibling; if (!dateDd) return;
     const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = 'Repeats'; dd.className = 'ssx-fl-ser';
     if (b.seriesId) {
-      const sibs = flSeriesOf(b.seriesId), i = sibs.findIndex(x => x.id === b.id), freq = (b.series || {}).freq;
+      const sibs = flSeriesOf(b.seriesId), i = sibs.findIndex(x => x.id === b.id), ser = b.series || {}, freq = ser.freq, picks = freq === 'cu' && ser.rule && ser.rule.unit === 'd';
       const later = sibs.filter(x => x.date > b.date && !['paid', 'played'].includes(flKind(x.status)));
-      dd.innerHTML = `<span>${esc(freq ? flRepLabel(freq, sibs[0].date) : 'Series')} · show ${i + 1} of ${sibs.length}${sibs.length ? `, through ${esc(fmtD(sibs[sibs.length - 1].date))}` : ''}</span>
-        <span class="ssx-fl-mact">${freq ? '<button type="button" class="btn small" data-fl-sermore>+ 4 more dates</button>' : ''}${later.length ? `<button type="button" class="btn small" data-fl-serend>End after this show</button>` : ''}</span>`;
+      dd.innerHTML = `<span>${esc(freq ? flRepLabel(freq, sibs[0].date, ser.rule) : 'Series')} · show ${i + 1} of ${sibs.length}${sibs.length ? `, through ${esc(fmtD(sibs[sibs.length - 1].date))}` : ''}</span>
+        <span class="ssx-fl-mact">${freq && !picks ? '<button type="button" class="btn small" data-fl-sermore>+ 4 more dates</button>' : ''}<button type="button" class="btn small" data-fl-seradd>+ Add a date</button>${later.length ? `<button type="button" class="btn small" data-fl-serend>End after this show</button>` : ''}</span>`;
       const more = dd.querySelector('[data-fl-sermore]');
       if (more) more.onclick = async () => {
         more.disabled = true; more.textContent = 'Adding…';
-        const all = flRepDates(sibs[0].date, freq, sibs.length + 4), have = new Set(sibs.map(x => x.date)), add = all.filter(d => !have.has(d) && d > sibs[sibs.length - 1].date);
-        const base = flBk().find(x => x.id === sibs[sibs.length - 1].id) || sibs[sibs.length - 1], now = new Date().toISOString(), t = todayStr(); let made = 0;
-        for (const d of add) {
-          const c = { ...base, date: d, status: base.status, tasks: {}, stageAt: { [base.status]: t }, createdAt: now, updatedAt: now, series: { ...(base.series || {}), count: sibs.length + 4 } }; delete c.id;
-          ['invoice', 'gcal', 'driveUrl', 'driveId', 'folders', 'paidDate', 'payMethod', 'payRef', 'mediaSharedWith', 'checklists'].forEach(k => delete c[k]);
-          if (flKind(c.status) === 'played' || flKind(c.status) === 'paid') { const stg = STAGES.find(s => flKind(s) === 'confirmed') || 'confirmed'; c.status = stg; c.stageAt = { [stg]: t }; }
-          const nid = await window.save('bookings', null, c); if (nid) { made++; try { syncBookingEvent(nid, c); } catch (_) {} }
-        }
-        toast(`Added ${made} more date${made === 1 ? '' : 's'}`);
+        const have = new Set(sibs.map(x => x.date)), lastD = sibs[sibs.length - 1].date;
+        const add = flRepDates(sibs[0].date, freq, 52, ser.rule).filter(d => !have.has(d) && d > lastD).slice(0, 4);
+        const made = add.length ? await flSeriesAdd(sibs, add) : 0;
+        toast(!add.length ? 'No more dates fit this repeat' : made < add.length ? `Added ${made} of ${add.length} dates. Check your connection and try again.` : `Added ${made} more date${made === 1 ? '' : 's'}`);
+        if (made < add.length) { more.disabled = false; more.textContent = '+ 4 more dates'; }
+      };
+      const addB = dd.querySelector('[data-fl-seradd]');
+      addB.onclick = () => {
+        if (dd.querySelector('.ssx-fl-addd')) { dd.querySelector('.ssx-fl-addd input').focus(); return; }
+        const w = document.createElement('span'); w.className = 'ssx-fl-addd';
+        w.innerHTML = `<input type="date" aria-label="New date for this series"><button type="button" class="btn small primary">Add</button>`;
+        dd.append(w); const [inp, go] = w.children; setTimeout(() => { const pb = w.querySelector('.pick-btn'); pb ? pb.click() : inp.focus(); }, 60);
+        go.onclick = async () => {
+          const v = inp.value;
+          if (!v) { toast('Pick a date first, then tap Add'); return; }
+          if (flSeriesOf(b.seriesId).some(x => x.date === v)) { toast('That date is already in this series'); return; }
+          go.disabled = true; go.textContent = 'Adding…';
+          const made = await flSeriesAdd(flSeriesOf(b.seriesId), [v]);
+          if (made) { toast(`Added ${fmtD(v)} to this series`); w.remove(); } else { toast("Couldn't add that date. Check your connection and try again."); go.disabled = false; go.textContent = 'Add'; }
+        };
       };
       const end = dd.querySelector('[data-fl-serend]'); if (end) end.onclick = async () => {
         if (!end.dataset.armed) { end.dataset.armed = '1'; end.textContent = `Remove the ${later.length} later date${later.length === 1 ? '' : 's'}? Tap again`; setTimeout(() => { if (end.isConnected) { delete end.dataset.armed; end.textContent = 'End after this show'; } }, 4000); return; }
@@ -3901,12 +4008,20 @@ function appExtras() {
         });
       };
     } else {
-      const r = b.repeatReq, n = r.count || FL_REP_DEF[r.freq] || 6;
-      dd.innerHTML = `<span>They asked for this ${esc(FL_REP_NAMES[r.freq] || r.freq)}, about ${n} dates (${esc(flRepLabel(r.freq, b.date))}).</span><span class="ssx-fl-mact"><button type="button" class="btn small primary" data-fl-serset>Set up all ${n} dates</button></span>`;
-      dd.querySelector('[data-fl-serset]').onclick = async e => { const x = e.currentTarget; x.disabled = true; x.textContent = 'Adding…'; const { id: _i, ...data } = flBk().find(y => y.id === b.id) || b; await flSeriesCreate(b.id, data, r.freq, n); await window.patch('bookings', b.id, { repeatReq: null }); };
+      const r = b.repeatReq, n = r.count || FL_REP_DEF[r.freq] || 6, cu = r.freq === 'cu';
+      dd.innerHTML = `<span>${cu ? `They asked for a custom schedule, about ${n} dates. Their message has the details.` : `They asked for this ${esc(FL_REP_NAMES[r.freq] || r.freq)}, about ${n} dates (${esc(flRepLabel(r.freq, b.date))}).`}</span><span class="ssx-fl-mact"><button type="button" class="btn small primary" data-fl-serset>${cu ? 'Set up the dates' : `Set up all ${n} dates`}</button>${cu ? '' : '<button type="button" class="btn small" data-fl-sercu>Change the schedule</button>'}</span>`;
+      const openCustom = () => {
+        const bk = flBk().find(y => y.id === b.id) || b; window.bookingForm(bk);
+        setTimeout(() => { const s = document.querySelector('#ssx-fl-repf'); if (s) { s.value = 'cu'; s.dispatchEvent(new Event('change')); const c = document.querySelector('#ssx-fl-repc'); if (c) { c.value = n; c.dispatchEvent(new Event('input')); } s.scrollIntoView({ block: 'center', behavior: 'smooth' }); } }, 350);
+      };
+      if (cu) dd.querySelector('[data-fl-serset]').onclick = openCustom;
+      else {
+        dd.querySelector('[data-fl-serset]').onclick = async e => { const x = e.currentTarget; x.disabled = true; x.textContent = 'Adding…'; const { id: _i, ...data } = flBk().find(y => y.id === b.id) || b; await flSeriesCreate(b.id, data, r.freq, n); };
+        dd.querySelector('[data-fl-sercu]').onclick = openCustom;
+      }
     }
     dateDd.after(dt, dd);
-  }  
+  }
   function flScan() {
     FL.raf = 0;
     for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave]) { try { f(); } catch (e) { console.error(e); } }
