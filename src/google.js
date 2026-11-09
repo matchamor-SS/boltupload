@@ -7,14 +7,15 @@
  *   Calendar  -> calendar.events + calendar.calendarlist.readonly */
 import { sb, err } from './supabase.js';
 
-const TIER_OF = { 'Gmail': 'mail', 'Google Drive': 'drive', 'Google Calendar': 'calendar' };
+const TIER_OF = { 'Gmail': 'mail', 'Google Drive': 'drive', 'Google Calendar': 'calendar', 'Google Tasks': 'tasks' };
 /** Calls the person starts (sending, saving a file, adding a set to the calendar). Background checks never pop a window. */
-const ASKS = new Set(['send_message', 'create_file', 'share_file', 'list_calendars', 'create_event', 'update_event', 'picker_token']);
+const ASKS = new Set(['send_message', 'create_file', 'share_file', 'list_calendars', 'create_event', 'update_event', 'picker_token', 'create_task']);
 
 export const TIER_INFO = {
   mail: { name: 'Gmail', what: 'Send the emails and invoices you review and approve, from your own Gmail address.', not: "The app can't read your inbox, sent mail or drafts." },
   drive: { name: 'Google Drive', what: 'Create your Business and Marketing folders and save contracts, invoices and flyers into them.', not: 'The app can only see folders and files it creates or that you pick. Nothing else in your Drive.' },
   calendar: { name: 'Google Calendar', what: 'Check your calendars for conflicts and add your booked sets.', not: "Your other events are read live to check availability and are never saved." },
+  tasks: { name: 'Google Tasks', what: 'Put the tasks you choose into a "Set & Settled" list in Google Tasks, so you can tick them off there or here.', not: 'The app only works in its own "Set & Settled" list. Your other task lists are never read or changed.' },
 };
 
 let status = null, statusAt = 0;
@@ -101,7 +102,7 @@ export function consentPrompt(tier, reconnect) {
 }
 
 /* Same caching the app relied on before: read calls with {cache:{staleTime}} are reused for that long (and shared while in flight). */
-const READS = new Set(['list_events', 'list_calendars', 'search_files', 'get_file_metadata']);
+const READS = new Set(['list_events', 'list_calendars', 'search_files', 'get_file_metadata', 'list_tasks', 'get_list']);
 const memo = new Map();
 async function callTool(server, tool, input = {}, opts = {}) {
   const c = opts && opts.cache, ttl = c === false ? 0 : c && c.staleTime ? c.staleTime : 0;
