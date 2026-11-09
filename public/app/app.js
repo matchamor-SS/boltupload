@@ -1263,7 +1263,7 @@ let JSPDF=null;
 function loadJsPDF(){if(window.jspdf&&window.jspdf.jsPDF)return Promise.resolve(window.jspdf.jsPDF);if(JSPDF)return JSPDF;
   /* the PDF maker ships with the site (src/extras.js); the site's security rules block scripts from other sites */
   JSPDF=(typeof window.ssxJsPDF==="function"?window.ssxJsPDF():Promise.reject(new Error("load"))).then(J=>{if(!J)throw new Error("load");window.jspdf={jsPDF:J};return J}).catch(()=>{JSPDF=null;throw new Error("the PDF maker didn't load. Refresh the page and try again")});return JSPDF}
-async function invoicePdf(b,inv){const jsPDF=await loadJsPDF(),k=INVSET(),bi=billInfo(inv),T=invTotals(inv);
+async function invoicePdf(b,inv,J){const jsPDF=J||await loadJsPDF(),k=INVSET(),bi=billInfo(inv),T=invTotals(inv);
   const PC=pdfColors(),doc=new jsPDF({unit:"pt",format:"letter"}),W=612,H=792,M=54,R=W-M;
   /* readability: all details in near-black; the palette only colors headings, the table header, rules and tints */
   const lum=c=>{const f=v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)};return .2126*f(c[0])+.7152*f(c[1])+.0722*f(c[2])};
@@ -1321,6 +1321,34 @@ function pdfColors(){const r=document.documentElement,prev=r.getAttribute("data-
   probe.remove();if(prev!=="light")prev?r.setAttribute("data-mode",prev):r.removeAttribute("data-mode");return out}
 const invFileName=(b,inv)=>safeName(`${inv.number||"Invoice"} ${showName(b)}`)+".pdf";
 const b64Pdf=doc=>doc.output("datauristring").split(",")[1];
+/* invoice preview: the same drawing steps as the PDF, drawn on screen so you can check it without downloading */
+function CanvasPDF(){const D=2,pages=[];let ctx,font="normal",size=10.5,tc="#111",fc="#fff",dc="#000",lw=1;
+  const fnt=()=>{ctx.font=`${font==="bold"?"700":"400"} ${size}px Helvetica, Arial, sans-serif`};
+  const page=()=>{const c=document.createElement("canvas");c.width=612*D;c.height=792*D;c.className="ivp-page";ctx=c.getContext("2d");ctx.scale(D,D);ctx.fillStyle="#fff";ctx.fillRect(0,0,612,792);pages.push(c);fnt()};
+  const rgb=a=>`rgb(${a[0]},${a[1]},${a[2]})`;page();
+  return {pages,
+    setFont(_,w){font=w==="bold"?"bold":"normal";fnt()},setFontSize(n){size=n;fnt()},
+    setTextColor(...a){tc=rgb(a)},setFillColor(...a){fc=rgb(a)},setDrawColor(...a){dc=rgb(a)},setLineWidth(n){lw=n},
+    text(t,x,y,o={}){ctx.fillStyle=tc;ctx.textAlign=o.align==="right"?"right":o.align==="center"?"center":"left";ctx.textBaseline="alphabetic";
+      const ls="letterSpacing" in ctx;if(ls)ctx.letterSpacing=(o.charSpace||0)+"px";ctx.fillText(String(t),x,y);if(ls)ctx.letterSpacing="0px"},
+    rect(x,y,w,h){ctx.fillStyle=fc;ctx.fillRect(x,y,w,h)},
+    roundedRect(x,y,w,h,r){ctx.fillStyle=fc;ctx.beginPath();if(ctx.roundRect)ctx.roundRect(x,y,w,h,r);else ctx.rect(x,y,w,h);ctx.fill()},
+    line(a,b,c,d){ctx.strokeStyle=dc;ctx.lineWidth=lw;ctx.beginPath();ctx.moveTo(a,b);ctx.lineTo(c,d);ctx.stroke()},
+    addPage(){page()},
+    splitTextToSize(t,w){const out=[];String(t).split("\n").forEach(par=>{let cur="";par.split(/\s+/).forEach(word=>{const s=cur?cur+" "+word:word;if(ctx.measureText(s).width>w&&cur){out.push(cur);cur=word}else cur=s});out.push(cur)});return out},
+    output(){return null}}}
+async function invPreview(b,inv,o={}){document.querySelector(".ivp-bg")?.remove();
+  const bg=document.createElement("div");bg.className="ivp-bg";bg.setAttribute("role","dialog");bg.setAttribute("aria-modal","true");bg.setAttribute("aria-label","Invoice preview");
+  bg.innerHTML=`<div class="ivp-bar"><b>Preview${inv.number?" · "+esc(inv.number):""}</b><span class="spacer"></span>${o.edit?`<button class="btn small" data-pe>Edit invoice</button>`:""}<button class="btn small" data-pd>Download PDF</button><button class="btn small primary" data-px>Close</button></div><div class="ivp-pages"><p class="note">Making the preview…</p></div>`;
+  document.body.appendChild(bg);
+  const k=e=>{if(e.key==="Escape"){e.stopPropagation();shut()}},shut=()=>{bg.remove();document.removeEventListener("keydown",k,true)};document.addEventListener("keydown",k,true);
+  bg.querySelector("[data-px]").onclick=shut;
+  const pe=bg.querySelector("[data-pe]");if(pe)pe.onclick=()=>{shut();o.edit()};
+  const pd=bg.querySelector("[data-pd]");pd.onclick=async()=>{if(o.download){shut();o.download();return}pd.disabled=true;pd.textContent="Making PDF…";
+    try{const doc=await invoicePdf(b,inv);await dl(invFileName(b,inv),doc.output("arraybuffer"))}catch(err){console.error(err);toast("Couldn't make the PDF: "+(err&&err.message||"try again"))}finally{pd.disabled=false;pd.textContent="Download PDF"}};
+  setTimeout(()=>bg.querySelector("[data-px]").focus(),50);
+  try{const c=await invoicePdf(b,inv,CanvasPDF),box=bg.querySelector(".ivp-pages");box.innerHTML=`<p class="note ivp-tip">Tap the page to zoom in or out.</p>`;c.pages.forEach((p,i)=>{p.setAttribute("role","img");p.setAttribute("aria-label",`Invoice page ${i+1} of ${c.pages.length}`);p.onclick=()=>box.classList.toggle("ivp-zoom");box.appendChild(p)})}
+  catch(err){console.error(err);bg.querySelector(".ivp-pages").innerHTML=`<p class="note">Couldn't show the preview. Try Download PDF instead.</p>`}}
 
 function invoiceSheet(bid){navSheet("inv:"+bid,()=>invoiceSheet(bid));const b0=S.bookings.find(x=>x.id===bid);if(!b0)return;
   const k=INVSET();let inv=JSON.parse(JSON.stringify(b0.invoice||newInvoice(b0)));inv.payInfo=payClean(inv.payInfo);let me={...k};
@@ -1357,7 +1385,7 @@ function invoiceSheet(bid){navSheet("inv:"+bid,()=>invoiceSheet(bid));const b0=S
 </details>
   <p class="note" id="iv-drivenote" style="margin:0"></p>
   <div id="iv-status" class="note">${inv.fileUrl?`Saved in Drive: <a href="${esc(inv.fileUrl)}" target="_blank" rel="noopener">${esc(inv.fileName||"invoice PDF")}</a>`:""}${inv.draftUrl?`${inv.fileUrl?" · ":""}<a href="${esc(inv.draftUrl)}" target="_blank" rel="noopener">Sent${inv.sentAt?" "+esc(fmtD(inv.sentAt)):""} · open in Gmail</a>`:""}</div>
-  <div class="actions" style="flex-wrap:wrap"><button class="btn" data-cancel>Close</button><button class="btn save" data-ivsave>Save draft</button><button class="btn" data-ivpdf>Download PDF</button><a class="btn" data-ivopen target="_blank" rel="noopener" href="${esc(inv.fileUrl||"#")}" ${inv.fileUrl?"":"hidden"}>Open PDF in Drive</a><button class="btn" data-ivdrive>${inv.fileUrl?"Update PDF in Drive":"Save PDF to Drive"}</button><button class="btn primary" data-ivmail>Email it</button></div>`,root=>{
+  <div class="actions" style="flex-wrap:wrap"><button class="btn" data-cancel>Close</button><button class="btn save" data-ivsave>Save draft</button><button class="btn" data-ivprev>Preview</button><button class="btn" data-ivpdf>Download PDF</button><a class="btn" data-ivopen target="_blank" rel="noopener" href="${esc(inv.fileUrl||"#")}" ${inv.fileUrl?"":"hidden"}>Open PDF in Drive</a><button class="btn" data-ivdrive>${inv.fileUrl?"Update PDF in Drive":"Save PDF to Drive"}</button><button class="btn primary" data-ivmail>Email it</button></div>`,root=>{
     const q=s=>root.querySelector(s);
     const read=()=>{inv.billToId=q("#iv-to").value;inv.billEmail=q("#iv-email").value.trim();inv.billName=q("#iv-name").value.trim();inv.billAddr=q("#iv-addr").value.trim();
       inv.issueDate=q("#iv-issue").value||today();inv.dueDate=q("#iv-due").value;inv.deposit=q("#iv-dep").value;inv.notes=q("#iv-notes").value;inv.payInfo=q("#iv-pay").value.trim();inv.payMethods=[...root.querySelectorAll("[data-ivpm]")].filter(x=>x.getAttribute("aria-pressed")==="true").map(x=>x.dataset.ivpm);
@@ -1391,7 +1419,8 @@ function invoiceSheet(bid){navSheet("inv:"+bid,()=>invoiceSheet(bid));const b0=S
       if(!(await patch("bookings",bid,upd)))return null;const bb=S.bookings.find(x=>x.id===bid)||b0;return {b:{...bb,...upd},inv}};
     const status=()=>{q("#iv-status").innerHTML=`${inv.fileUrl?`Saved in Drive: <a href="${esc(inv.fileUrl)}" target="_blank" rel="noopener">${esc(inv.fileName||"invoice PDF")}</a>`:""}${inv.draftUrl?`${inv.fileUrl?" · ":""}<a href="${esc(inv.draftUrl)}" target="_blank" rel="noopener">Sent${inv.sentAt?" "+esc(fmtD(inv.sentAt)):""} · open in Gmail</a>`:""}`};
     const busy=(btn,on,txt)=>{btn.disabled=on;if(txt)btn.textContent=txt};
-    q("[data-ivsave]").onclick=async()=>{if(await persist()){toast("Draft of "+inv.number+" saved");status()}};
+q("[data-ivsave]").onclick=async()=>{if(await persist()){toast("Draft of "+inv.number+" saved");status()}};
+    q("[data-ivprev]").onclick=()=>{read();invPreview(S.bookings.find(x=>x.id===bid)||b0,{...inv,number:q("#iv-num").value.trim()||inv.number},{download:()=>q("[data-ivpdf]").click()})};
     q("[data-ivpdf]").onclick=async e=>{const btn=e.currentTarget;busy(btn,true,"Saving…");const r=await persist();if(!r){busy(btn,false,"Download PDF");return}busy(btn,true,"Making PDF…");
       try{const doc=await invoicePdf(r.b,inv);await dl(invFileName(r.b,inv),doc.output("arraybuffer"))}catch(err){console.error(err);toast("Couldn't make the PDF: "+(err&&err.message||"try again"))}finally{busy(btn,false,"Download PDF")}};
     /* One PDF per invoice in Drive. After edits, "Update" replaces it: the new PDF goes in and the old one goes to Drive's Trash, so there are never duplicates. */
@@ -1692,7 +1721,7 @@ function bookingView(id){navSheet("b:"+id,()=>bookingView(id));
     <dt>Business</dt><dd><div data-fold="biz" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${(b.folders||{}).biz?`<a href="${esc(b.folders.biz.url)}" target="_blank" rel="noopener">Event folder</a> · <a href="${esc(subUrl(b,"biz","contracts"))}" target="_blank" rel="noopener">Contracts</a> · <a href="${esc(subUrl(b,"biz","invoices"))}" target="_blank" rel="noopener">Invoices</a>`:`<button class="btn small" data-mkf="biz">Create folders</button>`}</div></dd>
     <dt>Contract</dt><dd><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${b.contract&&b.contract.url?`<a href="${esc(b.contract.url)}" target="_blank" rel="noopener">Open contract</a><button class="btn small" data-contract>Replace</button>`:`<button class="btn small" data-contract>Upload contract</button>`}</div></dd>
     <dt>Marketing</dt><dd><div data-fold="mkt" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${(b.folders||{}).mkt?`<a href="${esc(b.folders.mkt.url)}" target="_blank" rel="noopener">Event folder</a> · <a href="${esc(subUrl(b,"mkt","media"))}" target="_blank" rel="noopener">Media</a> · <a href="${esc(subUrl(b,"mkt","flyers"))}" target="_blank" rel="noopener">Flyers</a><button class="btn small" data-mkup>Add flyer</button>`:`<button class="btn small" data-mkf="mkt">Create folders</button>`}${b.driveUrl&&!(b.folders||{}).mkt?`<a href="${esc(b.driveUrl)}" target="_blank" rel="noopener">Earlier media folder</a>`:""}${m&&m.email&&(b.folders||{}).mkt&&b.mediaSharedWith!==m.email?`<button class="btn small" data-mkdrive>Share Media with ${esc(cName(m).split(" ")[0])}</button>`:""}</div></dd>
-    ${["played","paid"].includes(K(b.status))||(b.invoice&&b.invoice.number)?`<dt>Invoice</dt><dd>${b.invoice&&b.invoice.number?`<b>${esc(b.invoice.number)}</b> · <span class="num">${money2(invTotals(b.invoice).due)}</span> due${b.invoice.fileUrl?` · <a href="${esc(b.invoice.fileUrl)}" target="_blank" rel="noopener">PDF</a>`:""}<br>`:""}<button class="btn small" data-inv>${b.invoice&&b.invoice.number?"Open invoice":"Create invoice"}</button></dd>`:""}
+    ${["played","paid"].includes(K(b.status))||(b.invoice&&b.invoice.number)?`<dt>Invoice</dt><dd>${b.invoice&&b.invoice.number?`<b>${esc(b.invoice.number)}</b> · <span class="num">${money2(invTotals(b.invoice).due)}</span> due${b.invoice.fileUrl?` · <a href="${esc(b.invoice.fileUrl)}" target="_blank" rel="noopener">PDF</a>`:""}<br>`:""<button class="btn small" data-inv>${b.invoice&&b.invoice.number?"Open invoice":"Create invoice"}</button>${b.invoice&&b.invoice.number?` <button class="btn small" data-invprev>Preview</button>`:""}</dd>`:""}
     ${b.notes?`<dt>Notes</dt><dd style="white-space:pre-wrap">${esc(b.notes)}</dd>`:""}
   </dl>
   <div><div class="eyebrow" style="margin-bottom:4px">Checklist</div>${stagesFor(b).length?stagesFor(b).slice().reverse().map(st=>{const list=clFor(b,st),open=list.filter(it=>!(b.tasks||{})[it.key]).length,isOpen=stgOpen(b,st);
@@ -1729,7 +1758,8 @@ function bookingView(id){navSheet("b:"+id,()=>bookingView(id));
     root.querySelector("[data-sendtpl]").onclick=()=>{const v=root.querySelector("#bk-tpl").value;if(v==="__blank")composeSheet({booking:b.id,to:b.contactPersonId||b.promoterId||b.venueId||""});else useTemplate(v,b.id)};
     loadBookingMail(b.id,root.querySelector("#bk-mail"));
     root.querySelector("[data-mails]").onclick=()=>sentSheet({bookingId:b.id});
-    root.querySelectorAll("[data-inv]").forEach(x=>x.onclick=()=>invoiceSheet(b.id));
+root.querySelectorAll("[data-inv]").forEach(x=>x.onclick=()=>invoiceSheet(b.id));
+    root.querySelectorAll("[data-invprev]").forEach(x=>x.onclick=()=>{const bb=S.bookings.find(y=>y.id===b.id)||b;if(bb.invoice)invPreview(bb,bb.invoice,{edit:()=>invoiceSheet(b.id)})});
     (async()=>{const mcp=await claude.use("mcp");if(!mcp)return;for(const k of ["biz","mkt"]){const f=(b.folders||{})[k];if(!f||!f.id)continue;let ok=true;try{ok=await folderAlive(mcp,f.id)}catch(e){continue}
       const dd=root.querySelector(`[data-fold="${k}"]`);if(ok||!dd||!dd.isConnected)continue;
       dd.innerHTML=`<span class="note">These folders were deleted from your Drive.</span><button class="btn small" data-mkf2="${k}">Create new folders</button>`;
