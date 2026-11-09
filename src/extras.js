@@ -4054,7 +4054,7 @@ function appExtras() {
     const show = typeof bookingName === 'function' ? bookingName(b) : showName(b);
     return {
       summary: `${t.done ? '✓ Done' : 'To do'}: ${t.label}`, allDay: true, startTime: `${t.due}T00:00:00`, endTime: `${addDays(t.due, 1)}T00:00:00`,
-      availability: 'AVAILABILITY_FREE', notificationLevel: 'NONE',
+      availability: 'AVAILABILITY_FREE', notificationLevel: 'NONE', timeZone: tz(),
       description: [`Task for ${show}${b.date ? ` (show ${fmtD(b.date)})` : ''}.`, 'Check it off in Set & Settled: https://setnsettled.com'].join('\n'),
     };
   }
