@@ -3559,7 +3559,7 @@ function appExtras() {
     ven.insertAdjacentHTML('beforeend', fld('bk-x-vsite', 'Venue website or Instagram' + opt, 'maxlength="200"').replace('data-flk', 'data-flk="venue"') + fld('bk-x-cap', 'Capacity' + opt, 'inputmode="numeric" maxlength="6" placeholder="e.g. 300"').replace('data-flk', 'data-flk="venue"'));
     more.insertAdjacentHTML('beforeend', `<label class="bk-f" data-flk="ages">Ages<select id="bk-x-ages"><option value="">Choose…</option><option>21+</option><option>18+</option><option>All ages</option></select></label>` + fld('bk-x-lineup', 'Who else is playing?' + opt, 'maxlength="200" placeholder="Other acts on the bill"').replace('data-flk', 'data-flk="lineup"'));
     more.append(lab('bk-fee'));
-    more.insertAdjacentHTML('beforeend', `<label class="bk-f" data-flk="rep">Does this night repeat?<select id="bk-x-rep"><option value="">Just this once</option><option value="w1">Every week</option><option value="w2">Every 2 weeks</option><option value="mn">Once a month</option></select></label>` + fld('bk-x-repn', 'About how many dates?' + opt, 'inputmode="numeric" maxlength="2" placeholder="e.g. 6"').replace('data-flk', 'data-flk="repn"'));
+    more.insertAdjacentHTML('beforeend', `<label class="bk-f" data-flk="rep">Does this night repeat?<select id="bk-x-rep"><option value="">Just this once</option><option value="w1">Every week</option><option value="w2">Every 2 weeks</option><option value="mn">Once a month</option><option value="cu">Something else (tell us in your message)</option></select></label>` + fld('bk-x-repn', 'About how many dates?' + opt, 'inputmode="numeric" maxlength="2" placeholder="e.g. 6"').replace('data-flk', 'data-flk="repn"'));
     const msgL = lab('bk-msg'); s4.append(msgL); const tail = [...step3.children].filter(x => x.matches('.bk-hp, p, button')); s4.append(...tail);
     const msg = $('#bk-msg'); if (msg) msg.maxLength = 1400;
     const roleL = lab('bk-role'); if (roleL) roleL.hidden = true;
@@ -3652,7 +3652,7 @@ function appExtras() {
     if (d.et || d.g) lines.push(`Event: ${[d.et, d.g ? d.g + ' guests' : ''].filter(Boolean).join(' · ')}`);
     if (d.cap || d.ages) lines.push(`Room: ${[d.cap ? 'capacity ' + d.cap : '', d.ages || ''].filter(Boolean).join(' · ')}`);
     if (d.lineup) lines.push(`Also playing: ${d.lineup}`);
-    if (d.rf && FL_REP_DEF[d.rf]) { const n = Math.max(2, Math.min(52, parseInt(d.rn, 10) || FL_REP_DEF[d.rf])); lines.push(`Repeats: ${FL_REP_NAMES[d.rf]}, about ${n} dates`); upd.repeatReq = { freq: d.rf, count: n }; }
+    if (d.rf && FL_REP_DEF[d.rf]) { const n = Math.max(2, Math.min(52, parseInt(d.rn, 10) || FL_REP_DEF[d.rf])); lines.push(d.rf === 'cu' ? `Repeats: a custom schedule (see their message), about ${n} dates` : `Repeats: ${FL_REP_NAMES[d.rf]}, about ${n} dates`);upd.repeatReq = { freq: d.rf, count: n }; }
     if (d.ig || d.site || d.vsite) lines.push(`Links: ${[d.ig, d.site, d.vsite].filter(Boolean).join(' · ')}`);
     upd.notes = base.replace(/\nRole: [^\n]*/, '\n' + lines.join('\n')); upd.requestKind = k; upd.updatedAt = new Date().toISOString();
     await window.patch('bookings', b.id, upd);
