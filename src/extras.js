@@ -8,6 +8,8 @@
  * performer or booker text without escaping. */
 import { sb } from './supabase.js';
 import './extras.css';
+// invoice PDFs: the PDF maker ships with the site (the site's security rules block scripts from other sites); it loads only when a PDF is made
+window.ssxJsPDF = () => import('jspdf').then(m => m.jsPDF || m.default);
 
 /* Fix: the check-mark animation on app messages watched the message box and added a new check mark every time the
    box changed, including when it added its own check mark, so it looped forever and froze the page right after
