@@ -2529,13 +2529,23 @@ function appExtras() {
   const flChip = (on, label = 'EPK') => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ssx-fl-epkchip'; b.textContent = label; b.title = 'Show on my EPK'; b.setAttribute('aria-label', 'Show on my EPK'); b.setAttribute('aria-pressed', String(!!on)); return b; };
   const flTwoTap = (btn, label, go) => { if (!btn.dataset.armed) { btn.dataset.armed = '1'; const was = btn.innerHTML; btn.textContent = label; setTimeout(() => { if (btn.isConnected && btn.dataset.armed) { delete btn.dataset.armed; btn.innerHTML = was; } }, 3500); return; } delete btn.dataset.armed; go(); };
 
-  /* -- what kind of artist: replaces "DJ" in labels, calendar events, invoices and pitch text */
-  const FL_KINDS = [['dj', 'DJ'], ['singer', 'Singer'], ['rapper', 'Rapper'], ['band', 'Band'], ['instrumentalist', 'Instrumentalist'], ['producer', 'Producer'], ['dancer', 'Dancer'], ['comedian', 'Comedian'], ['other', 'Something else']];
+  /* -- what kind of artist: replaces "DJ" in labels, calendar events, invoices and pitch text.
+     Kinds are grouped; each group has a starter set (tasks, stage names, stage emails) the artist can switch to. */
+  const FL_GROUPS = [
+    ['music', 'Music', [['dj', 'DJ', 'DJ'], ['singer', 'Singer', 'Singer'], ['rapper', 'Rapper', 'Rapper'], ['band', 'Band', 'Band'], ['instrumentalist', 'Instrumentalist', 'Instrumentalist'], ['producer', 'Producer', 'Producer']]],
+    ['comedy', 'Comedy & hosting', [['comedian', 'Comedian', 'Comedian'], ['host', 'Host / MC', 'Host'], ['drag', 'Drag artist', 'Drag artist'], ['magician', 'Magician', 'Magician']]],
+    ['movement', 'Movement & visual', [['dancer', 'Dancer', 'Dancer'], ['aerialist', 'Aerialist', 'Aerialist'], ['painter', 'Live painter', 'Live painter'], ['vj', 'VJ / visual artist', 'Visual artist']]],
+    ['service', 'Services', [['tattoo', 'Tattoo artist', 'Tattoo artist'], ['massage', 'Massage therapist', 'Massage therapist'], ['acupuncture', 'Acupuncturist', 'Acupuncturist'], ['hmua', 'Hair & makeup', 'Hair & makeup artist']]],
+    ['other', 'Something else', []]];
+  const FL_KINDS = FL_GROUPS.flatMap(g => g[2].map(k => [k[0], k[2], g[0]]));
   function flArtist() {
-    const a = flCfg().artist || {}, kind = a.kind || '';
-    const label = String((kind === 'other' ? a.label : (FL_KINDS.find(k => k[0] === kind) || [])[1]) || a.label || 'Artist').trim() || 'Artist';
-    return { kind, label, name: kind === 'dj' ? 'DJ name' : kind === 'band' ? 'Band name' : 'Stage name' };
+    const a = flCfg().artist || {}, kind = a.kind || '', hit = FL_KINDS.find(k => k[0] === kind);
+    const group = a.group || (hit && hit[2]) || (kind ? 'other' : 'music');
+    const label = String((hit ? hit[1] : a.label) || a.label || 'Artist').trim() || 'Artist';
+    return { kind, label, group, preset: a.preset || 'dj', name: kind === 'dj' ? 'DJ name' : kind === 'band' ? 'Band name' : group === 'service' ? 'Business name' : 'Stage name' };
   }
+  // what a booking is called on invoices and calendar events
+  const flPerf = () => { const A = flArtist(); return A.group === 'service' ? 'Session' : A.label + ' performance'; };
   function flSwap(s) {
     const A = flArtist(); if (A.label === 'DJ' || !/\bDJs?\b/.test(s)) return s;
     const L = A.label, N = A.name, low = N.charAt(0).toLowerCase() + N.slice(1);
