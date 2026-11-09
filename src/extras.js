@@ -4028,11 +4028,28 @@ function appExtras() {
     }
     dateDd.after(dt, dd);
   }
+  /* -- every pop-up: a bar that stays at the top with Back (when there's somewhere to go back to) and Close, so you never scroll to the bottom to get out.
+     Close taps the pop-up's own Cancel / Done / Close button, so anything those do first (like asking about unsaved changes) still happens. Short Save / Done rows stay pinned to the bottom. */
+  function flSheetBar(root) {
+    if (!root.closest('#sheetRoot') || root.querySelector(':scope > .ssx-sbar')) return;
+    const bar = document.createElement('div'); bar.className = 'ssx-sbar';
+    const back = root.querySelector(':scope > .sheet-back'); if (back) bar.append(back);
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'ssx-sx'; x.setAttribute('aria-label', 'Close'); x.title = 'Close';
+    x.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+    x.onclick = () => {
+      const own = root.querySelector(':scope > .actions [data-cancel], :scope > .actions [data-close]') || [...root.querySelectorAll('[data-cancel], [data-close]')].pop();
+      if (own) own.click(); else if (typeof window.close === 'function') window.close();
+    };
+    bar.append(x); root.prepend(bar);
+    const cs = getComputedStyle(root); root.style.setProperty('--ssx-px', cs.paddingLeft); root.style.setProperty('--ssx-pt', cs.paddingTop);
+    const acts = [...root.children].filter(c => c.classList.contains('actions')).pop();
+    if (acts && acts.offsetHeight && acts.offsetHeight <= 110) acts.classList.add('ssx-stick');
+  }  
   function flScan() {
     FL.raf = 0;
     for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
-    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow]) { try { f(root); } catch (e) { console.error(e); } } });
+    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar]) { try { f(root); } catch (e) { console.error(e); } } });
   }
   function hookFlow() {
     if (window.__ssxFL || !st.db) return; window.__ssxFL = true;
