@@ -4044,6 +4044,100 @@ function appExtras() {
     const cs = getComputedStyle(root); root.style.setProperty('--ssx-px', cs.paddingLeft); root.style.setProperty('--ssx-pt', cs.paddingTop);
     const acts = [...root.children].filter(c => c.classList.contains('actions')).pop();
     if (acts && acts.offsetHeight && acts.offsetHeight <= 110) acts.classList.add('ssx-stick');
+  }
+  /* -- tasks on Google Calendar: any task with a due date can go on your calendar as an all-day reminder (shown as free time, so it never blocks
+     your availability). Checking it off in the app marks the calendar entry "✓ Done"; changing the due date or name moves or renames it; deleting the
+     task takes it off. Saved on the booking as taskCal[taskKey] = { eventId, calendarId, link, sig }. */
+  const FL_TC = { busy: new Set(), at: 0, warned: 0, t: 0 };
+  const flTcSig = t => `${t.due || ''}|${t.label || ''}|${t.done ? 1 : 0}`;
+  function flTcBody(b, t) {
+    const show = typeof bookingName === 'function' ? bookingName(b) : showName(b);
+    return {
+      summary: `${t.done ? '✓ Done' : 'To do'}: ${t.label}`, allDay: true, startTime: `${t.due}T00:00:00`, endTime: `${addDays(t.due, 1)}T00:00:00`,
+      availability: 'AVAILABILITY_FREE', notificationLevel: 'NONE',
+      description: [`Task for ${show}${b.date ? ` (show ${fmtD(b.date)})` : ''}.`, 'Check it off in Set & Settled: https://setnsettled.com'].join('\n'),
+    };
+  }
+  function flTcErr(e) {
+    const c = e && e.code; if (Date.now() - FL_TC.warned < 8000) return; FL_TC.warned = Date.now();
+    toast(c === 'server_not_connected' ? 'Connect Google Calendar in Settings → Google account to put tasks on your calendar'
+      : c === 'approval_required' || c === 'not_in_manifest' || c === 'not_granted' ? 'Allow Google Calendar for this page to put tasks on your calendar'
+      : "Couldn't update Google Calendar. Check your connection and try again.");
+  }
+  async function flTcMcp() { const m = (typeof G !== 'undefined' && G.mcp) || await window.claude.use('mcp'); if (!m) throw { code: 'server_not_connected' }; return m; }
+  async function flTcAdd(bid, key) {
+    const b = flBk().find(x => x.id === bid), t = b && tasksOf(b).find(x => x.key === key); if (!t) return false;
+    if (!t.due) { toast('Pick a due date first, then put it on your calendar'); return false; }
+    try {
+      const mcp = await flTcMcp(), cal = (typeof G !== 'undefined' && G.writeTo) || '';
+      const r = await mcp.callTool(GC, 'create_event', { ...(cal ? { calendarId: cal } : {}), ...flTcBody(b, t) }); const p = r.payload || {}, ev = p.event || p;
+      if (!ev.id) throw { code: 'tool_error' };
+      await window.patch('bookings', bid, { taskCal: { [key]: { eventId: ev.id, calendarId: cal, link: ev.htmlLink || '', sig: flTcSig(t) } } });
+      toast(`On your Google Calendar for ${fmtD(t.due)}`); return true;
+    } catch (e) { console.error(e); flTcErr(e); return false; }
+  }
+  async function flTcDrop(bid, key, quiet) {
+    const b = flBk().find(x => x.id === bid), ge = b && (b.taskCal || {})[key]; if (!ge) return true;
+    const ok = await dropEvent(ge);
+    if (ok) { await window.patch('bookings', bid, { taskCal: { [key]: null } }); if (!quiet) toast('Taken off Google Calendar'); }
+    else if (!quiet) toast("Couldn't take it off Google Calendar yet. Check your connection and try again.");
+    return ok;
+  }
+  // keep calendar entries in step with the app: done / not done, due date, name, deleted tasks, lost shows
+  async function flTaskCalSweep() {
+    if (Date.now() - FL_TC.at < 1500) { if (!FL_TC.t) FL_TC.t = setTimeout(() => { FL_TC.t = 0; flTaskCalSweep(); }, 1600); return; }
+    FL_TC.at = Date.now();
+    let list = []; try { list = flBk().filter(b => b.taskCal && Object.values(b.taskCal).some(Boolean)); } catch (_) { return; }
+    for (const b of list) {
+      const ts = tasksOf(b), lost = flKind(b.status) === 'lost';
+      for (const [key, ge] of Object.entries(b.taskCal)) {
+        if (!ge || !ge.eventId || FL_TC.busy.has(b.id + key)) continue;
+        const t = ts.find(x => x.key === key);
+        if (!t || !t.due || lost) { FL_TC.busy.add(b.id + key); flTcDrop(b.id, key, true).finally(() => FL_TC.busy.delete(b.id + key)); continue; }
+        const sig = flTcSig(t); if (sig === ge.sig) continue;
+        FL_TC.busy.add(b.id + key);
+        (async () => {
+          try {
+            const mcp = await flTcMcp();
+            await mcp.callTool(GC, 'update_event', { eventId: ge.eventId, ...(ge.calendarId ? { calendarId: ge.calendarId } : {}), ...flTcBody(b, t) });
+            await window.patch('bookings', b.id, { taskCal: { [key]: { ...ge, sig } } });
+          } catch (e) {
+            if (e && e.code === 'tool_error' && /not.?found|deleted|gone|404|410/i.test(String(e.message || ''))) await window.patch('bookings', b.id, { taskCal: { [key]: null } });
+            else { console.error(e); flTcErr(e); }
+          } finally { FL_TC.busy.delete(b.id + key); }
+        })();
+      }
+    }
+  }
+  // the task screen gets a Google Calendar row; the booking's checklist shows a small calendar mark on tasks that are on it
+  function flTaskCal(root) {
+    const bid = root.dataset && root.dataset.booking;
+    if (bid) {
+      const b = flBk().find(x => x.id === bid), tc = (b && b.taskCal) || {};
+      root.querySelectorAll('[data-topen]').forEach(x => {
+        const v = x.dataset.topen, key = v.slice(v.indexOf(':') + 1), on = !!(tc[key] && tc[key].eventId), mark = x.querySelector('.ssx-tcmark');
+        if (on && !mark) x.insertAdjacentHTML('beforeend', ' <span class="ssx-tcmark" title="On Google Calendar" aria-label="On Google Calendar">📅</span>');
+        if (!on && mark) mark.remove();
+      });
+      return;
+    }
+    const dIn = root.querySelector('#ts-d'), lab = root.querySelector('#ts-l'), cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key;
+    if (!dIn || !lab || !cur || !/^t:/.test(cur)) return;
+    const rest = cur.slice(2), i = rest.indexOf(':'), tbid = rest.slice(0, i), key = rest.slice(i + 1);
+    let box = root.querySelector('.ssx-tcal');
+    if (!box) { box = document.createElement('div'); box.className = 'f ssx-tcal'; (dIn.closest('.f') || dIn).after(box); }
+    const b = flBk().find(x => x.id === tbid), ge = b && (b.taskCal || {})[key], on = !!(ge && ge.eventId), state = on ? 'on' : 'off';
+    if (box.dataset.state === state) return; box.dataset.state = state;
+    box.innerHTML = `<label>Google Calendar</label><div class="ssx-tcal-row">${on
+      ? `<span class="note">On your calendar as an all-day reminder.${ge.link ? ` <a href="${esc(ge.link)}" target="_blank" rel="noopener">Open in Google Calendar</a>` : ''}</span><button type="button" class="btn small" data-tc-off>Take it off</button>`
+      : `<button type="button" class="btn small" data-tc-on>＋ Put on Google Calendar</button><span class="note">An all-day reminder on the due date. Checking it off here marks it done there.</span>`}</div>`;
+    const on1 = box.querySelector('[data-tc-on]'), off1 = box.querySelector('[data-tc-off]');
+    if (on1) on1.onclick = async () => {
+      if (dIn.value && dIn.value !== (tasksOf(b).find(x => x.key === key) || {}).due) { toast('Tap Save first so the new due date is used, then put it on your calendar'); return; }
+      on1.disabled = true; on1.textContent = 'Adding…'; const ok = await flTcAdd(tbid, key);
+      if (!ok) { on1.disabled = false; on1.textContent = '＋ Put on Google Calendar'; } else delete box.dataset.state;
+    };
+    if (off1) off1.onclick = async () => { off1.disabled = true; off1.textContent = 'Removing…'; await flTcDrop(tbid, key); delete box.dataset.state; off1.disabled = false; off1.textContent = 'Take it off'; };
   }  
   function flScan() {
     FL.raf = 0;
