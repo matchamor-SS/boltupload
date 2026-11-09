@@ -1477,19 +1477,28 @@ async function gmailSend(o){const mcp=await gmailReady();if(!mcp)throw {code:"qu
   // metadata only (the template name, never the subject, message or attachment)
   if(db){try{await db.collection("sentLog").add({at:new Date().toISOString(),bookingId:o.bookingId||"",contactId:o.contactId||"",kind:o.kind||"email",label:String(o.label||"").slice(0,120),n:to.length+cc.length,messageId:p.id||"",threadId:p.threadId||"",attachment:!!(o.attachments&&o.attachments.length)})}catch(e){}}
   return p}
-function confirmSend(o){return new Promise(res=>{document.querySelector(".cs-bg")?.remove();
+function confirmSend(o){return new Promise(res=>{const old=document.querySelector(".cs-bg");if(old&&old.__done)old.__done(false);else old?.remove();document.querySelector("#csDock")?.remove();
   const to=[].concat(o.to||[]).filter(Boolean),cc=[].concat(o.cc||[]).filter(Boolean);
   const bg=document.createElement("div");bg.className="notice-bg cs-bg";
-  bg.innerHTML=`<div class="notice" role="alertdialog" aria-modal="true" aria-labelledby="cs-t"><button class="x nx" data-no aria-label="Close">×</button>
+  bg.innerHTML=`<div class="notice" role="alertdialog" aria-modal="true" aria-labelledby="cs-t"><button class="btn small cs-min" data-min title="Minimize to look something up in the app">Minimize</button><button class="x nx" data-no aria-label="Close">×</button>
     <h4 id="cs-t">Check it, then send</h4>
     <div class="cs"><div><span class="eyebrow">To</span>${esc(to.join(", "))}</div>${cc.length?`<div><span class="eyebrow">Cc</span>${esc(cc.join(", "))}</div>`:""}
     <div class="f" style="margin:0"><label for="cs-subj">Subject</label><input id="cs-subj" value="${esc(o.subject||"")}" autocomplete="off"></div>${o.attachName?`<div><span class="eyebrow">Attached</span>${esc(o.attachName)}</div>`:""}
     <div class="f" style="margin:0"><label for="cs-body">Message</label><textarea id="cs-body" style="min-height:220px">${esc(o.body||"")}</textarea></div></div>
-    <p class="note" style="margin:0">Edit anything above. It sends from your connected Gmail with your Gmail signature, and replies come back to your inbox.</p>
-    <div class="actions"><button class="btn" data-no>Keep editing</button><button class="btn primary" data-yes>Send now</button></div></div>`;
-  document.body.appendChild(bg);const done=v=>{bg.remove();document.removeEventListener("keydown",k,true);res(v)};const k=e=>{if(e.key==="Escape"){e.stopPropagation();done(false)}};
-  const send=()=>{const s=bg.querySelector("#cs-subj").value.trim(),b=bg.querySelector("#cs-body").value;if(!s){toast("Add a subject");bg.querySelector("#cs-subj").focus();return}if(!b.trim()){toast("Write a message first");bg.querySelector("#cs-body").focus();return}done({subject:s,body:b})};
-  bg.addEventListener("click",e=>{if(e.target===bg||e.target.closest("[data-no]"))done(false);else if(e.target.closest("[data-yes]"))send()});document.addEventListener("keydown",k,true);
+    <p class="note" style="margin:0">Edit anything above. Send now sends it from your connected Gmail with your Gmail signature, and replies come back to your inbox.${o.gmail?` Open in Gmail starts it in Gmail instead${o.attachName?" so you attach the PDF yourself":""}.`:""}</p>
+    <div class="actions"><button class="btn" data-no>${esc(o.backLabel||"Keep editing")}</button>${o.gmail?`<button class="btn" data-gm>Open in Gmail</button>`:""}<button class="btn primary" data-yes>Send now</button></div></div>`;
+  document.body.appendChild(bg);
+  const show=()=>{bg.hidden=false;document.querySelector("#csDock")?.remove();setTimeout(()=>bg.querySelector("#cs-body")?.focus(),50)};
+  const min=()=>{bg.hidden=true;let d=document.querySelector("#csDock");if(!d){d=document.createElement("button");d.id="csDock";d.className="dock cs-dock";d.innerHTML=`<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 6.5 8.5 6.5 8.5-6.5"/></svg><span class="cs-dl"></span><span class="note" style="color:inherit;opacity:.8">Tap to open</span>`;d.onclick=show;document.body.appendChild(d)}
+    const s=bg.querySelector("#cs-subj").value.trim();d.querySelector(".cs-dl").textContent=(o.dockLabel||"Ready to send")+(s?": "+s:"")};
+  const done=v=>{bg.remove();document.querySelector("#csDock")?.remove();document.removeEventListener("keydown",k,true);res(v)};bg.__done=done;
+  const k=e=>{if(e.key==="Escape"&&!bg.hidden){e.stopPropagation();done(false)}};
+  const read=()=>{const s=bg.querySelector("#cs-subj").value.trim(),b=bg.querySelector("#cs-body").value;if(!s){toast("Add a subject");bg.querySelector("#cs-subj").focus();return null}if(!b.trim()){toast("Write a message first");bg.querySelector("#cs-body").focus();return null}return {subject:s,body:b}};
+  const send=()=>{const v=read();if(v)done(v)};
+  const gm=()=>{const v=read();if(!v)return;try{o.onGmail&&o.onGmail()}catch(e){console.error(e)}
+    const w=window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to.join(","))}${cc.length?"&cc="+encodeURIComponent(cc.join(",")):""}&su=${encodeURIComponent(v.subject)}&body=${encodeURIComponent(v.body)}`,"_blank");
+    if(!w){toast("Your browser blocked the Gmail tab. Allow pop-ups for this site, then tap Open in Gmail again.");return}try{w.opener=null}catch(e){}done({...v,gmail:true})};
+  bg.addEventListener("click",e=>{if(e.target===bg||e.target.closest("[data-no]"))done(false);else if(e.target.closest("[data-min]"))min();else if(e.target.closest("[data-gm]"))gm();else if(e.target.closest("[data-yes]"))send()});document.addEventListener("keydown",k,true);
   setTimeout(()=>{const b=bg.querySelector("#cs-body");if(b){b.focus();b.setSelectionRange(0,0);b.scrollTop=0}},50)})}
 function sentNotice(p,to,extra){notice({title:"Email sent",body:`Sent to ${esc(to.join(", "))}. Replies land in your Gmail inbox.`,link:gmLink(p),linkText:"Open in Gmail",extra})}
 function sendErr(err,what){if(err&&err.code){if(err.code!=="quiet")mailErr(err)}else toast("Couldn't send "+(what||"the email")+": "+(err&&err.message||"try again"))}
