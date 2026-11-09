@@ -856,3 +856,10 @@ html body .ssx-fl-chip { display: inline-flex; align-items: center; gap: 2px; pa
 html body .ssx-fl-chip button { border: 0; background: transparent; color: inherit; font: inherit; min-width: 30px; min-height: 30px; cursor: pointer; }
 html body dd.ssx-fl-ser { display: flex; flex-direction: column; gap: 6px; }
 html body dd.ssx-fl-ser .ssx-fl-mact { display: flex; flex-wrap: wrap; gap: 6px; }
+html body .cs-bg[hidden], html body .cs-dock[hidden] { display: none !important; }
+html body .cs-bg .notice .cs-min { position: absolute; top: 12px; right: 52px; }
+html body .cs-bg .notice h4 { margin-right: 112px; }
+html body .cs-dock .cs-dl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+html body .cs-dock .note { white-space: nowrap; flex: none; }
+html body #composeDock:not([hidden]) ~ #csDock { bottom: calc(132px + env(safe-area-inset-bottom, 0px)); }
+@media (min-width: 860px) { html body #composeDock:not([hidden]) ~ #csDock { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); } }
