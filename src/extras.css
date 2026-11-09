@@ -905,3 +905,6 @@ html body .ssx-ro-act .x { margin-left: auto; }
 html body .ssx-gt-auto { display: flex; align-items: center; gap: 8px; margin-top: 6px; cursor: pointer; }
 html body .ssx-gt-auto input { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
 html body .ssx-gtmark { font-size: .85em; color: var(--accent); }
+/* Settings → Google: Google Tasks card */
+html body #ssx-gt-set .ssx-gt-auto { display: flex; gap: 10px; align-items: center; margin: 4px 0 8px; font-weight: 600; cursor: pointer; }
+html body #ssx-gt-set .ssx-gt-auto input { width: auto; flex: none; margin: 0; }
