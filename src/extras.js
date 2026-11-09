@@ -3521,11 +3521,15 @@ function appExtras() {
     dd.querySelectorAll('[data-fl-m]').forEach(x => x.onclick = () => { const [k, mid] = x.dataset.flM.split(':'); if (k === 'i') { const i = inc.find(y => y.id === mid); if (i) flAddIncome(b, i); } else { const e = exp.find(y => y.id === mid); if (e) flAddExpense(b, e); } });
   }
     /* -- no browser or password-manager suggestions popping up over the app's text boxes (sign-in screen excluded) */
-  function flNoAutofill() {
-    document.querySelectorAll('input:not([data-fl-ac]), textarea:not([data-fl-ac])').forEach(el => {
-      el.dataset.flAc = '1'; if (el.closest('#ss-auth') || /^(password|checkbox|radio|file|hidden|range|color|submit|button)$/i.test(el.type || '')) return;
-      el.setAttribute('autocomplete', 'off'); el.setAttribute('aria-autocomplete', 'none'); el.setAttribute('data-lpignore', 'true'); el.setAttribute('data-1p-ignore', ''); el.setAttribute('data-form-type', 'other');
-      el.setAttribute('name', 'ssx' + Math.random().toString(36).slice(2, 9));
+   function flNoAutofill() {
+    const blink = /Chrome\//.test(navigator.userAgent);
+    document.querySelectorAll('input:not([data-fl-ac2]), textarea:not([data-fl-ac2])').forEach(el => {
+      el.dataset.flAc2 = '1'; if (el.closest('#ss-auth') || /^(password|checkbox|radio|file|hidden|range|color|submit|button)$/i.test(el.type || '')) return;
+      // Chrome skips any autocomplete word it doesn't know (it sometimes ignores "off"); Safari and Firefox go by "off"
+      el.setAttribute('autocomplete', blink ? 'ssx-no-history' : 'off');
+      el.setAttribute('aria-autocomplete', 'none'); el.setAttribute('data-lpignore', 'true'); el.setAttribute('data-1p-ignore', ''); el.setAttribute('data-form-type', 'other');
+      // a fresh name with "search" in it: browsers keep typing history by field name, and Safari skips its AutoFill for search-style names
+      el.setAttribute('name', 'ssx-search-' + Math.random().toString(36).slice(2, 9));
     });
   }
   /* -- public booking page: "Who are you?" first, then only the questions that fit, so the request fills in the booking for the performer */
