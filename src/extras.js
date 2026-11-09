@@ -4124,9 +4124,11 @@ function appExtras() {
     const dIn = root.querySelector('#ts-d'), lab = root.querySelector('#ts-l'), cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key;
     if (!dIn || !lab || !cur || !/^t:/.test(cur)) return;
     const rest = cur.slice(2), i = rest.indexOf(':'), tbid = rest.slice(0, i), key = rest.slice(i + 1);
-    let box = root.querySelector('.ssx-tcal');
+        const b = flBk().find(x => x.id === tbid), ge = b && (b.taskCal || {})[key], on = !!(ge && ge.eventId), state = on ? 'on' : 'off';
+    let box = root.querySelector('.ssx-tcal:not(.ssx-gt)');
+    // new calendar reminders aren't offered anymore (Google Tasks covers it); a task that already has one can still take it off
+    if (!on) { if (box) box.remove(); return; }
     if (!box) { box = document.createElement('div'); box.className = 'f ssx-tcal'; (dIn.closest('.f') || dIn).after(box); }
-    const b = flBk().find(x => x.id === tbid), ge = b && (b.taskCal || {})[key], on = !!(ge && ge.eventId), state = on ? 'on' : 'off';
     if (box.dataset.state === state) return; box.dataset.state = state;
     box.innerHTML = `<label>Google Calendar</label><div class="ssx-tcal-row">${on
       ? `<span class="note">On your calendar as an all-day reminder.${ge.link ? ` <a href="${esc(ge.link)}" target="_blank" rel="noopener">Open in Google Calendar</a>` : ''}</span><button type="button" class="btn small" data-tc-off>Take it off</button>`
@@ -4276,7 +4278,7 @@ function appExtras() {
      done here; ticking it here marks it done there. Name and due-date changes follow. Deleting the task here (or the show being lost) removes it
      there; deleting it in Google just unlinks it. Optional: add every new task with a due date automatically.
      Saved on the booking as taskG[taskKey] = { id, link, sig, at } ({ off: true } = you took it out, so it isn't added again automatically). */
-  const FL_GT = { list: '', busy: new Set(), at: 0, t: 0, pulled: 0, pulling: false, warned: 0, auto: false };
+  const FL_GT = { list: '', busy: new Set(), at: 0, t: 0, pulled: 0, pulling: false, warned: 0, auto: false, cfg: {}, loaded: false, askKey: '' };
   const flGtSig = t => `${t.due || ''}|${t.label || ''}|${t.done ? 1 : 0}`;
   async function flGtMcp() { const m = await window.claude.use('mcp'); if (!m) throw { code: 'server_not_connected' }; return m; }
   function flGtErr(e) {
@@ -4332,7 +4334,7 @@ function appExtras() {
       }
       if (FL_GT.auto && !lost && added < 10) for (const t of ts) {
         if (added >= 10) break;
-        if (t.done || !t.due || t.due < todayStr() || tg[t.key] || FL_GT.busy.has(b.id + t.key)) continue;
+        if (t.done || !t.due || t.due < todayStr() || (tg[t.key] && tg[t.key].id) || FL_GT.busy.has(b.id + t.key)) continue;
         added++; const k2 = b.id + t.key; FL_GT.busy.add(k2); flGtAdd(b.id, t.key, true).finally(() => FL_GT.busy.delete(k2));
       }
     }
@@ -4358,10 +4360,10 @@ function appExtras() {
   }
   function flGtHook() {
     if (FL.gtHooked || !st.db) return; FL.gtHooked = true;
-    st.db.doc('settings/gtasks').onSnapshot(s => { FL_GT.auto = !!(s.exists && s.data().auto); if (FL_GT.auto) flGtSweep(); }, () => {});
+    st.db.doc('settings/gtasks').onSnapshot(s => { FL_GT.cfg = (s.exists && s.data()) || {}; FL_GT.loaded = true; FL_GT.auto = !!FL_GT.cfg.auto; if (FL_GT.auto) flGtSweep(); flGtSettings(); }, () => {});
     setInterval(() => flGtPull(), 60000); window.addEventListener('focus', () => flGtPull(true)); setTimeout(() => flGtPull(true), 4000);
   }
-  // the task screen: a Google Tasks row under the Google Calendar row; the checklist shows ☑︎ on tasks that are in Google Tasks
+  // the task screen: a Google Tasks row; the checklist shows ☑︎ on tasks that are in Google Tasks
   function flGtRow(root) {
     const bid = root.dataset && root.dataset.booking;
     if (bid) {
@@ -4374,34 +4376,67 @@ function appExtras() {
       return;
     }
     const dIn = root.querySelector('#ts-d'), lab = root.querySelector('#ts-l'), cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key;
-    if (!dIn || !lab || !cur || !/^t:/.test(cur)) return;
+    if (!dIn || !lab || !cur || !/^t:/.test(cur) || !FL_GT.loaded) return;
     const rest = cur.slice(2), i = rest.indexOf(':'), tbid = rest.slice(0, i), key = rest.slice(i + 1);
+    // the "add automatically" choice shows once, on the first task opened; after that it lives in Settings → Google
+    if (FL_GT.askKey && FL_GT.askKey !== cur) FL_GT.askKey = '';
+    if (!FL_GT.cfg.asked && !FL_GT.askKey) { FL_GT.askKey = cur; FL_GT.cfg = { ...FL_GT.cfg, asked: true }; flGtSave({}).catch(() => {}); }
+    const ask = FL_GT.askKey === cur;
     let box = root.querySelector('.ssx-gt');
     if (!box) { box = document.createElement('div'); box.className = 'f ssx-tcal ssx-gt'; const after = root.querySelector('.ssx-tcal:not(.ssx-gt)') || dIn.closest('.f') || dIn; after.after(box); }
-    const b = flBk().find(x => x.id === tbid), g = b && (b.taskG || {})[key], on = !!(g && g.id), state = (on ? 'on' : 'off') + (FL_GT.auto ? 'A' : '');
+    const b = flBk().find(x => x.id === tbid), t = b && tasksOf(b).find(x => x.key === key), g = b && (b.taskG || {})[key], on = !!(g && g.id);
+    const past = !!(t && t.due && t.due < todayStr()), manual = !FL_GT.auto || past; // automatic mode never adds past-due tasks, so those keep the button
+    const state = [on ? 'on' : 'off', FL_GT.auto ? 'A' : '', ask ? 'Q' : '', t && t.due, t && t.done ? 1 : 0].join('|');
     if (box.dataset.state === state) return; box.dataset.state = state;
+    const autoNote = !t || !t.due ? 'Goes to Google Tasks on its own once it has a due date.' : t.done ? 'Done tasks aren\u2019t added to Google Tasks.' : 'Adding it to Google Tasks…';
     box.innerHTML = `<label>Google Tasks</label><div class="ssx-tcal-row">${on
-      ? `<span class="note">In your Google Tasks ("Set & Settled" list). Tick it off there or here.${g.link ? ` <a href="${esc(g.link)}" target="_blank" rel="noopener">Open in Google Tasks</a>` : ''}</span><button type="button" class="btn small" data-gt-off>Take it out</button>`
-      : `<button type="button" class="btn small" data-gt-on>＋ Add to Google Tasks</button><span class="note">Shows in Google Tasks and on Google Calendar's task list. Tick it off in either place.</span>`}</div>
-      <label class="note ssx-gt-auto"><input type="checkbox" data-gt-auto ${FL_GT.auto ? 'checked' : ''}> Add every task with a due date to Google Tasks automatically</label>`;
+      ? `<span class="note">In your Google Tasks ("Set & Settled" list). Tick it off there or here.${g.link ? ` <a href="${esc(g.link)}" target="_blank" rel="noopener">Open in Google Tasks</a>` : ''}</span>${FL_GT.auto ? '' : '<button type="button" class="btn small" data-gt-off>Take it out</button>'}`
+      : manual
+        ? `<button type="button" class="btn small" data-gt-on>＋ Add to Google Tasks</button><span class="note">${FL_GT.auto ? 'Past-due tasks aren\u2019t added on their own. Add this one if you still need it.' : 'Shows in Google Tasks and on Google Calendar\u2019s task list. Tick it off in either place.'}</span>`
+        : `<span class="note">${autoNote}</span>`}</div>${ask
+      ? `<label class="note ssx-gt-auto"><input type="checkbox" data-gt-auto ${FL_GT.auto ? 'checked' : ''}> Add every task with a due date to Google Tasks automatically</label><span class="note">You can change this anytime in Settings → Google.</span>`
+      : ''}`;
     const on1 = box.querySelector('[data-gt-on]'), off1 = box.querySelector('[data-gt-off]'), auto = box.querySelector('[data-gt-auto]');
-    const ready = async () => !(window.SS && typeof SS.ensureGoogle === 'function') || await SS.ensureGoogle('tasks');
     if (on1) on1.onclick = async () => {
-      if (dIn.value && dIn.value !== (tasksOf(b).find(x => x.key === key) || {}).due) { toast('Tap Save first so the new due date is used, then add it to Google Tasks'); return; }
-      if (!(await ready())) return;
+      if (dIn.value && dIn.value !== (t || {}).due) { toast('Tap Save first so the new due date is used, then add it to Google Tasks'); return; }
+      if (!(await flGtReady())) return;
       on1.disabled = true; on1.textContent = 'Adding…'; const ok = await flGtAdd(tbid, key);
       if (!ok) { on1.disabled = false; on1.textContent = '＋ Add to Google Tasks'; } else delete box.dataset.state;
     };
     if (off1) off1.onclick = async () => { off1.disabled = true; off1.textContent = 'Removing…'; await flGtRemove(tbid, key, false, true); delete box.dataset.state; off1.disabled = false; off1.textContent = 'Take it out'; };
-    auto.onchange = async () => {
-      if (auto.checked && !(await ready())) { auto.checked = false; return; }
-      try { if (!(await window.save('settings', 'gtasks', { auto: auto.checked }))) throw 0; toast(auto.checked ? 'New tasks with a due date will go to Google Tasks' : 'Tasks will only go to Google Tasks when you add them'); }
-      catch (e) { auto.checked = !auto.checked; toast("Couldn't save that. Check your connection and try again."); }
-    };
-  }  
+    if (auto) auto.onchange = () => flGtSetAuto(auto);
+  }
+  const flGtSave = patch => Promise.resolve(window.save('settings', 'gtasks', { ...FL_GT.cfg, ...patch }));
+  const flGtReady = async () => !(window.SS && typeof SS.ensureGoogle === 'function') || await SS.ensureGoogle('tasks');
+  // one switch used by both the first-time question and Settings → Google
+  async function flGtSetAuto(chk) {
+    const want = chk.checked;
+    if (want && !(await flGtReady())) { chk.checked = false; return; }
+    try {
+      if (!(await flGtSave({ auto: want, asked: true }))) throw 0;
+      FL_GT.cfg = { ...FL_GT.cfg, auto: want, asked: true }; FL_GT.auto = want; if (want) flGtSweep();
+      toast(want ? 'Tasks with a due date will go to Google Tasks on their own' : 'Add tasks to Google Tasks one at a time from each task');
+    } catch (e) { chk.checked = !want; toast("Couldn't save that. Check your connection and try again."); }
+    document.querySelectorAll('#sheetRoot .ssx-gt').forEach(x => delete x.dataset.state); flGtSettings(); flSoon();
+  }
+  // Settings → Google gets a Google Tasks card with the same switch
+  function flGtSettings() {
+    if (FL_GT.askKey && !document.querySelector('#sheetRoot #ts-d')) FL_GT.askKey = '';
+    const grp = document.querySelector('section[data-view="settings"] > .ssg[data-ssg="google"]'); if (!grp) return;
+    let card = document.getElementById('ssx-gt-set');
+    if (!card) {
+      card = document.createElement('div'); card.className = 'card'; card.id = 'ssx-gt-set';
+      card.innerHTML = `<div class="head"><h3>Google Tasks</h3></div>
+        <label class="ssx-gt-auto"><input type="checkbox" data-gt-auto> Add every task with a due date to Google Tasks automatically</label>
+        <p class="note">On: tasks with an upcoming due date go to a "Set & Settled" list in Google Tasks on their own. Off: add the ones you want from each task.</p>`;
+      const chk0 = card.querySelector('[data-gt-auto]'); chk0.onchange = () => flGtSetAuto(chk0);
+    }
+    if (card.parentElement !== grp) grp.appendChild(card);
+    const chk = card.querySelector('[data-gt-auto]'); if (document.activeElement !== chk && chk.checked !== FL_GT.auto) chk.checked = FL_GT.auto;
+  }
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
     sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet, flGtRow]) { try { f(root); } catch (e) { console.error(e); } } });
   }
