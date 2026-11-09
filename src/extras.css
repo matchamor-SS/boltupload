@@ -840,3 +840,9 @@ html.ssx-standalone body header.top { -webkit-backdrop-filter: none !important; 
 
 /* ===== Date fields: always show the picked date (it collapsed to just the icon on phones) ===== */
 html body .f > .pick-btn.date:not(.due) { width: 100%; align-self: stretch; }
+html body .ssx-fl-rep { margin-top: 2px; }
+html body .ssx-fl-rep .ssx-fl-replbl { display: block; font-weight: 600; margin-bottom: 2px; }
+html body .ssx-fl-rep .ssx-fl-repnote { margin: 4px 0 0; }
+html body .ssx-fl-warnnote { display: block; margin-top: 2px; color: var(--warn, #b26a00); }
+html body dd.ssx-fl-ser { display: flex; flex-direction: column; gap: 6px; }
+html body dd.ssx-fl-ser .ssx-fl-mact { display: flex; flex-wrap: wrap; gap: 6px; }
