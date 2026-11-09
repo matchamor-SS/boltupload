@@ -872,3 +872,7 @@ html body .ivp-pages.ivp-zoom { align-items: flex-start; }
 html body .ivp-pages.ivp-zoom .ivp-page { width: 200%; max-width: none; cursor: zoom-out; }
 html body .ivp-pages > .note { margin: 0; color: #fff; }
 @media (min-width: 760px) { html body .ivp-pages > .ivp-tip { display: none; } }
+html body .toast { width: max-content; max-width: min(560px, calc(100vw - 24px)) !important; overflow-wrap: break-word; }
+html body .toast > span { min-width: 0; }
+html body .toast:has(.tundo) { text-align: left; padding-right: 8px; }
+html body .toast .tundo { flex: none; white-space: nowrap; overflow-wrap: normal; min-height: 36px; padding: 6px 10px; border-radius: 999px; }
