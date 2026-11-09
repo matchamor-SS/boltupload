@@ -153,9 +153,13 @@ const TOOLS: Record<string, (u: User, i: Input) => Promise<unknown>> = {
 };
 function eventBody(i: Input) {
   const tz = optStr(i.timeZone, 60, 'tz') || 'UTC';
+  const day = (v: unknown) => { const s = str(v, 40, 'time').slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) throw bad('invalid_time'); return s; };
+  const allDay = i.allDay === true; // all-day entries (task reminders) use dates, not times
   return {
     summary: str(i.summary ?? '', 300, 'summary'), location: optStr(i.location, 500, 'location') || '', description: optStr(i.description, 4000, 'description') || '',
-    start: { dateTime: str(i.startTime, 40, 'time'), timeZone: tz }, end: { dateTime: str(i.endTime, 40, 'time'), timeZone: tz },
+    start: allDay ? { date: day(i.startTime) } : { dateTime: str(i.startTime, 40, 'time'), timeZone: tz },
+    end: allDay ? { date: day(i.endTime) } : { dateTime: str(i.endTime, 40, 'time'), timeZone: tz },
+    ...(i.availability === 'AVAILABILITY_FREE' ? { transparency: 'transparent' } : i.availability === 'AVAILABILITY_BUSY' ? { transparency: 'opaque' } : {}),
   };
 }
 
