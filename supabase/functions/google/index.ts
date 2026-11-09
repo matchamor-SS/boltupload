@@ -22,6 +22,27 @@ const calId = (v: unknown) => { const s = optStr(v, 300, 'calendar') || 'primary
 const emails = (v: unknown, max: number) => { const a = (Array.isArray(v) ? v : []).map(x => String(x).trim()).filter(Boolean); if (a.length > max || a.some(e => !EMAIL.test(e) || e.length > 254)) throw bad('invalid_recipients'); return a; };
 const fileOut = (f: Record<string, any>) => ({ id: f.id, title: f.name, mimeType: f.mimeType, parentId: (f.parents || [])[0] || '', viewUrl: f.webViewLink || `https://drive.google.com/${f.mimeType === FOLDER ? 'drive/folders' : 'file/d'}/${f.id}`, owner: ((f.owners || [])[0] || {}).emailAddress || '', canAddChildren: !!(f.capabilities && f.capabilities.canAddChildren), trashed: !!f.trashed, modifiedTime: f.modifiedTime });
 
+/* Google Tasks: the app creates one list, "Set & Settled", and every call is checked against it, so other lists are never read or changed. */
+const TASKS = 'https://tasks.googleapis.com/tasks/v1', TASK_LIST = 'Set & Settled';
+const taskId = (v: unknown) => { const s = str(v, 200, 'task'); if (!/^[A-Za-z0-9_-]{1,200}$/.test(s)) throw bad('invalid_task'); return s; };
+async function appList(token: string) {
+  const r = await gfetch(token, `${TASKS}/users/@me/lists?maxResults=100&fields=items(id,title)`);
+  const hit = (r.items || []).find((l: any) => l.title === TASK_LIST);
+  if (hit) return hit.id as string;
+  const made = await gfetch(token, `${TASKS}/users/@me/lists?fields=id`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: TASK_LIST }) });
+  return made.id as string;
+}
+async function ownList(token: string, v: unknown) {
+  const id = str(v, 200, 'list'); if (!/^[A-Za-z0-9_-]{1,200}$/.test(id)) throw bad('invalid_list');
+  const l = await gfetch(token, `${TASKS}/users/@me/lists/${id}?fields=id,title`);
+  if (!l || l.title !== TASK_LIST) throw new HttpError(403, 'not_app_list');
+  return id;
+}
+function taskBody(i: Input) {
+  const due = optStr(i.due, 10, 'due'); if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) throw bad('invalid_due');
+  const done = i.completed === true;
+  return { title: str(i.title ?? '', 1024, 'title'), notes: optStr(i.notes, 8000, 'notes') || '', due: due ? `${due}T00:00:00.000Z` : null, status: done ? 'completed' : 'needsAction', ...(done ? {} : { completed: null }) };
+}
 /* The app's simple search syntax -> Drive's query language. Values are re-escaped, unknown terms are rejected. */
 function driveQuery(q: string): string {
   const parts: string[] = []; let rest = q;
@@ -150,6 +171,38 @@ const TOOLS: Record<string, (u: User, i: Input) => Promise<unknown>> = {
     catch (e) { if (!(e instanceof HttpError && e.code === 'not_found')) throw e; }
     return {};
   },
+  // ---------------------------------------------------------------- Tasks (tasks scope; only ever touches the app's own "Set & Settled" list)
+  'Google Tasks:get_list': async u => {
+    const token = await accessToken(u.id, [SCOPE.tasks]);
+    return { id: await appList(token) };
+  },
+  'Google Tasks:create_task': async (u, i) => {
+    const token = await accessToken(u.id, [SCOPE.tasks]), list = await ownList(token, i.listId);
+    const r = await gfetch(token, `${TASKS}/lists/${list}/tasks?fields=id,webViewLink,updated`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(taskBody(i)) });
+    return { id: r.id, link: r.webViewLink || '', updated: r.updated };
+  },
+  'Google Tasks:update_task': async (u, i) => {
+    const token = await accessToken(u.id, [SCOPE.tasks]), list = await ownList(token, i.listId);
+    const r = await gfetch(token, `${TASKS}/lists/${list}/tasks/${taskId(i.taskId)}?fields=id,webViewLink,updated`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(taskBody(i)) });
+    return { id: r.id, link: r.webViewLink || '', updated: r.updated };
+  },
+  'Google Tasks:delete_task': async (u, i) => {
+    const token = await accessToken(u.id, [SCOPE.tasks]), list = await ownList(token, i.listId);
+    try { await gfetch(token, `${TASKS}/lists/${list}/tasks/${taskId(i.taskId)}`, { method: 'DELETE' }); }
+    catch (e) { if (!(e instanceof HttpError && e.code === 'not_found')) throw e; }
+    return {};
+  },
+  'Google Tasks:list_tasks': async (u, i) => {
+    const token = await accessToken(u.id, [SCOPE.tasks]), list = await ownList(token, i.listId);
+    const items: unknown[] = []; let page = '';
+    for (let n = 0; n < 5; n++) {
+      const q = new URLSearchParams({ showCompleted: 'true', showHidden: 'true', showDeleted: 'true', maxResults: '100', fields: 'nextPageToken,items(id,status,updated,deleted)' });
+      if (page) q.set('pageToken', page);
+      const r = await gfetch(token, `${TASKS}/lists/${list}/tasks?${q}`);
+      items.push(...(r.items || [])); page = r.nextPageToken || ''; if (!page) break;
+    }
+    return { tasks: items };
+  },
 };
 function eventBody(i: Input) {
   const tz = optStr(i.timeZone, 60, 'tz') || 'UTC';
@@ -169,7 +222,7 @@ handler(async req => {
   if (!body || typeof body !== 'object') throw bad();
   if (body.op === 'status') {
     const c = await connection(user.id), s: string[] = c ? c.scopes : [];
-    return json({ connected: !!c, email: c ? c.email : '', tiers: { mail: s.includes(SCOPE.send), drive: s.includes(SCOPE.drive), calendar: s.includes(SCOPE.calEvents) } });
+    return json({ connected: !!c, email: c ? c.email : '', tiers: { mail: s.includes(SCOPE.send), drive: s.includes(SCOPE.drive), calendar: s.includes(SCOPE.calEvents), tasks: s.includes(SCOPE.tasks) } });
   }
   const fn = TOOLS[`${body.server}:${body.tool}`];
   if (!fn) throw new HttpError(400, 'unknown_tool');
