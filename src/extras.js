@@ -4272,6 +4272,133 @@ function appExtras() {
       if (pill) { if (pill.textContent !== txt) pill.textContent = txt; if (pill.className !== cls) pill.className = cls; } else main.insertAdjacentHTML('beforeend', `<span class="${cls}">${esc(txt)}</span>`);
     });
   }  
+  /* -- Google Tasks: put any task in your Google Tasks ("Set & Settled" list) and tick it off in either place. Ticking it in Google marks it
+     done here; ticking it here marks it done there. Name and due-date changes follow. Deleting the task here (or the show being lost) removes it
+     there; deleting it in Google just unlinks it. Optional: add every new task with a due date automatically.
+     Saved on the booking as taskG[taskKey] = { id, link, sig, at } ({ off: true } = you took it out, so it isn't added again automatically). */
+  const FL_GT = { list: '', busy: new Set(), at: 0, t: 0, pulled: 0, pulling: false, warned: 0, auto: false };
+  const flGtSig = t => `${t.due || ''}|${t.label || ''}|${t.done ? 1 : 0}`;
+  async function flGtMcp() { const m = await window.claude.use('mcp'); if (!m) throw { code: 'server_not_connected' }; return m; }
+  function flGtErr(e) {
+    const c = e && e.code; if (Date.now() - FL_GT.warned < 8000) return; FL_GT.warned = Date.now();
+    toast(c === 'server_not_connected' || c === 'needs_reauth' ? 'Connect Google Tasks in Settings → Google account to use Google Tasks'
+      : c === 'rate_limited' ? 'Google Tasks is busy. The app will try again in a minute.' : "Couldn't reach Google Tasks. Check your connection and try again.");
+  }
+  async function flGtCall(tool, input) {
+    const mcp = await flGtMcp();
+    if (!FL_GT.list) FL_GT.list = ((await mcp.callTool('Google Tasks', 'get_list', {})).payload || {}).id || '';
+    if (!FL_GT.list) throw { code: 'unavailable' };
+    try { return (await mcp.callTool('Google Tasks', tool, { ...input, listId: FL_GT.list })).payload || {}; }
+    catch (e) { // the list was renamed or deleted in Google: make a fresh one and try once more
+      if (e && e.code === 'tool_error' && /not_app_list|not_found/.test(String(e.message || ''))) { FL_GT.list = ''; FL_GT.list = ((await mcp.callTool('Google Tasks', 'get_list', {})).payload || {}).id || ''; return (await mcp.callTool('Google Tasks', tool, { ...input, listId: FL_GT.list })).payload || {}; }
+      throw e;
+    }
+  }
+  const flGtBody = (b, t) => ({ title: t.label, due: t.due || '', completed: !!t.done, notes: `For ${typeof bookingName === 'function' ? bookingName(b) : showName(b)}${b.date ? ` (show ${fmtD(b.date)})` : ''}.\nOpen Set & Settled: https://setnsettled.com` });
+  async function flGtAdd(bid, key, quiet) {
+    const b = flBk().find(x => x.id === bid), t = b && tasksOf(b).find(x => x.key === key); if (!t) return false;
+    try {
+      const r = await flGtCall('create_task', flGtBody(b, t));
+      if (!r.id) throw { code: 'unavailable' };
+      await window.patch('bookings', bid, { taskG: { [key]: { id: r.id, link: r.link || '', sig: flGtSig(t), at: r.updated || new Date().toISOString() } } });
+      if (!quiet) toast('Added to Google Tasks'); return true;
+    } catch (e) { console.error(e); if (!quiet) flGtErr(e); return false; }
+  }
+  async function flGtRemove(bid, key, quiet, keepOff) {
+    const b = flBk().find(x => x.id === bid), g = b && (b.taskG || {})[key];
+    try { if (g && g.id) await flGtCall('delete_task', { taskId: g.id }); }
+    catch (e) { console.error(e); if (!quiet) flGtErr(e); return false; }
+    await window.patch('bookings', bid, { taskG: { [key]: keepOff ? { id: '', link: '', off: true } : null } });
+    if (!quiet) toast('Taken out of Google Tasks'); return true;
+  }
+  // app → Google: push changes; add new tasks automatically when that's turned on
+  async function flGtSweep() {
+    if (Date.now() - FL_GT.at < 1500) { if (!FL_GT.t) FL_GT.t = setTimeout(() => { FL_GT.t = 0; flGtSweep(); }, 1600); return; }
+    FL_GT.at = Date.now();
+    let books = []; try { books = flBk(); } catch (_) { return; }
+    let added = 0;
+    for (const b of books) {
+      const tg = b.taskG || {}, lost = flKind(b.status) === 'lost', ts = tasksOf(b);
+      for (const [key, g] of Object.entries(tg)) {
+        if (!g || !g.id || FL_GT.busy.has(b.id + key)) continue;
+        const t = ts.find(x => x.key === key), k2 = b.id + key;
+        if (!t || lost) { FL_GT.busy.add(k2); flGtRemove(b.id, key, true).finally(() => FL_GT.busy.delete(k2)); continue; }
+        const sig = flGtSig(t); if (sig === g.sig) continue;
+        FL_GT.busy.add(k2);
+        flGtCall('update_task', { taskId: g.id, ...flGtBody(b, t) })
+          .then(r => window.patch('bookings', b.id, { taskG: { [key]: { ...g, sig, at: r.updated || new Date().toISOString() } } }))
+          .catch(async e => { if (e && e.code === 'tool_error' && /not_found/.test(String(e.message || ''))) await window.patch('bookings', b.id, { taskG: { [key]: null } }); else { console.error(e); flGtErr(e); } })
+          .finally(() => FL_GT.busy.delete(k2));
+      }
+      if (FL_GT.auto && !lost && added < 10) for (const t of ts) {
+        if (added >= 10) break;
+        if (t.done || !t.due || t.due < todayStr() || tg[t.key] || FL_GT.busy.has(b.id + t.key)) continue;
+        added++; const k2 = b.id + t.key; FL_GT.busy.add(k2); flGtAdd(b.id, t.key, true).finally(() => FL_GT.busy.delete(k2));
+      }
+    }
+  }
+  // Google → app: ticked or unticked in Google Tasks
+  async function flGtPull(force) {
+    if (FL_GT.pulling || (!force && (document.hidden || Date.now() - FL_GT.pulled < 180000))) return;
+    let mapped = []; try { mapped = flBk().flatMap(b => Object.entries(b.taskG || {}).filter(([, g]) => g && g.id).map(([key, g]) => ({ b, key, g }))); } catch (_) { return; }
+    if (!mapped.length) return;
+    FL_GT.pulling = true; FL_GT.pulled = Date.now();
+    try {
+      const items = (await flGtCall('list_tasks', {})).tasks || [], byId = new Map(items.map(x => [x.id, x]));
+      for (const { b, key, g } of mapped) {
+        const it = byId.get(g.id), t = tasksOf(flBk().find(x => x.id === b.id) || b).find(x => x.key === key);
+        if (!t) continue;
+        if (!it || it.deleted) { await window.patch('bookings', b.id, { taskG: { [key]: { id: '', link: '', off: true } } }); continue; } // deleted in Google: just unlink
+        const gDone = it.status === 'completed'; if (gDone === !!t.done || String(it.updated || '') <= String(g.at || '')) continue;
+        await setTask(b.id, key, gDone); syncChecks(b.id, key, gDone);
+        await window.patch('bookings', b.id, { taskG: { [key]: { ...g, sig: flGtSig({ ...t, done: gDone }), at: it.updated } } });
+        toast(`${gDone ? 'Done' : 'Not done'} in Google Tasks: ${t.label}`);
+      }
+    } catch (e) { console.error(e); } finally { FL_GT.pulling = false; }
+  }
+  function flGtHook() {
+    if (FL.gtHooked || !st.db) return; FL.gtHooked = true;
+    st.db.doc('settings/gtasks').onSnapshot(s => { FL_GT.auto = !!(s.exists && s.data().auto); if (FL_GT.auto) flGtSweep(); }, () => {});
+    setInterval(() => flGtPull(), 60000); window.addEventListener('focus', () => flGtPull(true)); setTimeout(() => flGtPull(true), 4000);
+  }
+  // the task screen: a Google Tasks row under the Google Calendar row; the checklist shows ☑︎ on tasks that are in Google Tasks
+  function flGtRow(root) {
+    const bid = root.dataset && root.dataset.booking;
+    if (bid) {
+      const b = flBk().find(x => x.id === bid), tg = (b && b.taskG) || {};
+      root.querySelectorAll('[data-topen]').forEach(x => {
+        const v = x.dataset.topen, key = v.slice(v.indexOf(':') + 1), on = !!(tg[key] && tg[key].id), mark = x.querySelector('.ssx-gtmark');
+        if (on && !mark) x.insertAdjacentHTML('beforeend', ' <span class="ssx-gtmark" title="In Google Tasks" aria-label="In Google Tasks">☑︎</span>');
+        if (!on && mark) mark.remove();
+      });
+      return;
+    }
+    const dIn = root.querySelector('#ts-d'), lab = root.querySelector('#ts-l'), cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key;
+    if (!dIn || !lab || !cur || !/^t:/.test(cur)) return;
+    const rest = cur.slice(2), i = rest.indexOf(':'), tbid = rest.slice(0, i), key = rest.slice(i + 1);
+    let box = root.querySelector('.ssx-gt');
+    if (!box) { box = document.createElement('div'); box.className = 'f ssx-tcal ssx-gt'; const after = root.querySelector('.ssx-tcal:not(.ssx-gt)') || dIn.closest('.f') || dIn; after.after(box); }
+    const b = flBk().find(x => x.id === tbid), g = b && (b.taskG || {})[key], on = !!(g && g.id), state = (on ? 'on' : 'off') + (FL_GT.auto ? 'A' : '');
+    if (box.dataset.state === state) return; box.dataset.state = state;
+    box.innerHTML = `<label>Google Tasks</label><div class="ssx-tcal-row">${on
+      ? `<span class="note">In your Google Tasks ("Set & Settled" list). Tick it off there or here.${g.link ? ` <a href="${esc(g.link)}" target="_blank" rel="noopener">Open in Google Tasks</a>` : ''}</span><button type="button" class="btn small" data-gt-off>Take it out</button>`
+      : `<button type="button" class="btn small" data-gt-on>＋ Add to Google Tasks</button><span class="note">Shows in Google Tasks and on Google Calendar's task list. Tick it off in either place.</span>`}</div>
+      <label class="note ssx-gt-auto"><input type="checkbox" data-gt-auto ${FL_GT.auto ? 'checked' : ''}> Add every task with a due date to Google Tasks automatically</label>`;
+    const on1 = box.querySelector('[data-gt-on]'), off1 = box.querySelector('[data-gt-off]'), auto = box.querySelector('[data-gt-auto]');
+    const ready = async () => !(window.SS && typeof SS.ensureGoogle === 'function') || await SS.ensureGoogle('tasks');
+    if (on1) on1.onclick = async () => {
+      if (dIn.value && dIn.value !== (tasksOf(b).find(x => x.key === key) || {}).due) { toast('Tap Save first so the new due date is used, then add it to Google Tasks'); return; }
+      if (!(await ready())) return;
+      on1.disabled = true; on1.textContent = 'Adding…'; const ok = await flGtAdd(tbid, key);
+      if (!ok) { on1.disabled = false; on1.textContent = '＋ Add to Google Tasks'; } else delete box.dataset.state;
+    };
+    if (off1) off1.onclick = async () => { off1.disabled = true; off1.textContent = 'Removing…'; await flGtRemove(tbid, key, false, true); delete box.dataset.state; off1.disabled = false; off1.textContent = 'Take it out'; };
+    auto.onchange = async () => {
+      if (auto.checked && !(await ready())) { auto.checked = false; return; }
+      try { if (!(await window.save('settings', 'gtasks', { auto: auto.checked }))) throw 0; toast(auto.checked ? 'New tasks with a due date will go to Google Tasks' : 'Tasks will only go to Google Tasks when you add them'); }
+      catch (e) { auto.checked = !auto.checked; toast("Couldn't save that. Check your connection and try again."); }
+    };
+  }  
   function flScan() {
     FL.raf = 0;
     for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards]) { try { f(); } catch (e) { console.error(e); } }
