@@ -2796,6 +2796,8 @@ function appExtras() {
         add.push({ ...it, id: `${base}:r${d}`, at: d, body: paid ? `${it.show} still isn't marked Paid. Did you get paid?` : `Still open: "${it.label}" for ${it.show}.` });
     }
     try { flPlan(true).filter(p => p.due >= t && p.due <= end).forEach(p => add.push({ id: `post:${p.b.id}:${p.kind}:${p.due}`.slice(0, 120), at: p.due, bookingId: p.b.id, key: 'post_' + p.kind, label: `Post: ${FL_POSTS[p.kind][0]}`, show: bookingName(p.b).slice(0, 80), showDate: p.b.date || '', body: `Time to post about ${bookingName(p.b)}: ${FL_POSTS[p.kind][1]}. Your caption is ready in Media.` })); } catch (_) {}
+    // reach-out follow-ups join the same reminders (phone/laptop alerts and the email digest)
+    try { for (const { c: fc, l } of flFuOpen()) if (l.follow <= end) add.push({ id: `fu:${fc.id}:${l.id}:${l.follow}`.slice(0, 120), at: l.follow < t ? t : l.follow, kind: 'note', show: 'Follow-ups', body: `Follow up with ${cName(fc)}. You last reached out ${flRoShort(l.at)} by ${flRoVia(l.via).toLowerCase()}.` }); } catch (_) {}
     out.push(...add);
   }
 
@@ -4360,7 +4362,8 @@ function appExtras() {
       else if (e.target.closest('[data-ro-clear]')) { if (await flRoEdit(cid, id, { follow: '' })) toast('No follow-up needed'); }
       else if (e.target.closest('[data-ro-del]')) {
         const c = contact(cid), before = flRoList(c);
-        if (await flRoSave(cid, before.filter(x => x.id !== id))) toast('Reach-out deleted', async () => { await flRoSave(cid, before); toast('Put back'); });
+        if (l.g && l.g.id) flGtCall('delete_task', { taskId: l.g.id }).catch(() => {}); // its Google Task goes too
+        if (await flRoSave(cid, before.filter(x => x.id !== id))) toast('Reach-out deleted', async () => { await flRoSave(cid, before.map(x => x.id === id ? { ...x, g: null } : x)); toast('Put back'); });
       }
     };
     box.onchange = async e => {
@@ -4931,11 +4934,111 @@ function appExtras() {
     if (FL.welcomed || !st.db) return; FL.welcomed = true;
     st.db.doc('settings/welcome').get().then(s => { if (!s.exists) return sb.functions.invoke('welcome', { body: {} }); }).catch(() => {});
   }
+  /* -- Follow-ups from Reach-outs work like tasks: they show in Tasks (a "Follow-ups" group), in your reminders, and in Google Tasks
+     (added on their own when "Add every task with a due date" is on, or with one tap on the person's profile). Ticking one off anywhere,
+     here or in Google Tasks, clears it. The Google link is saved on the reach-out as g = { id, link, sig, at } ({ off: true } = deleted in Google). */
+  const FL_FU = { at: 0, t: 0, pulled: 0, pulling: false, hooked: false };
+  const flFuTitle = c => `Follow up with ${cName(c)}`;
+  const flFuOpen = () => S.contacts.map(c => { const l = flRoNext(c); return l ? { c, l } : null; }).filter(Boolean).sort((a, b) => a.l.follow.localeCompare(b.l.follow));
+  const flFuSub = l => `${flRoVia(l.via)} on ${flRoShort(l.at)}${l.note ? ' · ' + l.note : ''}`;
+  const flFuBody = (c, l, done) => ({ title: flFuTitle(c), due: done ? '' : (l.follow || ''), completed: !!done, notes: `Last reached out ${flRoShort(l.at)} by ${flRoVia(l.via).toLowerCase()}${l.note ? `: ${l.note}` : ''}.\nOpen Set & Settled: https://setnsettled.com` });
+  const flFuSig = (c, l, done) => `${done ? '' : l.follow || ''}|${cName(c)}|${done ? 1 : 0}`;
+  async function flFuDone(cid, lid) {
+    const l = flRoList(contact(cid)).find(x => x.id === lid); if (!l) return;
+    if (await flRoEdit(cid, lid, { follow: '', fuDone: todayStr() })) toast('Follow-up done', async () => { if (await flRoEdit(cid, lid, { follow: l.follow, fuDone: '' })) toast('Follow-up back on'); });
+  }
+  async function flFuAdd(cid, quiet) {
+    const c = contact(cid), l = c && flRoNext(c); if (!l) return false;
+    try {
+      const r = await flGtCall('create_task', flFuBody(c, l, false)); if (!r.id) throw { code: 'unavailable' };
+      await flRoEdit(cid, l.id, { g: { id: r.id, link: r.link || '', sig: flFuSig(c, l, false), at: r.updated || new Date().toISOString() } });
+      if (!quiet) toast('Follow-up added to Google Tasks'); return true;
+    } catch (e) { console.error(e); if (!quiet) flGtErr(e); return false; }
+  }
+  // app → Google: follow the dates and done state; add new follow-ups automatically when that's on
+  function flFuSweep() {
+    if (!FL_GT.loaded || !st.db) return;
+    if (Date.now() - FL_FU.at < 2000) { if (!FL_FU.t) FL_FU.t = setTimeout(() => { FL_FU.t = 0; flFuSweep(); }, 2100); return; }
+    FL_FU.at = Date.now(); let added = 0;
+    for (const c of S.contacts) {
+      const next = flRoNext(c);
+      for (const l of flRoList(c)) {
+        const g = l.g, k = 'fu' + l.id; if (!g || !g.id || FL_GT.busy.has(k)) continue;
+        const done = !next || next.id !== l.id, sig = flFuSig(c, l, done); if (sig === g.sig) continue;
+        FL_GT.busy.add(k);
+        flGtCall('update_task', { taskId: g.id, ...flFuBody(c, l, done) })
+          .then(r => flRoEdit(c.id, l.id, { g: { ...g, sig, at: r.updated || new Date().toISOString() } }))
+          .catch(async e => { if (e && e.code === 'tool_error' && /not_found/.test(String(e.message || ''))) await flRoEdit(c.id, l.id, { g: { id: '', off: true } }); else { console.error(e); flGtErr(e); } })
+          .finally(() => FL_GT.busy.delete(k));
+      }
+      if (FL_GT.auto && next && next.follow >= todayStr() && !(next.g && (next.g.id || next.g.off)) && added < 10 && !FL_GT.busy.has('fu' + next.id)) {
+        added++; const k = 'fu' + next.id; FL_GT.busy.add(k); flFuAdd(c.id, true).finally(() => FL_GT.busy.delete(k));
+      }
+    }
+  }
+  // Google → app: ticked off in Google Tasks clears the follow-up here; deleted there just unlinks it
+  async function flFuPull(force) {
+    if (FL_FU.pulling || (!force && (document.hidden || Date.now() - FL_FU.pulled < 180000))) return;
+    const mapped = S.contacts.flatMap(c => flRoList(c).filter(l => l.g && l.g.id).map(l => ({ c, l }))); if (!mapped.length) return;
+    FL_FU.pulling = true; FL_FU.pulled = Date.now();
+    try {
+      const items = (await flGtCall('list_tasks', {})).tasks || [], byId = new Map(items.map(x => [x.id, x]));
+      for (const { c, l } of mapped) {
+        const it = byId.get(l.g.id);
+        if (!it || it.deleted) { await flRoEdit(c.id, l.id, { g: { id: '', off: true } }); continue; }
+        const next = flRoNext(contact(c.id) || c);
+        if (it.status === 'completed' && next && next.id === l.id && String(it.updated || '') > String(l.g.at || '')) {
+          await flRoEdit(c.id, l.id, { follow: '', fuDone: todayStr(), g: { ...l.g, sig: flFuSig(c, l, true), at: it.updated } });
+          toast(`Done in Google Tasks: ${flFuTitle(c)}`);
+        }
+      }
+    } catch (e) { console.error(e); } finally { FL_FU.pulling = false; }
+  }
+  function flFuHook() {
+    if (FL_FU.hooked || !st.db) return; FL_FU.hooked = true;
+    setInterval(() => flFuPull(), 60000); window.addEventListener('focus', () => flFuPull(true)); setTimeout(() => flFuPull(true), 6000);
+  }
+  // Tasks page: a "Follow-ups" group at the top (open tasks, no event or stage filter)
+  function flFuTasks() {
+    const host = document.getElementById('tList'); if (!host || typeof TF === 'undefined') return;
+    const t0 = todayStr(), w = addDays(t0, 7), m = addDays(t0, 30);
+    const okWhen = d => { switch (TF.when) { case 'late': return d < t0; case 'today': return d === t0; case 'week': return d >= t0 && d <= w; case 'month': return d >= t0 && d <= m; case 'nodate': return false; case 'custom': return d >= (TF.from || '0000') && d <= (TF.to || '9999'); default: return true; } };
+    const list = TF.show === 'done' || TF.event || TF.stage !== 'all' ? [] : flFuOpen().filter(x => okWhen(x.l.follow));
+    const sig = JSON.stringify([list.map(x => [x.c.id, x.l.id, x.l.follow]), TF.show, TF.when]);
+    let box = host.querySelector('.ssx-fu-tasks');
+    if (box && box.dataset.sig === sig) return;
+    if (box) box.remove(); if (!list.length) return;
+    box = document.createElement('div'); box.className = 'list ssx-fu-tasks'; box.dataset.sig = sig;
+    box.innerHTML = `<div class="tgrp">Follow-ups</div>${list.map(({ c, l }) => { const late = l.follow < t0, soon = !late && l.follow <= addDays(t0, 3);
+      return `<div class="row trow" style="cursor:default"><input type="checkbox" class="tcb" data-fu="${esc(c.id)}|${esc(l.id)}" aria-label="${esc(flFuTitle(c))}">
+        <button class="main tmain" data-reach="${esc(c.id)}"><span class="t" style="display:block">${esc(flFuTitle(c))}</span><span class="sub" style="display:block">${esc(flFuSub(l))}${l.g && l.g.id ? ' · ☑︎ Google Tasks' : ''}</span></button>
+        <span class="duepill ${late ? 'late' : soon ? 'soon' : ''}">${late ? 'Overdue · ' : ''}${esc(flRoShort(l.follow))}</span></div>`; }).join('')}`;
+    host.prepend(box);
+    box.querySelectorAll('[data-fu]').forEach(x => x.onchange = () => { const [cid, lid] = x.dataset.fu.split('|'); flFuDone(cid, lid); });
+  }
+  // the person's profile: Google Tasks status for their follow-up, or one tap to add it
+  function flFuRow(root) {
+    const ro = root.querySelector('.ssx-ro'), sum = ro && ro.querySelector('.ssx-ro-sum'); if (!sum) return;
+    const cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key, c = cur && /^r:/.test(cur) && contact(cur.slice(2)); if (!c) return;
+    const l = flRoNext(c), linked = !!(l && l.g && l.g.id), past = !!(l && l.follow < todayStr());
+    const state = !l ? '' : [linked ? 'in' : 'out', FL_GT.auto ? 'A' : '', past ? 'P' : '', l.id, l.follow].join('|');
+    let row = ro.querySelector('.ssx-fu-g');
+    if (!state) { if (row) row.remove(); return; }
+    if (row && row.dataset.state === state) return;
+    if (!row) { row = document.createElement('div'); row.className = 'ssx-fu-g'; sum.after(row); }
+    row.dataset.state = state;
+    row.innerHTML = linked ? `<span class="note">☑︎ This follow-up is in your Google Tasks${l.g.link ? `: <a href="${esc(l.g.link)}" target="_blank" rel="noopener">open it</a>` : ''}. Tick it off there or here.</span><button type="button" class="btn small" data-fu-done>Mark done</button>`
+      : FL_GT.auto && !past ? `<span class="note">Goes to your Google Tasks on its own, due ${esc(flRoShort(l.follow))}.</span><button type="button" class="btn small" data-fu-done>Mark done</button>`
+      : `<button type="button" class="btn small" data-fu-add>＋ Add follow-up to Google Tasks</button><button type="button" class="btn small" data-fu-done>Mark done</button>`;
+    const add = row.querySelector('[data-fu-add]'), done = row.querySelector('[data-fu-done]');
+    if (add) add.onclick = async () => { if (!(await flGtReady())) return; add.disabled = true; add.textContent = 'Adding…'; if (!(await flFuAdd(c.id))) { add.disabled = false; add.textContent = '＋ Add follow-up to Google Tasks'; } };
+    done.onclick = () => flFuDone(c.id, l.id);
+  }
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
-    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet, flGtRow, flBookForm, flBfView]) { try { f(root); } catch (e) { console.error(e); } } });
+    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet, flGtRow, flBookForm, flBfView, flFuRow]) { try { f(root); } catch (e) { console.error(e); } } });
   }
   function hookFlow() {
     if (window.__ssxFL || !st.db) return; window.__ssxFL = true;
