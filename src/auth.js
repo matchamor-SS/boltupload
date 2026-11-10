@@ -12,7 +12,7 @@ function frame(inner) {
     <section class="ss-auth-intro">
       <div class="eyebrow">For performers who book themselves</div>
       <h1>${APP}</h1>
-      <p class="ss-lead">From first pitch to final payout, all in one place.</p>
+      <p class="ss-lead">Do your thing. Consider it <span class="ss-gold">settled.</span></p>
       <ul class="ss-points">
         <li>Bookings, stages and checklists with due dates</li>
         <li>Availability that checks your Google Calendar</li>
