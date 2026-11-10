@@ -1110,3 +1110,5 @@ html body .ssx-mn-in { width: 120px; min-width: 0; }
 html body .ssx-mn-act { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 0 8px; }
 html body .ivp-bg { z-index: 10000 !important; }
 html body #ss-auth ~ #composeRoot { z-index: 45 !important; }
+/* Invoice preview opens on top of everything, full screen (beats the sign-in screen's rule that puts added windows in the page flow) */
+html body #ss-auth ~ .ivp-bg, html body .ivp-bg { position: fixed !important; top: 0 !important; right: 0 !important; bottom: 0 !important; left: 0 !important; z-index: 10000 !important; display: flex !important; flex-direction: column; }
