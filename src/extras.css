@@ -1127,3 +1127,17 @@ html body .ssx-as-got > span { padding: 3px 10px; border-radius: 999px; backgrou
 html body .ssx-as-past { padding: 10px 12px; margin: 4px 0 12px; border-radius: 12px; border: 1px solid color-mix(in srgb, #f5a524 55%, var(--line)); background: color-mix(in srgb, #f5a524 10%, transparent); }
 /* Learned defaults note */
 html body .ssx-learn { margin: -2px 0 10px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 8%, transparent); }
+/* Menu sections, the switch on grouped pages, and the Messages & templates card in People */
+html[class] body #tabs.tabs button.ssx-navhide.ssx-navhide, html body #tabs.tabs button.ssx-navhide.ssx-navhide { display: none !important; }
+html body .ssx-subnav { align-self: flex-start; display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; margin: 0 0 14px; border-radius: 999px; border: 1px solid var(--line); background: color-mix(in srgb, var(--ink) 4%, transparent); max-width: 100%; box-sizing: border-box; }
+html body .ssx-subnav button { border: 0; background: none; color: inherit; font: inherit; font-size: 14px; padding: 7px 14px; border-radius: 999px; cursor: pointer; min-height: 36px; }
+html body .ssx-subnav button[aria-selected="true"] { background: var(--surface, #fff); box-shadow: 0 1px 3px rgba(0,0,0,.15); font-weight: 600; }
+html body .ssx-subnav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+html body .ssx-msgcard { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; cursor: pointer; color: inherit; font: inherit; margin: 0 0 14px; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); }
+html body .ssx-msgcard-ic { font-size: 22px; flex: none; }
+html body .ssx-msgcard-tx { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+html body .ssx-msgcard-tx .note { margin: 0; }
+html body .ssx-msgcard-go { font-size: 22px; opacity: .6; flex: none; }
+html body .ssx-backto { align-self: flex-start; margin: 0 0 8px; }
+html body section[data-view] > .ssx-subnav, html body section[data-view] > .ssx-msgcard { order: 0 !important; }
+html body section[data-view] > .ssx-backto { order: -2 !important; }
