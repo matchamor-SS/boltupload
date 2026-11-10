@@ -1089,7 +1089,7 @@ function appExtras() {
     try { L.push(...apPacket(R).lines); } catch (_) {}
     L.push('', 'BRING THESE TOO (the app does not track them)', '  - Home studio or office: square footage of the space used only for work, and of the whole home.', '  - Phone and internet: rough percentage used for work.', '  - Health insurance premiums you paid yourself, and retirement contributions (SEP-IRA, Solo 401(k)).', '  - Big gear purchases: your preparer can deduct them all this year or spread them out (depreciation / Section 179).', '  - Any W-2 jobs and other 1099s.', '');
     L.push('KEEPING RECORDS', '  The IRS generally asks you to keep records and receipts for 3 years after you file; many preparers suggest 7. Your receipts stay in Google Drive under Business / <year> / Receipts.', '');
-    L.push('This packet organizes your records; it is not tax advice. Line numbers refer to the federal IRS Schedule C.     L.push('This packet organizes your records; it is not tax advice. Line numbers refer to the federal IRS Schedule C. Most states start from the same federal figures and then adjust some items on their own return.'); on Form 540 and adjusts some items on Schedule CA.');
+    L.push('This packet organizes your records; it is not tax advice. Line numbers refer to the federal IRS Schedule C. Most states start from the same federal figures and then adjust some items on their own return.');
     return { R, d, slug, exps, invs: [...invs, ...owedInvs], idxCsv: csv(idx), readme: L.join('\r\n'), summary: taxHtml(d), txCsv: taxCsv(d) };
   }
   const catLine = k => { try { const c = (ECATS || []).find(x => x[0] === k); return c ? c[2] : 'Line 27a Other expenses'; } catch (_) { return ''; } };
