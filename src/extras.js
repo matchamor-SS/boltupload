@@ -640,10 +640,13 @@ function appExtras() {
     return { cur, target, start, pct, done, pace, onTrack };
   }
   const stepWhen = d => { const n = daysBetween(todayStr(), d); return n === 0 ? 'due today' : n === 1 ? 'due tomorrow' : n > 1 ? `due ${prettyDate(d)} (${n} days)` : `was due ${prettyDate(d)}`; };
-  // even spacing from today to the goal date, for steps that don't have a date yet
+  // steps in date order: soonest first, steps without a date after, finished steps last
+  const stepSort = steps => steps.map((x, i) => [x, i]).sort((a, b) => (a[0].done ? 1 : 0) - (b[0].done ? 1 : 0) || String(a[0].due || '9999').localeCompare(String(b[0].due || '9999')) || a[1] - b[1]).map(p => p[0]);
+  // even spacing from today to the goal date: fills the steps without a date; if every step has one, spaces them all out again
   const spreadDates = (steps, goalDue) => {
-    const t0 = todayStr(), end = goalDue && goalDue > t0 ? goalDue : addDays(t0, 7 * steps.length), total = Math.max(steps.length, daysBetween(t0, end));
-    return steps.map((x, i) => x.done || x.due ? x : { ...x, due: addDays(t0, Math.max(0, Math.round(total * (i + 1) / steps.length))) });
+    const t0 = todayStr(), end = goalDue && goalDue > t0 ? goalDue : addDays(t0, 7 * steps.length);
+    const open = steps.filter(x => !x.done), redo = open.some(x => !x.due) ? open.filter(x => !x.due) : open, total = Math.max(redo.length, daysBetween(t0, end));
+    return stepSort(steps.map(x => { const i = redo.indexOf(x); return i < 0 ? x : { ...x, due: addDays(t0, Math.max(1, Math.round(total * (i + 1) / redo.length))) }; }));
   };
   const spark = h => {
     if (!Array.isArray(h) || h.length < 2) return '';
@@ -658,7 +661,7 @@ function appExtras() {
     return `${fmtN(m.cur, g.unit === '$' ? '$' : '')} of ${fmtN(m.target, g.unit)} · counted from your bookings`;
   };
   const dueLine = g => { if (!g.due) return ''; const n = daysBetween(todayStr(), g.due); return `by ${prettyDate(g.due)}${n >= 0 ? ` (${n} day${n === 1 ? '' : 's'} left)` : ''}`; };
-  const goalsSorted = () => [...(st.goals || [])].sort((a, b) => (a.archived ? 1 : 0) - (b.archived ? 1 : 0) || String(a.due || '9999').localeCompare(String(b.due || '9999')) || String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  const goalsSorted = () => [...(st.goals || [])].sort((a, b) => (a.archived ? 1 : 0) - (b.archived ? 1 : 0) || (measure(a).done ? 1 : 0) - (measure(b).done ? 1 : 0) || String(a.due || '9999').localeCompare(String(b.due || '9999')) || String(a.createdAt || '').localeCompare(String(b.createdAt || ''))); // soonest due first, finished goals last
   const saveGoal = (id, data) => st.db.collection('goals').doc(id).set(data).catch(() => note('goals', "Couldn't save the goal. " + OFFLINE, true));
 
   function goalForm(f) {
@@ -690,10 +693,10 @@ function appExtras() {
       <div class="ssx-row"><button type="button" class="btn primary small" data-ssx-gsave>${f.id ? 'Save goal' : 'Add goal'}</button><button type="button" class="btn small" data-ssx-gcancel>Cancel</button></div>
     </div>`;
   }
-  function renderGoals() {
+  function renderGoals(force) {
     const host = document.getElementById('ssx-host-goals'); if (!host || !st.db) return;
     const ae = document.activeElement;
-    if (ae && host.contains(ae) && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && /^(text|search|)$/.test(ae.type)))) { if (!ae.__ssxg) { ae.__ssxg = 1; ae.addEventListener('blur', () => setTimeout(() => { ae.__ssxg = 0; renderGoals(); }, 600), { once: true }); } return; }
+    if (!force && ae && host.contains(ae) && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && /^(text|search|)$/.test(ae.type)))) { if (!ae.__ssxg) { ae.__ssxg = 1; ae.addEventListener('blur', () => setTimeout(() => { ae.__ssxg = 0; renderGoals(); }, 600), { once: true }); } return; }
     let prof = {}; try { prof = S.profile || {}; } catch (_) {}
     const goals = goalsSorted();
     host.innerHTML = `<div class="card ssx" id="ssx-goals">
@@ -713,7 +716,7 @@ function appExtras() {
       <div class="note">${esc(goalLine(g, m))}${g.due ? ' · ' + esc(dueLine(g)) : ''}</div>
       ${m.pace ? `<div class="note ${m.onTrack === false ? 'ssx-warn' : ''}">${esc(m.pace)}${m.onTrack === true ? ' · on track ✓' : m.onTrack === false ? ' · behind pace' : ''}</div>` : ''}
       ${g.type === 'metric' ? spark(g.history) : ''}
-      ${g.type === 'steps' ? `<div class="ssx-steps">${(g.steps || []).map((x, i) => { const late = !x.done && x.due && x.due < todayStr(); return `<label class="ssx-check ssx-stepchk${x.done ? ' done' : ''}"><input type="checkbox" data-ssx-gstep="${i}" ${x.done ? 'checked' : ''}> <span class="ssx-st-name">${esc(x.t)}</span>${x.due ? `<span class="ssx-due${late ? ' late' : ''}">${esc(x.done ? prettyDate(x.due) : stepWhen(x.due))}</span>` : ''}</label>`; }).join('')}</div>` : ''}
+      ${g.type === 'steps' ? `<div class="ssx-steps">${stepSort((g.steps || []).map((x, i) => ({ ...x, _i: i }))).map(x => { const i = x._i, late = !x.done && x.due && x.due < todayStr(); return `<label class="ssx-check ssx-stepchk${x.done ? ' done' : ''}"><input type="checkbox" data-ssx-gstep="${i}" ${x.done ? 'checked' : ''}> <span class="ssx-st-name">${esc(x.t)}</span>${x.due ? `<span class="ssx-due${late ? ' late' : ''}">${esc(x.done ? prettyDate(x.due) : stepWhen(x.due))}</span>` : ''}</label>`; }).join('')}</div>` : ''}
       <div class="ssx-row">
         ${g.type === 'metric' ? `<input class="ssx-gval" type="text" inputmode="decimal" placeholder="New number" aria-label="New number for ${esc(g.title)}" id="ssx-gval-${esc(g.id)}"><button type="button" class="btn primary small" data-ssx-gupd>Update</button>` : ''}
         ${g.type === 'check' ? `<button type="button" class="btn ${g.done ? '' : 'primary'} small" data-ssx-gcheck>${g.done ? 'Mark not done' : 'Mark done'}</button>` : ''}
@@ -741,7 +744,8 @@ function appExtras() {
       const d = document.getElementById('ssx-g-due'), ti = document.getElementById('ssx-g-title'); if (d) f.g.due = d.value; if (ti) f.g.title = ti.value; };
     const sadd = q('[data-ssx-sadd]'); if (sadd) sadd.onclick = e => { e.stopPropagation(); readRows(); GS.form.g.steps = [...GS.form.g.steps, { t: '', due: '', done: false }].slice(0, 30); renderGoals(); const all = host.querySelectorAll('.ssx-st-t'); all.length && all[all.length - 1].focus(); };
     host.querySelectorAll('[data-ssx-srm]').forEach(b => b.onclick = e => { e.stopPropagation(); readRows(); GS.form.g.steps = GS.form.g.steps.filter((_, i) => i !== Number(b.dataset.ssxSrm)); renderGoals(); });
-    const spr = q('[data-ssx-sspread]'); if (spr) spr.onclick = e => { e.stopPropagation(); readRows(); const st3 = GS.form.g.steps.filter(x => x.t.trim()); if (!st3.length) return note('goalform', 'Add a step first.', true); GS.form.g.steps = spreadDates(st3, GS.form.g.due); renderGoals(); note('goalform', GS.form.g.due ? 'Dates spread out evenly up to the goal date. Change any of them.' : 'Dates spread one week apart. Add a goal date to fit them before it.'); };
+    const spr = q('[data-ssx-sspread]'); if (spr) spr.onclick = e => { e.stopPropagation(); readRows(); const st3 = GS.form.g.steps.filter(x => x.t.trim()); if (!st3.length) return note('goalform', 'Type at least one step first, then tap Fill in dates for me.', true); const had = st3.some(x => !x.done && !x.due); GS.form.g.steps = spreadDates(st3, GS.form.g.due); try { document.activeElement && document.activeElement.blur(); } catch (_) {} renderGoals(true); note('goalform', !had ? 'Every step had a date, so they\'re spaced out evenly again, soonest first.' : GS.form.g.due ? 'Dates filled in up to the goal date, soonest first. Change any of them.' : 'Dates filled in one week apart, soonest first. Add a goal date to fit them before it.'); };
+    host.querySelectorAll('.ssx-st-d').forEach(d => d.onchange = () => { readRows(); GS.form.g.steps = stepSort(GS.form.g.steps); renderGoals(true); }); // picking a date moves the step into date order
     const save = q('[data-ssx-gsave]'); if (save) save.onclick = e => {
       readRows();
       e.stopPropagation(); const f = GS.form, g = f.g, v = id => (document.getElementById(id) || {}).value || '';
@@ -759,7 +763,7 @@ function appExtras() {
       }
       if (g.type === 'auto') { const target = num(v('ssx-g-target')); if (!(target > 0)) return bad('Add a target number.'); out.target = target; out.from = `${(due || endOfYear()).slice(0, 4)}-01-01`; }
       if (g.type === 'steps') {
-        out.steps = (g.steps || []).map(x => ({ t: String(x.t || '').trim().slice(0, 120), due: /^\d{4}-\d{2}-\d{2}$/.test(x.due || '') ? x.due : '', done: !!x.done })).filter(x => x.t).slice(0, 30);
+        out.steps = stepSort((g.steps || []).map(x => ({ t: String(x.t || '').trim().slice(0, 120), due: /^\d{4}-\d{2}-\d{2}$/.test(x.due || '') ? x.due : '', done: !!x.done })).filter(x => x.t).slice(0, 30));
         if (!out.steps.length) return bad('Add at least one step.');
         const late = due && out.steps.find(x => x.due && x.due > due);
         if (late) return bad(`"${late.t}" is due after the goal date. Move it to ${prettyDate(due)} or earlier.`);
@@ -5154,7 +5158,7 @@ function appExtras() {
           <span class="ssx-wr-ic" aria-hidden="true">${x.done ? '✓' : x.skipped ? '–' : x.icon}</span>
           <span class="ssx-wr-tx">${esc(x.label)}${x.note ? `<span class="note">${esc(x.note)}</span>` : x.skipped ? '<span class="note">Skipped</span>' : ''}</span>
           <span class="ssx-wr-bt">${x.done && !x.keep ? '' : x.skipped ? '<button type="button" class="btn small" data-wr-undo>Bring back</button>' : `${x.go || x.mark ? `<button type="button" class="btn small${x.done ? '' : ' primary'}" data-wr-go>${esc(x.btn)}</button>` : ''}${x.done ? '' : `<button type="button" class="btn small ghost" data-wr-skip>${esc(x.skipLabel || 'Skip')}</button>`}`}</span></div>`).join('');
-        let ts = []; try { ts = tasksOf(b).filter(x => !x.done); } catch (_) {}
+        let ts = []; try { ts = tasksOf(b).filter(x => !x.done).sort((p, q) => String(p.due || '9999').localeCompare(String(q.due || '9999'))); } catch (_) {}
         root.querySelector('.ssx-wr-tasks').innerHTML = ts.length ? `<p class="eyebrow" style="margin:14px 0 6px">Still on this show's checklist</p>${ts.map(x => `<label class="ssx-wr-task"><input type="checkbox" class="tcb" data-wr-task="${esc(x.key)}"> <span>${esc(x.label)}${x.due ? ` <span class="note">${esc(nmWhen(x.due))}</span>` : ''}</span></label>`).join('')}` : '';
         root.querySelectorAll('.ssx-wr-row').forEach(row => {
           const x = steps[+row.dataset.i], go = row.querySelector('[data-wr-go]'), sk = row.querySelector('[data-wr-skip]'), un = row.querySelector('[data-wr-undo]');
@@ -5412,11 +5416,21 @@ function appExtras() {
     if (await window.patch('bookings', b.id, { status: k, stageAt: { ...(b.stageAt || {}), [k]: todayStr() }, updatedAt: new Date().toISOString() }))
       toast(kind === 'lost' ? `Released ${niceDate(b.date)}. It's open on your booking link again.` : `${bName(b)} is Confirmed`, async () => { await window.patch('bookings', b.id, { status: was }); });
   }
+  // a show's checklist lists its steps by due date: soonest first, no date after, done last
+  function flSortChecklist(root) {
+    root.querySelectorAll('.stg-b').forEach(box => {
+      const rows = [...box.children].filter(x => x.classList.contains('cl-row')); if (rows.length < 2) return;
+      const key = r => { const cb = r.querySelector('[data-btask]'), d = r.querySelector('.duein'); return `${cb && cb.checked ? 1 : 0}|${(d && d.value) || '9999'}`; };
+      const sorted = rows.map((r, i) => [r, key(r), i]).sort((a, b) => a[1].localeCompare(b[1]) || a[2] - b[2]).map(x => x[0]);
+      if (sorted.every((r, i) => r === rows[i])) return;
+      const anchor = rows[rows.length - 1].nextSibling; sorted.forEach(r => box.insertBefore(r, anchor));
+    });
+  }
   function flScan() {
     FL.raf = 0;
     for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, flRoTasksWrap, nmRender]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
-    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet2, flRoFormShow, flRoOutcome, flGtRow, flBookForm, flBfView, flFuRow2, nmWrapRow, flRoBookRow]) { try { f(root); } catch (e) { console.error(e); } } });
+    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet2, flRoFormShow, flRoOutcome, flGtRow, flBookForm, flBfView, flFuRow2, nmWrapRow, flRoBookRow, flSortChecklist]) { try { f(root); } catch (e) { console.error(e); } } });
   }
   function hookFlow() {
     if (window.__ssxFL || !st.db) return; window.__ssxFL = true;
