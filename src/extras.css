@@ -1098,3 +1098,15 @@ html body .ssx-bz-pay { display: flex; gap: 10px; align-items: center; flex-wrap
 html body .ssx-bz-from { margin: 4px 0 8px; }
 html body #bz-llcw[hidden] { display: none; }
 @media (max-width: 520px) { html body .ssx-bz-city { grid-template-columns: 1fr 1fr; } html body .ssx-bz-city > .f:first-child { grid-column: 1 / -1; } }
+/* Show money box, invoice preview on top, email window above other windows */
+html body .ssx-mn { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px; }
+html body .ssx-mn-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+html body .ssx-mn-row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+html body .ssx-mn-row .num { text-align: right; }
+html body .ssx-mn-row .num.out { color: var(--bad, #e5484d); }
+html body .ssx-mn-tot { font-weight: 700; }
+html body .ssx-mn-tag { display: inline-block; margin-left: 8px; font-size: 11px; font-weight: 500; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+html body .ssx-mn-in { width: 120px; min-width: 0; }
+html body .ssx-mn-act { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 0 8px; }
+html body .ivp-bg { z-index: 10000 !important; }
+html body #ss-auth ~ #composeRoot { z-index: 45 !important; }
