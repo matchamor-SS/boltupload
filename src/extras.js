@@ -5004,8 +5004,8 @@ function appExtras() {
   function flFuTasks() {
     const host = document.getElementById('tList'); if (!host || typeof TF === 'undefined') return;
     const t0 = todayStr(), w = addDays(t0, 7), m = addDays(t0, 30);
-    const okWhen = d => { switch (TF.when) { case 'late': return d < t0; case 'today': return d === t0; case 'week': return d >= t0 && d <= w; case 'month': return d >= t0 && d <= m; case 'nodate': return false; case 'custom': return d >= (TF.from || '0000') && d <= (TF.to || '9999'); default: return true; } };
-    const list = TF.show === 'done' || TF.event || TF.stage !== 'all' ? [] : flFuOpen().filter(x => okWhen(x.l.follow));
+    const okWhen = d => { switch (TF.when) { case 'late': return d < t0; case 'today': return d <= t0; case 'week': return d <= w; case 'month': return d <= m; case 'nodate': return false; case 'custom': return d >= (TF.from || '0000') && d <= (TF.to || '9999'); default: return true; } };
+    const list = TF.show === 'done' ? [] : flFuOpen().filter(x => okWhen(x.l.follow));
     const sig = JSON.stringify([list.map(x => [x.c.id, x.l.id, x.l.follow]), TF.show, TF.when]);
     let box = host.querySelector('.ssx-fu-tasks');
     if (box && box.dataset.sig === sig) return;
