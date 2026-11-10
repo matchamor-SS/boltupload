@@ -1487,28 +1487,48 @@ function reachSheet(cid){navSheet("r:"+cid,()=>reachSheet(cid));const c=contact(
   const ppl=isColl(c)?membersOf(c).filter(m=>m.email):[];
   const nb=nextBookingWith(c),aud=c.type==="media"?"media":"venue";
   const tpls=S.templates.filter(t=>(t.audience||"venue")===aud).sort((a,b)=>(nb&&b.stage===nb.status)-(nb&&a.stage===nb.status)||String(a.name).localeCompare(String(b.name)));
-  // one profile for each person or venue: who they are, how to reach them, reach-outs and notes up front; editing is a small button
+  // one profile for each person or venue: who they are, how to contact them (each way opens its own options), reach-outs and notes; editing is a small button
   const kind=c.type==="venue"&&c.vkind==="festival"?"Festival":c.type==="promoter"&&c.pkind==="collective"?"Collective":((CTYPES.find(t=>t[0]===c.type)||[,"Contact"])[1]||"Contact").split(" /")[0];
   const site=String(c.website||c.portfolio||"").trim(),siteHref=site?(/^https?:\/\//i.test(site)?site:"https://"+site):"",sub=cSub(c);
   const info=[email?`<a href="mailto:${esc(email)}">${esc(email)}</a>`:"",phone?`<a href="tel:${esc(phone)}">${esc(c.phone)}</a>`:"",ig?`<a href="https://instagram.com/${encodeURIComponent(ig)}" target="_blank" rel="noopener">@${esc(ig)}</a>`:"",site?`<a href="${esc(siteHref)}" target="_blank" rel="noopener">${esc(site.replace(/^https?:\/\//i,"").replace(/\/$/,""))}</a>`:"",c.address?addrLink(c.address):c.city?esc(c.city):""].filter(Boolean);
   const pen='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+  const first=c.type==="venue"||isColl(c)?cName(c):(cName(c).split(" ")[0]||cName(c)),msg=dmText(c),smsHref=t=>`sms:${phone}?&body=${encodeURIComponent(t)}`;
+  const ways=[email&&["email","✉️","Email"],ig&&["dm","💬","Instagram DM"],phone&&["text","📱","Text"],phone&&["call","📞","Call"]].filter(Boolean);
+  const tchips=(attr,star)=>`<button type="button" class="btn small" ${attr}="intro">Short intro</button>${tpls.map(t=>`<button type="button" class="btn small" ${attr}="${t.id}">${star&&nb&&t.stage===nb.status?"★ ":""}${esc(t.name)}</button>`).join("")}`;
   sheet(`<div class="head ssx-cp-head"><div style="min-width:0"><span class="eyebrow">${esc(kind)}</span><h3 style="margin-top:4px">${esc(cName(c))}</h3>${sub?`<p class="note" style="margin:2px 0 0">${esc(sub)}</p>`:""}</div><button class="btn small ssx-cp-edit" data-editc aria-label="Edit ${esc(cName(c))}">${pen} Edit</button></div>
   ${info.length?`<div class="ssx-cp-info">${info.map(x=>`<span>${x}</span>`).join("")}</div>`:""}
-  ${nb?`<p class="note" style="margin:0">Next booking together: <b>${esc(showName(nb))}</b>${nb.date?" · "+esc(fmtD(nb.date)):""}. Email templates fill in its details.</p>`:""}
-  ${email||ig||phone?`<div class="ssx-cp-acts">${email?`<button class="btn primary" data-wr>Email</button>`:""}${ig?`<button class="btn${email?"":" primary"}" data-dm>Instagram DM</button>`:""}${phone?`<a class="btn" href="sms:${esc(phone)}">Text</a><a class="btn" href="tel:${esc(phone)}">Call</a>`:""}${email?`<button class="btn" data-past>Sent emails</button>`:""}</div>`
-    :ppl.length?"":`<div class="empty">No email, Instagram or phone for ${esc(cName(c))} yet. <button type="button" class="linkbtn" data-editc2>Add contact info</button></div>`}
+  ${ways.length?`<div class="ssx-cp-reach"><div><h4 class="ssx-cp-rt">Contact ${esc(first)}</h4><p class="note" style="margin:2px 0 0">Choose how. You'll see the message before anything goes out, and it's added to Reach-outs below.</p></div>
+    <div class="ssx-cp-acts" role="group" aria-label="Ways to contact ${esc(cName(c))}">${ways.map(([k,i,l])=>`<button type="button" class="btn" data-way="${k}" aria-expanded="false"><span aria-hidden="true">${i}</span> ${l}</button>`).join("")}</div>
+    ${email?`<div class="ssx-cp-way" data-pane="email" hidden><p class="ssx-cp-to">✉️ Email to <b>${esc(email)}</b></p>
+      ${tpls.length?`<label class="eyebrow">Start from a template</label><div class="chips">${tpls.map(t=>`<button type="button" class="btn small${nb&&t.stage===nb.status?" primary":""}" data-rtpl="${t.id}">${nb&&t.stage===nb.status?"★ ":""}${esc(t.name)}</button>`).join("")}</div>${nb?`<p class="note" style="margin:0">Templates fill in your next booking together: <b>${esc(showName(nb))}</b>${nb.date?" · "+esc(fmtD(nb.date)):""}.</p>`:""}`:""}
+      <div class="ssx-cp-go"><button type="button" class="btn${tpls.length?"":" primary"}" data-wr>Write a new email</button><button type="button" class="btn small ghost" data-past>Emails you've sent</button></div></div>`:""}
+    ${ig?`<div class="ssx-cp-way" data-pane="dm" hidden><p class="ssx-cp-to">💬 Instagram DM to <b>@${esc(ig)}</b></p>
+      <label class="eyebrow">Start from</label><div class="chips">${tchips("data-dmt",1)}</div>
+      <textarea id="rc-dm" aria-label="Your DM" style="min-height:120px">${esc(msg)}</textarea>
+      <div class="ssx-cp-go"><button type="button" class="btn primary" data-dm>Copy message &amp; open Instagram</button></div><p class="note" style="margin:0">Instagram doesn't let apps send DMs, so the message is copied for you to paste and send.</p></div>`:""}
+    ${phone?`<div class="ssx-cp-way" data-pane="text" hidden><p class="ssx-cp-to">📱 Text to <b>${esc(c.phone)}</b></p>
+      <label class="eyebrow">Start from</label><div class="chips">${tchips("data-smt",1)}</div>
+      <textarea id="rc-sms" aria-label="Your text" style="min-height:100px">${esc(msg)}</textarea>
+      <div class="ssx-cp-go"><a class="btn primary" data-sms href="${esc(smsHref(msg))}">Open in Messages</a></div><p class="note" style="margin:0">Your Messages app opens with this text ready to send.</p></div>
+    <div class="ssx-cp-way" data-pane="call" hidden><p class="ssx-cp-to">📞 Call <b>${esc(c.phone)}</b></p><div class="ssx-cp-go"><a class="btn primary" data-call href="tel:${esc(phone)}">Call now</a></div><p class="note" style="margin:0">The call is added to Reach-outs, where you can note how it went.</p></div>`:""}
+  </div>`:ppl.length?"":`<div class="empty">No email, Instagram or phone for ${esc(cName(c))} yet. <button type="button" class="linkbtn" data-editc2>Add contact info</button></div>`}
   ${!email&&ppl.length?`<div class="ssx-cp-ppl"><span class="note">Email someone at ${esc(cName(c))}:</span> ${ppl.map(m=>`<button class="btn small" data-reachp="${m.id}">${esc(cName(m))}</button>`).join("")}</div>`:""}
   <div class="ssx-cp-slot"></div>
-  ${(email&&tpls.length)||ig?`<details class="ssx-cp-more"><summary>${email&&tpls.length?"Email templates":""}${email&&tpls.length&&ig?" and ":""}${ig?(email&&tpls.length?"DM message":"Instagram DM message"):""}</summary>
-    ${email&&tpls.length?`<div class="f"><label>Start an email from a template</label><div class="chips">${tpls.map(t=>`<button class="btn small${nb&&t.stage===nb.status?" primary":""}" data-rtpl="${t.id}">${nb&&t.stage===nb.status?"★ ":""}${esc(t.name)}</button>`).join("")}</div></div>`:""}
-    ${ig?`<div class="f"><label for="rc-dm">DM to paste on Instagram</label><textarea id="rc-dm" style="min-height:110px">${esc(dmText(c))}</textarea><span class="note">"Instagram DM" copies this and opens your chat with @${esc(ig)}.</span></div>`:""}</details>`:""}
   <div class="actions"><button class="btn" data-close>Close</button></div>`,root=>{
     const q=x=>root.querySelector(x);q("[data-close]").onclick=close;q("[data-editc]").onclick=()=>contactForm(c);const e2=q("[data-editc2]");if(e2)e2.onclick=()=>contactForm(c);
+    // each way of contacting opens its own options below the buttons (tap again to close)
+    root.querySelectorAll("[data-way]").forEach(b=>b.onclick=()=>{const open=b.getAttribute("aria-expanded")!=="true";
+      root.querySelectorAll("[data-way]").forEach(x=>{x.setAttribute("aria-expanded",String(open&&x===b));x.classList.toggle("primary",open&&x===b)});
+      root.querySelectorAll("[data-pane]").forEach(p=>p.hidden=!(open&&p.dataset.pane===b.dataset.way))});
     const wr=q("[data-wr]");if(wr)wr.onclick=()=>composeSheet({to:c.id,email,booking:nb?nb.id:""});
     const past=q("[data-past]");if(past)past.onclick=()=>sentSheet({contactId:c.id});
     root.querySelectorAll("[data-rtpl]").forEach(x=>x.onclick=()=>{useTemplate(x.dataset.rtpl,nb?nb.id:"");setTimeout(()=>{const s2=document.getElementById("u-to");if(s2){s2.value=c.id;s2.dispatchEvent(new Event("change"))}},30)});
     root.querySelectorAll("[data-reachp]").forEach(x=>x.onclick=()=>reachSheet(x.dataset.reachp));
-    const dm=q("[data-dm]");if(dm)dm.onclick=async()=>{await copy(q("#rc-dm").value);window.open("https://ig.me/m/"+encodeURIComponent(ig),"_blank","noopener")}})}
+    // DM and text: pick a starting message (short intro or any template), edit it, then copy/open
+    const pick=(attr,box,after)=>root.querySelectorAll(`[${attr}]`).forEach(x=>x.onclick=()=>{const id=x.getAttribute(attr),t=S.templates.find(y=>y.id===id);box.value=id==="intro"||!t?msg:fill(t.body,nb||null,c);after&&after()});
+    const dmBox=q("#rc-dm"),smsBox=q("#rc-sms"),sms=q("[data-sms]"),upd=()=>{if(sms&&smsBox)sms.href=smsHref(smsBox.value)};
+    if(dmBox)pick("data-dmt",dmBox);if(smsBox){pick("data-smt",smsBox,upd);smsBox.oninput=upd}
+    const dm=q("[data-dm]");if(dm)dm.onclick=async()=>{await copy(dmBox.value);window.open("https://ig.me/m/"+encodeURIComponent(ig),"_blank","noopener")}})}
 /* ---------- Gmail: booking threads + replies as drafts ---------- */
 const GM="Gmail";let GM_WHO=null;
 const decodeHtml=x=>{const t=document.createElement("textarea");t.innerHTML=String(x||"");return t.value};
