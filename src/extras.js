@@ -2179,8 +2179,8 @@ function appExtras() {
       const dt = [...dl.querySelectorAll('dt')].find(x => x.textContent.trim() === 'Notes'); if (dt) { dt.nextElementSibling.remove(); dt.remove(); }
       dl.after(box);
     }));
-    wrap('reachSheet', id => ntMount('contact', id, true, ntBeforeActions));
-    wrap('contactForm', c => { if (c && c.id) ntMount('contact', c.id, false, ntBeforeActions); });
+    // notes live on the contact's profile, under Reach-outs (the edit form is just for details)
+    wrap('reachSheet', id => ntMount('contact', id, true, (sh, box) => { const s = sh.querySelector('.ssx-cp-slot'); s ? s.appendChild(box) : ntBeforeActions(sh, box); }));
     wrap('renderAvail', ntAvailPanel); ntAvailPanel();
     setInterval(() => { try { ntTourTick(); } catch (e) { console.error(e); } }, 100);
     nhStart();
@@ -4349,7 +4349,7 @@ function appExtras() {
   const flRoRow = (c, l, who) => `<div class="ssx-ro-row" data-ro-id="${esc(l.id)}">
       <div class="ssx-ro-main">${who ? `<button type="button" class="ssx-ro-who" data-reach="${esc(c.id)}">${esc(cName(c))}</button>` : ''}<span><b>${esc(flRoShort(l.at))}</b> · ${esc(flRoVia(l.via))}${l.note ? ` · ${esc(l.note)}` : ''}</span>
         <span class="note">${FL_RO_OPEN.has(l.status) && l.follow ? `${l.follow < todayStr() ? 'Follow-up was due' : l.follow === todayStr() ? 'Follow up today' : 'Follow up'} ${esc(flRoShort(l.follow))}` : esc(flRoSt(l.status))}</span></div>
-      <div class="ssx-ro-act">${who ? `<button type="button" class="btn small" data-reach="${esc(c.id)}">Contact</button>` : `<select data-ro-st aria-label="How it went">${FL_RO_ST.map(([k, n]) => `<option value="${k}" ${k === l.status ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`}
+      <div class="ssx-ro-act">${who ? `<button type="button" class="btn small" data-reach="${esc(c.id)}">Open</button>` : `<select data-ro-st aria-label="How it went">${FL_RO_ST.map(([k, n]) => `<option value="${k}" ${k === l.status ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`}
         ${FL_RO_OPEN.has(l.status) && l.follow ? `<button type="button" class="btn small" data-ro-snooze title="Push the follow-up a week">+1 week</button><button type="button" class="btn small" data-ro-clear title="No follow-up needed">Done</button>` : ''}
         ${who ? '' : `<button type="button" class="x" data-ro-del aria-label="Delete this reach-out">×</button>`}</div></div>`;
   function flRoWire(box, cidOf) {
@@ -4382,7 +4382,7 @@ function appExtras() {
           <div class="f"><label for="ssx-ro-note">What it was about (optional)</label><input id="ssx-ro-note" maxlength="200" placeholder="e.g. Pitched a Friday in March"></div>
           <div class="actions"><button type="button" class="btn" data-ro-cancel>Cancel</button><button type="button" class="btn primary" data-ro-save>Save</button></div>
         </div><p class="note ssx-ro-sum"></p><div class="ssx-ro-list"></div>`;
-      const acts = [...root.children].filter(x => x.classList.contains('actions')).pop(); acts ? acts.before(box) : root.append(box);
+      const slot = root.querySelector('.ssx-cp-slot'), acts = [...root.children].filter(x => x.classList.contains('actions')).pop(); slot ? slot.prepend(box) : acts ? acts.before(box) : root.append(box);
       const form = box.querySelector('.ssx-ro-form'), addB = box.querySelector('[data-ro-add]');
       addB.onclick = () => { form.hidden = false; addB.hidden = true; box.querySelector('#ssx-ro-at').value = todayStr(); box.querySelector('#ssx-ro-fu').value = addDays(todayStr(), 7); box.querySelector('#ssx-ro-note').focus(); };
       box.querySelectorAll('[data-ro-via]').forEach(b => b.onclick = () => box.querySelectorAll('[data-ro-via]').forEach(x => x.setAttribute('aria-pressed', String(x === b))));
