@@ -4308,7 +4308,7 @@ function appExtras() {
   const flRoVia = k => (FL_RO_VIA.find(x => x[0] === k) || [, 'Other'])[1];
   const flRoSt = k => (FL_RO_ST.find(x => x[0] === k) || [, k])[1];
   const flRoShort = d => { try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); } catch (_) { return d; } };
-  const flRoNext = c => { for (const l of flRoList(c)) { const open = FL_RO_OPEN.has(l.status || 'waiting'); if (l.follow && open && !l.fuDone) return l; if (l.fuDone || !open) return null; } return null; }; // newest open follow-up; a newer reach-out without a date doesn't hide it
+  const flRoNext = c => { for (const l of flRoList(c)) { const b = l.bookingId && bk().find(x => x.id === l.bookingId), open = FL_RO_OPEN.has(l.status || 'waiting') && !(b && !['lead', 'pitched'].includes(stat(b))); if (l.follow && open && !l.fuDone) return l; if (l.fuDone || !open) return null; } return null; }; // newest open follow-up; a newer reach-out without a date doesn't hide it; ends once its show is Confirmed or Lost
   const flRoDue = () => S.contacts.map(c => { const l = flRoNext(c); return l && l.follow <= todayStr() ? { c, l } : null; }).filter(Boolean).sort((a, b) => a.l.follow.localeCompare(b.l.follow));
   async function flRoSave(cid, list) { const ok = await window.patch('contacts', cid, { outreach: list, updatedAt: new Date().toISOString() }); if (!ok) toast("Couldn't save that. Check your connection and try again."); return ok; }
   async function flRoAdd(cid, e, quiet) {
@@ -4324,10 +4324,11 @@ function appExtras() {
       const w = async function (o) {
         const r = await gs.apply(this, arguments);
         try {
-          if (o && !o.bookingId) {
+          const ob = o && o.bookingId && bk().find(x => x.id === o.bookingId), pitch = !!(ob && ['lead', 'pitched'].includes(stat(ob))); // emails about a Lead or Pitched show count as reach-outs too
+          if (o && (!o.bookingId || pitch)) {
             const mails = [...[].concat(o.to || []), ...[].concat(o.cc || [])].map(x => String(x).trim().toLowerCase()).filter(Boolean);
             const hit = S.contacts.filter(c => c.email && mails.includes(String(c.email).trim().toLowerCase()));
-            for (const c of hit) await flRoAdd(c.id, { via: 'email', note: String(o.subject || '').slice(0, 200) }, true);
+            for (const c of hit) await flRoAdd(c.id, { via: 'email', note: String(o.subject || '').slice(0, 200), ...(pitch ? { bookingId: ob.id, follow: addDays(todayStr(), ob.source === 'booking-link' ? 3 : 7) } : {}) }, true);
           }
         } catch (e) { console.error(e); }
         return r;
@@ -4942,7 +4943,7 @@ function appExtras() {
   const FL_FU = { at: 0, t: 0, pulled: 0, pulling: false, hooked: false };
   const flFuTitle = c => `Follow up with ${cName(c)}`;
   const flFuOpen = () => S.contacts.map(c => { const l = flRoNext(c); return l ? { c, l } : null; }).filter(Boolean).sort((a, b) => a.l.follow.localeCompare(b.l.follow));
-  const flFuSub = l => `${flRoVia(l.via)} on ${flRoShort(l.at)}${l.note ? ' · ' + l.note : ''}`;
+  const flFuSub = l => { const b = l.bookingId && bk().find(x => x.id === l.bookingId); return `${flRoVia(l.via)} on ${flRoShort(l.at)}${l.note && l.note !== flRoVia(l.via) ? ' · ' + l.note : ''}${b ? ' · re: ' + bName(b) : ''}`; };
   const flFuBody = (c, l, done) => ({ title: flFuTitle(c), due: done ? '' : (l.follow || ''), completed: !!done, notes: `Last reached out ${flRoShort(l.at)} by ${flRoVia(l.via).toLowerCase()}${l.note ? `: ${l.note}` : ''}.\nOpen Set & Settled: https://setnsettled.com` });
   const flFuSig = (c, l, done) => `${done ? '' : l.follow || ''}|${cName(c)}|${done ? 1 : 0}`;
   async function flFuDone(cid, lid) {
@@ -5084,6 +5085,7 @@ function appExtras() {
       out.push({ type: 'task', k: 'task:' + x.b.id + ':' + x.key, at: x.due, b: x.b, key: x.key, text: esc(x.label || 'Task'), sub: esc(bName(x.b)), btn: 'Open' });
     }
     try { for (const { c: fc, l } of flRoDue()) out.push({ type: 'fu', k: 'fu:' + fc.id + ':' + l.id, at: l.follow, c: fc, l, text: `Follow up with <b>${esc(cName(fc))}</b>`, sub: esc(flFuSub(l)), btn: 'Follow up' }); } catch (_) {}
+    try { out.push(...flHoldItems()); } catch (_) {}
     return out.sort((a, b) => String(a.at).localeCompare(String(b.at)));
   }
   function nmRender(force) {
@@ -5105,8 +5107,8 @@ function appExtras() {
       ${items.length ? `<div class="ssx-uplist">${items.slice(0, max).map((it, i) => {
         const tick = it.type === 'task' || it.type === 'fu', late = it.at && it.at < t;
         return `<div class="ssx-upi ssx-nm-${it.type}" data-up="${i}">${tick ? `<input type="checkbox" class="tcb ssx-nm-cb" data-nm-done aria-label="Done: ${esc(String(it.text).replace(/<[^>]+>/g, ''))}">` : `<span class="ssx-upic" aria-hidden="true">${it.icon}</span>`}
-          <span class="ssx-uptx">${it.text}${it.sub ? `<span class="ssx-nm-sub">${it.sub}</span>` : ''}${it.at && it.type !== 'wrap' && (it.type !== 'ap' || late) ? `<span class="ssx-nm-when${late ? ' late' : ''}">${esc(nmWhen(it.at))}</span>` : ''}</span>
-          <span class="ssx-upbt"><button type="button" class="btn small primary" data-up-go>${esc(it.btn)}</button><button type="button" class="ssx-upx" data-up-x aria-label="${it.type === 'fu' ? 'Remind me in a week' : it.type === 'task' ? 'Hide for today' : 'Later'}" title="${it.type === 'fu' ? 'Remind me in a week' : 'Later'}">×</button></span></div>`; }).join('')}</div>
+          <span class="ssx-uptx">${it.text}${it.sub ? `<span class="ssx-nm-sub">${it.sub}</span>` : ''}${it.at && it.type !== 'wrap' && it.type !== 'hold' && (it.type !== 'ap' || late) ? `<span class="ssx-nm-when${late ? ' late' : ''}">${esc(nmWhen(it.at))}</span>` : ''}</span>
+          <span class="ssx-upbt"><button type="button" class="btn small primary" data-up-go>${esc(it.btn)}</button>${it.btn2 ? `<button type="button" class="btn small" data-up-go2>${esc(it.btn2)}</button>` : ''}<button type="button" class="ssx-upx" data-up-x aria-label="${it.type === 'fu' ? 'Remind me in a week' : it.type === 'task' ? 'Hide for today' : 'Later'}" title="${it.type === 'fu' ? 'Remind me in a week' : 'Later'}">×</button></span></div>`; }).join('')}</div>
       ${items.length > 7 ? `<button type="button" class="btn small" data-nm-more>${NM.all ? 'Show fewer' : `Show all ${items.length}`}</button>` : ''}`
       : `<p class="note" style="margin:0">You're all caught up. New steps show up here as your shows move along.</p>`}`;
     box.querySelector('[data-nm-tasks]').onclick = () => goTab('tasks');
@@ -5116,17 +5118,19 @@ function appExtras() {
       row.querySelector('[data-up-go]').onclick = async e => {
         e.stopPropagation();
         if (it.type === 'wrap') return nmWrap(it.b.id);
+        if (it.type === 'hold') return flHoldSet(it.b, it.past ? 'lost' : 'confirmed');
         if (it.type === 'task') return window.bookingView(it.b.id);
         if (it.type === 'fu') return reachSheet(it.c.id);
         try { await it.go(); } catch (_) {} if (it.mark) apMark('done', it.k); else if (it.snooze) apMark('snooze', it.k, addDays(todayStr(), it.snooze));
       };
       row.querySelector('[data-up-x]').onclick = async e => {
         e.stopPropagation();
-        if (it.type === 'wrap') { apMark('snooze', it.k, addDays(todayStr(), 2)); toast('Wrap-up moved to later'); return; }
+        if (it.type === 'wrap' || it.type === 'hold') { apMark('snooze', it.k, addDays(todayStr(), 2)); toast(it.type === 'hold' ? 'Hold moved to later' : 'Wrap-up moved to later'); return; }
         if (it.type === 'fu') { if (await flRoEdit(it.c.id, it.l.id, { follow: addDays(todayStr(), 7) })) toast(`Follow-up moved to ${flRoShort(addDays(todayStr(), 7))}`, async () => { await flRoEdit(it.c.id, it.l.id, { follow: it.l.follow }); }); nmRender(true); return; }
         if (it.type === 'task') { apMark('snooze', it.k, addDays(todayStr(), 1)); return; }
         it.snooze ? apMark('snooze', it.k, addDays(todayStr(), it.snooze)) : apMark('dismissed', it.k);
       };
+      const g2 = row.querySelector('[data-up-go2]'); if (g2) g2.onclick = e => { e.stopPropagation(); if (it.type === 'hold') flHoldSet(it.b, it.past ? 'confirmed' : 'lost'); };
       const cb = row.querySelector('[data-nm-done]');
       if (cb) cb.onchange = async () => {
         if (it.type === 'fu') { await flFuDone(it.c.id, it.l.id); nmRender(true); return; }
@@ -5215,7 +5219,8 @@ function appExtras() {
         const btn = e.currentTarget, via = (box.querySelector('[data-ro-via][aria-pressed="true"]') || {}).dataset?.roVia || 'other';
         const at = box.querySelector('#ssx-ro-at').value || todayStr(), fu = box.querySelector('#ssx-ro-fu').value;
         if (fu && fu < at) { toast('The follow-up date is before the reach-out. Pick a later date or clear it.'); return; }
-        btn.disabled = true; const ok = await flRoAdd(cid, { via, at, follow: fu, note: box.querySelector('#ssx-ro-note').value.trim().slice(0, 200) });
+        btn.disabled = true; const pick = await flRoShowPick(box, cid); if (!pick) { btn.disabled = false; return; }
+        const ok = await flRoAdd(cid, { via, at, follow: fu, note: box.querySelector('#ssx-ro-note').value.trim().slice(0, 200), ...pick.data });
         btn.disabled = false; if (ok) { form.hidden = true; foot.hidden = false; box.querySelector('#ssx-ro-note').value = ''; }
       };
       // the follow-up panel's buttons (it's redrawn, so they're handled here)
@@ -5308,11 +5313,110 @@ function appExtras() {
       }, 300);
     }, true);
   }
+  /* -- One follow-up system for pitches. A reach-out can be about a show (reach-out.bookingId): pick one when you log it, or
+     "Hold a new date" to create a Pitched show. Emails you send about a Lead or Pitched show are logged on the person
+     automatically (request replies get a 3-day follow-up, pitches a week). A show that has reach-outs drops its own
+     "Follow up if no reply" checklist tasks, so you're never reminded twice; once it's Confirmed or Lost, its follow-up ends.
+     "Interested" or "Booked" on a reach-out offers to add or confirm the show. Holds that are close or past ask you to
+     confirm or release them in Next moves. */
+  const FL_RO_PITCH = ['lead', 'pitched'];
+  const flRoBkOf = l => (l && l.bookingId && bk().find(x => x.id === l.bookingId)) || null;
+  const flRoShowsWith = c => bk().filter(b => [b.venueId, b.promoterId, b.bookingContactId].includes(c.id) && FL_RO_PITCH.includes(stat(b))).sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
+  const flRoWhere = c => c.type === 'venue' ? 'venueId' : c.type === 'promoter' ? 'promoterId' : 'bookingContactId';
+  async function flRoNewShow(c, date, status, title) {
+    const now = new Date().toISOString(), t = todayStr(), pk = stageKey(status);
+    const data = { title: String(title || cName(c) || 'Hold').slice(0, 120), date, status: pk, stageAt: { [pk]: t }, city: c.city || '', [flRoWhere(c)]: c.id, createdAt: now, updatedAt: now };
+    const id = await window.save('bookings', null, data); if (!id) return null;
+    let n = 0; const ev = () => { if (!bk().some(x => x.id === id) && n++ < 20) return setTimeout(ev, 200); try { syncBookingEvent(id, { ...data, id }); } catch (_) {} }; setTimeout(ev, 300);
+    return id;
+  }
+  // the log form: "About a show?"
+  function flRoFormShow(root) {
+    const form = root.querySelector('.ssx-ro2 .ssx-ro-form'); if (!form || form.querySelector('[data-ro-show]')) return;
+    const cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key, c = cur && /^r:/.test(cur) && contact(cur.slice(2)); if (!c) return;
+    const shows = flRoShowsWith(c), f = document.createElement('div'); f.className = 'f ssx-ro-show';
+    f.innerHTML = `<label for="ssx-ro-show">About a show? (optional)</label><select id="ssx-ro-show" data-ro-show><option value="">Not about a specific date</option>${shows.map(b => `<option value="${esc(b.id)}">${esc(bName(b))}${b.date ? ' · ' + esc(flRoShort(b.date)) : ''}</option>`).join('')}<option value="__new__">＋ Hold a new date for them…</option></select>
+      <div class="ssx-ro-newdate" hidden><input type="date" data-ro-newdate aria-label="Date to hold" min="${esc(todayStr())}"><span class="note">Saved as a Pitched show, so the date closes on your booking link.</span></div>`;
+    const note = form.querySelector('#ssx-ro-note'), at = note && note.closest('.f'); at ? at.before(f) : form.prepend(f);
+    const sel = f.querySelector('[data-ro-show]'), nd = f.querySelector('.ssx-ro-newdate'); sel.onchange = () => { nd.hidden = sel.value !== '__new__'; };
+  }
+  async function flRoShowPick(box, cid) {
+    const sel = box.querySelector('[data-ro-show]'); if (!sel || !sel.value) return { data: {} };
+    if (sel.value !== '__new__') return { data: { bookingId: sel.value } };
+    const d = box.querySelector('[data-ro-newdate]').value; if (!d) { toast('Pick the date to hold, or choose "Not about a specific date".'); return null; }
+    const id = await flRoNewShow(contact(cid), d, 'pitched'); if (!id) return null;
+    toast(`Held ${niceDate(d)} as a Pitched show`); sel.value = ''; box.querySelector('.ssx-ro-newdate').hidden = true; return { data: { bookingId: id } };
+  }
+  // on the profile: "Interested" or "Booked" → add or confirm the show
+  function flRoOutcome(root) {
+    const ro = root.querySelector('.ssx-ro2'); if (!ro) return;
+    const cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key, c = cur && /^r:/.test(cur) && contact(cur.slice(2)); if (!c) return;
+    const l = flRoList(c)[0], st = l && l.status, b = flRoBkOf(l), bs = b && stat(b);
+    const show = l && (st === 'interested' || st === 'booked') && !(b && (st === 'interested' ? bs !== 'lead' : !FL_RO_PITCH.includes(bs)));
+    const state = show ? [l.id, st, b ? b.id + bs : ''].join('|') : '';
+    let box = ro.querySelector('.ssx-ro-out'); if ((box ? box.dataset.state : '') === state) return;
+    if (!state) { if (box) box.remove(); return; }
+    if (!box) { box = document.createElement('div'); box.className = 'ssx-ro-out'; ro.querySelector('.ssx-ro-next').before(box); }
+    box.dataset.state = state;
+    const who = cName(c), conf = st === 'booked';
+    box.innerHTML = b
+      ? `<span>${conf ? '🎉' : '✨'} ${conf ? 'They booked you for' : 'They\'re interested in'} <b>${esc(bName(b))}</b>${b.date ? ' · ' + esc(flRoShort(b.date)) : ''}.</span><button type="button" class="btn small primary" data-ro-conf>${conf ? 'Mark it Confirmed' : 'Move it to Pitched'}</button>`
+      : `<span>${conf ? '🎉 Booked! Add the show so it\'s on your calendar.' : `✨ ${esc(who)} is interested. Hold a date so it's saved.`}</span>
+        <div class="ssx-ro-outf"><input type="date" data-ro-odate aria-label="Show date"><input data-ro-otitle maxlength="120" placeholder="Show name (optional)" aria-label="Show name"><button type="button" class="btn small primary" data-ro-oadd>${conf ? 'Add the show' : 'Hold the date'}</button></div>`;
+    const cb = box.querySelector('[data-ro-conf]'), ab = box.querySelector('[data-ro-oadd]');
+    if (cb) cb.onclick = async () => { const k = stageKey(conf ? 'confirmed' : 'pitched'), was = b.status; cb.disabled = true; if (await window.patch('bookings', b.id, { status: k, stageAt: { ...(b.stageAt || {}), [k]: todayStr() }, updatedAt: new Date().toISOString() })) toast(`${bName(b)} is ${stageName(k)}`, async () => { await window.patch('bookings', b.id, { status: was }); }); cb.disabled = false; };
+    if (ab) ab.onclick = async () => {
+      const d = box.querySelector('[data-ro-odate]').value; if (!d) { toast('Pick the date first'); box.querySelector('[data-ro-odate]').focus(); return; }
+      ab.disabled = true; const id = await flRoNewShow(c, d, conf ? 'confirmed' : 'pitched', box.querySelector('[data-ro-otitle]').value.trim());
+      if (id) { await flRoEdit(c.id, l.id, { bookingId: id }); toast(conf ? `Added ${niceDate(d)} as Confirmed` : `Held ${niceDate(d)} for ${who}`); setTimeout(() => window.bookingView(id), 400); } else ab.disabled = false;
+    };
+  }
+  // on a Lead or Pitched show: its reach-outs and next follow-up
+  function flRoBookRow(root) {
+    const cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key, m = cur && /^b:(.+)$/.exec(cur); if (!m || !root.querySelector('[data-status]')) return;
+    const b = bk().find(x => x.id === m[1]); let row = root.querySelector('.ssx-rob');
+    if (!b || !FL_RO_PITCH.includes(stat(b))) { if (row) row.remove(); return; }
+    const hits = S.contacts.flatMap(c => flRoList(c).filter(l => l.bookingId === b.id).map(l => ({ c, l }))).sort((x, y) => String(y.l.at).localeCompare(String(x.l.at)));
+    const last = hits[0], nx = hits.map(h => ({ c: h.c, l: flRoNext(h.c) })).find(h => h.l && h.l.bookingId === b.id);
+    const main = person(b.bookingContactId) || person(b.promoterId) || person(b.venueId);
+    const state = JSON.stringify([last && [last.l.id, last.l.at], nx && [nx.l.id, nx.l.follow], main && main.id]);
+    if (row && row.dataset.state === state) return;
+    if (!row) { row = document.createElement('div'); row.className = 'ssx-rob'; const h = root.querySelector('.ssx-wr-open') || root.querySelector('.head'); h ? h.after(row) : root.prepend(row); }
+    row.dataset.state = state;
+    row.innerHTML = last
+      ? `<span>📨 <b>Reach-outs</b> <span class="note">Last: ${esc(flRoVia(last.l.via).toLowerCase())} to ${esc(cName(last.c))} on ${esc(flRoShort(last.l.at))}${nx ? ` · follow up ${esc(flRoShort(nx.l.follow))}` : ''}</span></span><button type="button" class="btn small" data-reach="${esc((nx || last).c.id)}">Open ${esc(cName((nx || last).c))}</button>`
+      : `<span>📨 <b>Reach-outs</b> <span class="note">Emails you send about this show are tracked, with a follow-up a week later.</span></span>${main ? `<button type="button" class="btn small" data-reach="${esc(main.id)}">Open ${esc(cName(main))}</button>` : ''}`;
+  }
+  // a show with reach-outs drops its own "follow up" checklist tasks (the reach-out follow-up covers it)
+  function flRoTasksWrap() {
+    const f = window.tasksOf; if (typeof f !== 'function' || f.__ssxRo) return;
+    let cache = null, at = 0;
+    const linked = () => { if (cache && Date.now() - at < 400) return cache; cache = new Set(); at = Date.now(); for (const c of S.contacts || []) for (const l of (Array.isArray(c.outreach) ? c.outreach : [])) if (l && l.bookingId) cache.add(l.bookingId); return cache; };
+    const w = function (b) { const r = f.apply(this, arguments); try { if (b && Array.isArray(r) && linked().has(b.id)) return r.filter(x => !(K(x.st) === 'pitched' && /follow/i.test(String(x.label || '')))); } catch (_) {} return r; };
+    w.__ssxRo = true; Object.keys(f).forEach(k => { try { w[k] = f[k]; } catch (_) {} }); window.tasksOf = w;
+  }
+  // Next moves: holds that are close (10 days) or past and still not confirmed
+  function flHoldItems() {
+    const t = todayStr(), c = apCfg(), out = [];
+    for (const b of bk()) {
+      if (stat(b) !== 'pitched' || !b.date) continue;
+      const days = daysBetween(t, b.date); if (days > 10) continue;
+      const past = days < 0, k = 'hold:' + b.id + (past ? ':past' : ':soon');
+      if (c.dismissed[k] || (c.snooze[k] && c.snooze[k] > t)) continue;
+      out.push({ type: 'hold', k, at: b.date, b, past, icon: '📌', text: past ? `Your hold for <b>${esc(bName(b))}</b> has passed` : `<b>${esc(bName(b))}</b> is still on hold`, sub: `${esc(niceDate(b.date))} · ${past ? 'Release it, or confirm it if the show is happening.' : 'Confirm it, or release the date so it opens on your booking link.'}`, btn: past ? 'Release' : 'Confirm', btn2: past ? 'Confirm' : 'Release' });
+    }
+    return out;
+  }
+  async function flHoldSet(b, kind) {
+    const k = stageKey(kind), was = b.status;
+    if (await window.patch('bookings', b.id, { status: k, stageAt: { ...(b.stageAt || {}), [k]: todayStr() }, updatedAt: new Date().toISOString() }))
+      toast(kind === 'lost' ? `Released ${niceDate(b.date)}. It's open on your booking link again.` : `${bName(b)} is Confirmed`, async () => { await window.patch('bookings', b.id, { status: was }); });
+  }
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, nmRender]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, flRoTasksWrap, nmRender]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
-    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet2, flGtRow, flBookForm, flBfView, flFuRow2, nmWrapRow]) { try { f(root); } catch (e) { console.error(e); } } });
+    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet2, flRoFormShow, flRoOutcome, flGtRow, flBookForm, flBfView, flFuRow2, nmWrapRow, flRoBookRow]) { try { f(root); } catch (e) { console.error(e); } } });
   }
   function hookFlow() {
     if (window.__ssxFL || !st.db) return; window.__ssxFL = true;
