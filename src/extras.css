@@ -943,3 +943,11 @@ html body #ssx-bkp-set .ssx-bkp-opt { display: inline-flex; align-items: center;
 html body #ssx-bkp-set .ssx-bkp-own { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
 html body #ssx-bkp-set .ssx-bkp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; }
 html body #ssx-bkp-set .ssx-bkp-row > span { flex: 1 1 140px; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+/* W-9: signature pad and number box */
+html body .ssx-w9-pad { position: relative; border: 1px dashed var(--line); border-radius: 12px; background: #fff; margin-top: 6px; }
+html body .ssx-w9-pad canvas { display: block; width: 100%; height: 120px; touch-action: none; cursor: crosshair; border-radius: 12px; }
+html body .ssx-w9-pad [data-w9-clear] { position: absolute; top: 6px; right: 10px; }
+html body .ssx-w9-tin input { font-variant-numeric: tabular-nums; letter-spacing: .08em; margin-top: 6px; }
+html body #w9-kind, html body #w9-sig { flex-wrap: wrap; margin-top: 4px; }
+html body .ssx-w9-err { color: var(--hot); font-weight: 600; }
+html body .ssx-w9-err:empty { display: none; }
