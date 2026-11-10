@@ -1125,3 +1125,5 @@ html body .ssx-as-a { display: flex; flex-wrap: wrap; gap: 8px; align-items: cen
 html body .ssx-as-got { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
 html body .ssx-as-got > span { padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, #30a46c 12%, transparent); border: 1px solid color-mix(in srgb, #30a46c 40%, var(--line)); font-size: 13px; }
 html body .ssx-as-past { padding: 10px 12px; margin: 4px 0 12px; border-radius: 12px; border: 1px solid color-mix(in srgb, #f5a524 55%, var(--line)); background: color-mix(in srgb, #f5a524 10%, transparent); }
+/* Learned defaults note */
+html body .ssx-learn { margin: -2px 0 10px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 8%, transparent); }
