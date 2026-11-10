@@ -1422,7 +1422,7 @@ function appExtras() {
     let wrap = document.getElementById('ssx-fin');
     if (!wrap) { wrap = document.createElement('div'); wrap.id = 'ssx-fin'; wrap.className = 'ssx-fin'; const s = document.getElementById('moneyStats'); s ? s.after(wrap) : sec.appendChild(wrap); }
     const ae = document.activeElement; if (wrap.contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName) && !/checkbox|radio/.test(ae.type || '')) return;
-    const c = apCfg(), t = todayStr(), y = +t.slice(0, 4), tn = taxNumbers(y), nd = nextDue(), $ = n => '$' + Math.round(n).toLocaleString('en-US');
+    const c = apCfg(), t = todayStr(), y = +t.slice(0, 4), tn = taxNumbers(y), nd = nextDue(), sMe = myState(), sNd = nextStDue(), $ = n => '$' + Math.round(n).toLocaleString('en-US');
     const pays = (c.estPayments || []).filter(p => +p.year === y).sort((a, b) => String(a.date).localeCompare(String(b.date)));
     const ly = y - 1, m0 = +t.slice(5, 7), nec = ly >= 2026 ? 2000 : 600;
     let payers = []; if (m0 <= 4) { try { payers = window.taxData(yearR(ly)).byPayer.filter(([, v]) => v.amt >= nec); } catch (_) {} }
@@ -1436,13 +1436,14 @@ function appExtras() {
       <div class="stats ssx-tstats"><div class="stat"><span class="eyebrow">Profit so far</span><b class="num">${$(tn.net)}</b><span class="hint">after expenses${tn.miles ? ' and mileage' : ''}</span></div>
         <div class="stat"><span class="eyebrow">Set aside (${Math.round(tn.rate * 100)}%)</span><b class="num">${$(tn.setAside)}</b><span class="hint">change the rate below</span></div>
         <div class="stat"><span class="eyebrow">Paid so far</span><b class="num">${$(tn.paid)}</b><span class="hint">${pays.length} estimated payment${pays.length === 1 ? '' : 's'}</span></div></div>
-      ${nd ? `<p class="ssx-msg">Next estimated payment: <b>${esc(nd.q)} ${nd.year}, due ${esc(niceDate(nd.date))}</b>${nd.ca ? ` (federal, and California ${nd.ca}%)` : ' (federal only; California skips September)'}. Still unpaid from what you've set aside: <b>${$(Math.max(0, tn.setAside - tn.paid))}</b>.</p>` : ''}
-      <div class="ssx-row"><label class="ssx-inline" for="ssx-rate">Set aside <input id="ssx-rate" type="number" min="0" max="60" step="1" inputmode="numeric" value="${esc(c.taxRate ?? 25)}" style="width:76px"> % of profit</label><a class="btn small" href="https://www.irs.gov/payments/direct-pay" target="_blank" rel="noopener">Pay the IRS</a><a class="btn small" href="https://www.ftb.ca.gov/pay/bank-account/index.asp" target="_blank" rel="noopener">Pay California</a></div>
+            ${nd ? `<p class="ssx-msg">Next federal estimated payment: <b>${esc(nd.q)} ${nd.year}, due ${esc(niceDate(nd.date))}</b>.${sNd ? ` ${esc(sMe[1])}: <b>${esc(sNd.q)} due ${esc(niceDate(sNd.date))}</b>${sNd.pct !== 25 ? ` (${sNd.pct}% of the year's state estimate)` : ''}.` : sMe && !sMe[2] ? ` ${esc(sMe[1])} doesn't tax wages or self-employment income, so it's federal only.` : ''} Still unpaid from what you've set aside: <b>${$(Math.max(0, tn.setAside - tn.paid))}</b>.</p>` : ''}
+      <div class="ssx-row"><label class="ssx-inline" for="ssx-state">Your state <select id="ssx-state"><option value="">Pick your state…</option>${STATES.map(([k, n]) => `<option value="${k}" ${sMe && sMe[0] === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>${sMe ? '' : '<span class="note">Pick it to see your state\'s due dates.</span>'}</div>
+      <div class="ssx-row"><label class="ssx-inline" for="ssx-rate">Set aside <input id="ssx-rate" type="number" min="0" max="60" step="1" inputmode="numeric" value="${esc(c.taxRate ?? 25)}" style="width:76px"> % of profit</label><a class="btn small" href="https://www.irs.gov/payments/direct-pay" target="_blank" rel="noopener">Pay the IRS</a>${sMe && sMe[2] ? `<a class="btn small" href="${esc(sMe[2])}" target="_blank" rel="noopener">${esc(sMe[1])} tax site</a>` : ''}</div>
       <details class="ssx-det"><summary>Log an estimated payment</summary>
         <div class="ssx-grid2"><div class="f"><label for="ssx-ep-d">Date paid</label><input id="ssx-ep-d" type="date" value="${esc(t)}"></div><div class="f"><label for="ssx-ep-a">Amount ($)</label><input id="ssx-ep-a" type="number" inputmode="decimal" min="0" step="0.01"></div>
-          <div class="f"><label for="ssx-ep-w">Paid to</label><select id="ssx-ep-w"><option value="IRS">IRS (federal)</option><option value="CA">California FTB</option></select></div><div class="f"><label for="ssx-ep-q">For</label><select id="ssx-ep-q">${[...estDates(y - 1).slice(3), ...estDates(y)].map(x => `<option value="${x.year}|${x.q}" ${nd && nd.q === x.q && nd.year === x.year ? 'selected' : ''}>${x.q} ${x.year} (due ${esc(niceDate(x.date))})</option>`).join('')}</select></div></div>
+          <div class="f"><label for="ssx-ep-w">Paid to</label><select id="ssx-ep-w"><option value="IRS">IRS (federal)</option>${sMe && sMe[2] ? `<option value="${sMe[0]}">${esc(sMe[1])}</option>` : ''}</select></div><div class="f"><label for="ssx-ep-q">For</label><select id="ssx-ep-q">${[...estDates(y - 1).slice(3), ...estDates(y)].map(x => `<option value="${x.year}|${x.q}" ${nd && nd.q === x.q && nd.year === x.year ? 'selected' : ''}>${x.q} ${x.year} (due ${esc(niceDate(x.date))})</option>`).join('')}</select></div></div>
         <div class="ssx-row"><button type="button" class="btn primary small" data-ep-add>Save payment</button></div></details>
-      ${pays.length ? `<div class="ssx-mini">${pays.map(p => `<div><span>${esc(niceDate(p.date))} · ${esc(p.agency === 'CA' ? 'California' : 'IRS')} · ${esc(p.q)} ${esc(p.year)}</span><b class="num">$${Number(p.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</b><button type="button" class="ssx-upx" data-ep-del="${esc(p.id)}" aria-label="Remove payment">×</button></div>`).join('')}</div>` : ''}
+      ${pays.length ? `<div class="ssx-mini">${pays.map(p => `<div><span>${esc(niceDate(p.date))} · ${esc(agencyName(p.agency))} · ${esc(p.q)} ${esc(p.year)}</span><b class="num">$${Number(p.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</b><button type="button" class="ssx-upx" data-ep-del="${esc(p.id)}" aria-label="Remove payment">×</button></div>`).join('')}</div>` : ''}
       ${payers.length ? `<div class="ssx-opt"><b>1099s to expect for ${ly}</b><p class="note" style="margin:0">Payers who paid you ${$(nec)} or more. They're due by January 31. Check them off as they arrive and compare the amounts.</p>${payers.map(([n, v]) => { const k = `${ly}|${n}`; return `<label class="ssx-check"><input type="checkbox" data-1099="${esc(k)}" ${c.got1099[k] ? 'checked' : ''}> ${esc(n)} · ${$(v.amt)}</label>`; }).join('')}</div>` : ''}
       <p class="note" style="margin:0">A rough guide, not tax advice: 25–30% of profit covers self-employment tax plus income tax for many performers. Your preparer can fine-tune it.</p>
     </div>
@@ -1474,6 +1475,7 @@ function appExtras() {
     </div>`;
     const q = s => wrap.querySelector(s);
     q('#ssx-rate').onchange = e => { const v = Math.max(0, Math.min(60, Number(e.target.value) || 0)); apSave({ taxRate: v }); };
+    q('#ssx-state').onchange = e => { apSave({ state: e.target.value }); e.target.blur(); renderFinCards(); const s = myState(); if (window.toast && s) window.toast(s[2] ? `Saved. You'll see ${s[1]}'s estimated tax dates here and in your reminders.` : `Saved. ${s[1]} doesn't tax wages or self-employment income, so only federal payments show.`); };
     q('[data-ep-add]').onclick = e => { e.stopPropagation(); const a = Number(q('#ssx-ep-a').value), d = q('#ssx-ep-d').value, [yy, qq] = q('#ssx-ep-q').value.split('|'); if (!(a > 0) || !d) { if (window.toast) window.toast('Add the date and amount'); return; } apSave({ estPayments: [...(apCfg().estPayments || []), { id: 'ep' + Date.now().toString(36), date: d, amount: Math.round(a * 100) / 100, agency: q('#ssx-ep-w').value, year: +yy, q: qq }] }); if (window.toast) window.toast('Estimated payment saved'); };
     wrap.querySelectorAll('[data-ep-del]').forEach(b => b.onclick = e => { e.stopPropagation(); apSave({ estPayments: (apCfg().estPayments || []).filter(p => p.id !== b.dataset.epDel) }); });
     wrap.querySelectorAll('[data-1099]').forEach(b => b.onchange = () => apMark('got1099', b.dataset['1099'], b.checked));
@@ -1513,8 +1515,15 @@ function appExtras() {
     const out = [], t = todayStr(), c = apCfg();
     for (const x of [...estDates(+t.slice(0, 4) - 1), ...estDates(+t.slice(0, 4))]) {
       if (x.date < t || daysBetween(t, x.date) > 60 || (c.estPayments || []).some(p => +p.year === x.year && p.q === x.q)) continue;
-      const body = `Estimated tax payment (${x.q} ${x.year}) is due ${niceDate(x.date)}${x.ca ? '. California is due the same day' : ''}. See how much to pay in Financials, then log it there.`;
+           const sx = stDates(x.year).find(z => z.q === x.q && z.date === x.date), body = `Estimated tax payment (${x.q} ${x.year}) is due ${niceDate(x.date)}${sx ? `. ${myState()[1]} is due the same day` : ''}. See how much to pay in Financials, then log it there.`;
       out.push({ id: `est:${x.year}${x.q}:w`, at: addDays(x.date, -7), kind: 'note', show: 'Estimated taxes', body }, { id: `est:${x.year}${x.q}:d`, at: x.date, kind: 'note', show: 'Estimated taxes', body });
+    }
+    // the performer's state, when its date differs from the federal one
+    for (const x of [...stDates(+t.slice(0, 4) - 1), ...stDates(+t.slice(0, 4))]) {
+      if (estDates(x.year).some(z => z.q === x.q && z.date === x.date)) continue;
+      if (x.date < t || daysBetween(t, x.date) > 60 || (c.estPayments || []).some(p => +p.year === x.year && p.q === x.q && p.agency === myState()[0])) continue;
+      const body = `${myState()[1]} estimated tax payment (${x.q} ${x.year}) is due ${niceDate(x.date)}. See how much to pay in Financials, then log it there.`;
+      out.push({ id: `est:${x.year}${x.q}:sw`, at: addDays(x.date, -7), kind: 'note', show: 'Estimated taxes', body }, { id: `est:${x.year}${x.q}:sd`, at: x.date, kind: 'note', show: 'Estimated taxes', body });
     }
     const y = +t.slice(0, 4);
     out.push({ id: `1099:${y - 1}`, at: `${y}-02-02`, kind: 'note', show: 'Tax season', body: `Your ${y - 1} 1099s should have arrived. Check them off in Financials and compare the amounts.` },
@@ -1529,7 +1538,7 @@ function appExtras() {
     const miles = trips.reduce((s, m) => s + (+m.miles || 0), 0), pays = (c.estPayments || []).filter(p => +p.year === y);
     const lines = ['', 'TRACKED IN THE APP'];
     lines.push(`  Mileage: ${miles.toLocaleString('en-US')} business miles in ${trips.length} trip${trips.length === 1 ? '' : 's'}${MILE_RATE[y] ? `, about $${Math.round(miles * MILE_RATE[y]).toLocaleString('en-US')} at the IRS standard rate of ${(MILE_RATE[y] * 100).toFixed(1)} cents` : ''}. Log in "05 Mileage log.csv". Your preparer will choose standard mileage or actual car costs.`);
-    if (pays.length) { lines.push(`  Estimated tax payments for ${y}:`); pays.sort((a, b) => String(a.date).localeCompare(String(b.date))).forEach(p => lines.push(`    - ${p.date} ${p.agency === 'CA' ? 'California FTB' : 'IRS'} ${p.q}: $${Number(p.amount).toFixed(2)}`)); }
+    if (pays.length) { lines.push(`  Estimated tax payments for ${y}:`); pays.sort((a, b) => String(a.date).localeCompare(String(b.date))).forEach(p => lines.push(`    - ${p.date} ${agencyName(p.agency)} ${p.q}: $${Number(p.amount).toFixed(2)}`)); }
     else lines.push(`  Estimated tax payments for ${y}: none logged in the app. Bring your records if you made any.`);
     const csv = [['Date', 'Miles', 'Where and why', 'Show'], ...trips.map(m => [m.date, m.miles, m.purpose || '', (bk().find(b => b.id === m.bookingId) || {}).title || ''])].map(r => r.map(v => { v = String(v ?? ''); return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }).join(',')).join('\r\n');
     return { lines, mileCsv: csv };
