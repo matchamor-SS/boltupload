@@ -4484,9 +4484,11 @@ function appExtras() {
   const flGtBody = (b, t) => ({ title: t.label, due: t.due || '', completed: !!t.done, notes: `For ${typeof bookingName === 'function' ? bookingName(b) : showName(b)}${b.date ? ` (show ${fmtD(b.date)})` : ''}.\nOpen Set & Settled: https://setnsettled.com` });
   async function flGtAdd(bid, key, quiet) {
     const b = flBk().find(x => x.id === bid), t = b && tasksOf(b).find(x => x.key === key); if (!t) return false;
+    const mk = bid + ':' + key; FL_GT.made = FL_GT.made || {}; if (FL_GT.made[mk] && Date.now() - FL_GT.made[mk] < 600000) return true; // never send the same task twice
     try {
-      const r = await flGtCall('create_task', flGtBody(b, t));
-      if (!r.id) throw { code: 'unavailable' };
+      FL_GT.made[mk] = Date.now();
+      const r = (await flGtFindSame(t.label, t.due)) || await flGtCall('create_task', flGtBody(b, t)); // already in Google Tasks? link it instead of adding a copy
+      if (!r.id) { delete FL_GT.made[mk]; throw { code: 'unavailable' }; }
       await window.patch('bookings', bid, { taskG: { [key]: { id: r.id, link: r.link || '', sig: flGtSig(t), at: r.updated || new Date().toISOString() } } });
       if (!quiet) toast('Added to Google Tasks'); return true;
     } catch (e) { console.error(e); if (!quiet) flGtErr(e); return false; }
@@ -4519,7 +4521,7 @@ function appExtras() {
       }
       if (FL_GT.auto && !lost && added < 10) for (const t of ts) {
         if (added >= 10) break;
-        if (t.done || !t.due || t.due < todayStr() || (tg[t.key] && tg[t.key].id) || FL_GT.busy.has(b.id + t.key)) continue;
+        if (t.done || !t.due || t.due < todayStr() || (tg[t.key] && (tg[t.key].id || tg[t.key].off)) || FL_GT.busy.has(b.id + t.key)) continue; // taken out or deleted in Google: don't add it back
         added++; const k2 = b.id + t.key; FL_GT.busy.add(k2); flGtAdd(b.id, t.key, true).finally(() => FL_GT.busy.delete(k2));
       }
     }
@@ -4977,8 +4979,10 @@ function appExtras() {
   }
   async function flFuAdd(cid, quiet) {
     const c = contact(cid), l = c && flRoNext(c); if (!l) return false;
+    const mk = 'fu:' + cid + ':' + l.id; FL_GT.made = FL_GT.made || {}; if (FL_GT.made[mk] && Date.now() - FL_GT.made[mk] < 600000) return true; // never send the same follow-up twice
     try {
-      const r = await flGtCall('create_task', flFuBody(c, l, false)); if (!r.id) throw { code: 'unavailable' };
+      FL_GT.made[mk] = Date.now();
+      const r = (await flGtFindSame(flFuTitle(c), l.follow)) || await flGtCall('create_task', flFuBody(c, l, false)); if (!r.id) { delete FL_GT.made[mk]; throw { code: 'unavailable' }; }
       await flRoEdit(cid, l.id, { g: { id: r.id, link: r.link || '', sig: flFuSig(c, l, false), at: r.updated || new Date().toISOString() } });
       if (!quiet) toast('Follow-up added to Google Tasks'); return true;
     } catch (e) { console.error(e); if (!quiet) flGtErr(e); return false; }
@@ -5648,9 +5652,42 @@ function appExtras() {
       if (wrap && at) at.after(n); else if (at) at.before(n);
     }
   }
+  /* -- Google Tasks without duplicates: every new task first checks your "Set & Settled" list for the same task (same name and
+     due date) and links to it instead of adding a copy, and the same task is never sent twice from one device. Every few
+     minutes, extra copies are removed: the one the app is linked to stays (or the oldest, if none is linked). */
+  const GT_DUP = { items: null, at: 0, cleaned: 0, busy: false, hooked: false };
+  async function flGtList(fresh) { if (!fresh && GT_DUP.items && Date.now() - GT_DUP.at < 15000) return GT_DUP.items; GT_DUP.items = (await flGtCall('list_tasks', {})).tasks || []; GT_DUP.at = Date.now(); return GT_DUP.items; }
+  function flGtLinked() {
+    const s = new Set();
+    try { for (const b of flBk()) for (const g of Object.values(b.taskG || {})) if (g && g.id) s.add(g.id); for (const c of S.contacts || []) for (const l of (Array.isArray(c.outreach) ? c.outreach : [])) if (l && l.g && l.g.id) s.add(l.g.id); } catch (_) {}
+    return s;
+  }
+  const gtDay = d => String(d || '').slice(0, 10), gtName = t => String(t || '').trim().toLowerCase();
+  async function flGtFindSame(title, due) {
+    try { const linked = flGtLinked(), items = await flGtList(true); return items.find(x => !x.deleted && x.status !== 'completed' && gtName(x.title) === gtName(title) && gtDay(x.due) === gtDay(due) && !linked.has(x.id)) || null; } catch (_) { return null; }
+  }
+  async function flGtClean(force) {
+    if (GT_DUP.busy || (!force && (document.hidden || Date.now() - GT_DUP.cleaned < 240000))) return;
+    const linked = flGtLinked(); if (!FL_GT.auto && !linked.size) return;
+    GT_DUP.busy = true; GT_DUP.cleaned = Date.now();
+    try {
+      const items = (await flGtList(true)).filter(x => !x.deleted), groups = new Map(); let n = 0;
+      for (const x of items) { const k = gtName(x.title) + '|' + gtDay(x.due); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); }
+      for (const list of groups.values()) {
+        if (list.length < 2) continue;
+        const mine = list.filter(x => linked.has(x.id)), keep = new Set(mine.length ? mine.map(x => x.id) : [list.slice().sort((a, b) => String(a.updated || '').localeCompare(String(b.updated || '')))[0].id]);
+        for (const x of list) if (!keep.has(x.id) && n < 40) { try { await flGtCall('delete_task', { taskId: x.id }); n++; } catch (e) { console.error(e); } }
+      }
+      if (n) { GT_DUP.items = null; toast(`Removed ${n} duplicate${n === 1 ? '' : 's'} from Google Tasks`); }
+    } catch (e) { console.error(e); } finally { GT_DUP.busy = false; }
+  }
+  function flGtCleanHook() {
+    if (GT_DUP.hooked || !st.db || !FL_GT.loaded) return; GT_DUP.hooked = true;
+    setTimeout(() => flGtClean(true), 8000); setInterval(() => flGtClean(), 300000); window.addEventListener('focus', () => flGtClean());
+  }
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, flRoTasksWrap, nmLockWatch, bizCard, nmRender]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, flRoTasksWrap, nmLockWatch, bizCard, flGtCleanHook, nmRender]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
     sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet2, flRoFormShow, flRoOutcome, flGtRow, flBookForm, flBfView, flFuRow2, nmWrapRow, nmLockRow, flRoBookRow, flSortChecklist, bizNotes]) { try { f(root); } catch (e) { console.error(e); } } });
   }
