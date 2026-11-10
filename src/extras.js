@@ -5685,11 +5685,113 @@ function appExtras() {
     if (GT_DUP.hooked || !st.db || !FL_GT.loaded) return; GT_DUP.hooked = true;
     setTimeout(() => flGtClean(true), 8000); setInterval(() => flGtClean(), 300000); window.addEventListener('focus', () => flGtClean());
   }
+  /* -- One "Add a show": on a new booking you can paste an email or DM and the form fills itself in (date, set times, fee,
+     venue, promoter or contact, plus the message in Notes), with what was found listed so you can check it. If the date has
+     already passed, it offers to save the show to Show history instead (or keep it as a booking to invoice it). */
+  const AS_MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12 };
+  const asPad = n => String(n).padStart(2, '0');
+  function asDate(y, m, d, hasYear) {
+    if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return '';
+    const t = todayStr(); let yy = y ? (y < 100 ? 2000 + y : y) : +t.slice(0, 4);
+    let s = `${yy}-${asPad(m)}-${asPad(d)}`; if (!hasYear && s < addDays(t, -2)) s = `${yy + 1}-${asPad(m)}-${asPad(d)}`; // no year given: the next one coming up
+    return s;
+  }
+  const asTime = (h, mi, ap) => { h = +h; mi = +(mi || 0); ap = String(ap || '').toLowerCase().replace(/\./g, ''); if (ap === 'pm' && h < 12) h += 12; if (ap === 'am' && h === 12) h = 0; return h > 23 || mi > 59 ? '' : `${asPad(h)}:${asPad(mi)}`; };
+  function flParseInquiry(text) {
+    const T = String(text || ''), low = T.toLowerCase(), out = { found: [] };
+    // date: "March 14", "Mar 14th, 2027", "14 March", "3/14", "3/14/27"
+    const MON = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+    let m = new RegExp(`\\b${MON}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(\\d{4}))?\\b`, 'i').exec(T);
+    if (m) out.date = asDate(m[3] ? +m[3] : 0, AS_MON[m[1].toLowerCase().slice(0, m[1].toLowerCase().startsWith('sept') ? 4 : 3)], +m[2], !!m[3]);
+    if (!out.date && (m = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MON}\\b(?:,?\\s+(\\d{4}))?`, 'i').exec(T))) out.date = asDate(m[3] ? +m[3] : 0, AS_MON[m[2].toLowerCase().slice(0, 3)], +m[1], !!m[3]);
+    if (!out.date && (m = /\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/.exec(T))) out.date = asDate(m[3] ? +m[3] : 0, +m[1], +m[2], !!m[3]);
+    // set times: "10pm-2am", "9 to 11 PM", "10:30 PM"
+    if ((m = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\s*(?:-|–|—|to|until|till)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)/i.exec(T))) {
+      const ap2 = m[6], ap1 = m[3] || (+m[1] > +m[4] && /p/i.test(ap2) ? 'pm' : ap2);
+      out.start = asTime(m[1], m[2], ap1); out.end = asTime(m[4], m[5], ap2);
+    } else if ((m = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)/i.exec(T))) out.start = asTime(m[1], m[2], m[3]);
+    // fee: a $ amount next to fee/pay/guarantee/offer/rate, else the biggest $ amount
+    const money = [...T.matchAll(/\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?|\b(\d{2,6})\s*(?:dollars|usd)\b/gi)].map(x => ({ v: Number(String(x[1] || x[3]).replace(/,/g, '')) + (x[2] ? +x[2] / 100 : 0), i: x.index }));
+    if (money.length) { const near = money.find(x => /(fee|pay|paying|guarantee|offer|rate|budget|flat)/i.test(T.slice(Math.max(0, x.i - 40), x.i + 30))); out.fee = (near || money.slice().sort((a, b) => b.v - a.v)[0]).v; }
+    out.emails = [...new Set((T.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || []).map(x => x.toLowerCase()))];
+    out.phones = [...new Set((T.match(/(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g) || []).map(x => x.trim()))];
+    out.handles = [...new Set([...T.matchAll(/(?:^|[\s(])@([A-Za-z0-9._]{2,30})/g)].map(x => x[1].replace(/\.$/, '').toLowerCase()))];
+    const subj = /^\s*subject:\s*(.+)$/im.exec(T); if (subj) out.title = subj[1].trim().slice(0, 120);
+    // people and venues you already have, by name, email or Instagram
+    const has = s => { s = String(s || '').trim().toLowerCase(); return s.length >= 3 && new RegExp(`(^|[^a-z0-9])${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`).test(low); };
+    let cs = []; try { cs = S.contacts || []; } catch (_) {}
+    const hit = c => (c.email && out.emails.includes(String(c.email).toLowerCase())) || (c.instagram && out.handles.includes(String(c.instagram).replace(/^@/, '').toLowerCase())) || has(cName(c));
+    out.venue = cs.find(c => c.type === 'venue' && hit(c)) || null;
+    out.promo = cs.find(c => c.type === 'promoter' && isColl(c) && hit(c)) || null;
+    out.person = cs.find(c => c.type === 'promoter' && !isColl(c) && hit(c)) || cs.find(c => c.type !== 'venue' && !isColl(c) && c.email && out.emails.includes(String(c.email).toLowerCase())) || null;
+    const known = new Set(cs.map(c => String(c.email || '').toLowerCase()).filter(Boolean)); out.newEmails = out.emails.filter(e => !known.has(e));
+    return out;
+  }
+  function asSet(root, sel, val) {
+    const el = root.querySelector(sel); if (!el || val == null || val === '') return false;
+    if (el.tagName === 'SELECT' && ![...el.options].some(o => o.value === String(val))) return false;
+    el.value = String(val); try { if (typeof el._sync === 'function') el._sync(); } catch (_) {}
+    el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); return true;
+  }
+  function asTimeSet(root, id, hhmm) {
+    if (!hhmm) return false; const [h, mi] = hhmm.split(':').map(Number), g = p => root.querySelector(`[data-tsel="${id}"][data-part="${p}"]`); if (!g('h')) return false;
+    const h12 = String(h % 12 || 12), ap = h < 12 ? 'AM' : 'PM', mm = g('m'); g('h').value = h12; if (mm && ![...mm.options].some(o => +o.value === mi)) mm.add(new Option(asPad(mi), String(mi))); if (mm) mm.value = String(mi); g('ap').value = ap;
+    ['h', 'm', 'ap'].forEach(p => g(p) && g(p).dispatchEvent(new Event('change', { bubbles: true }))); return true;
+  }
+  function flAddShow(root) {
+    const h = root.querySelector('h3'), date = root.querySelector('#b-date'); if (!h || !date || !/^new booking$/i.test(h.textContent.trim())) return;
+    if (!root.querySelector('.ssx-as')) {
+      const box = document.createElement('details'); box.className = 'ssx-as';
+      box.innerHTML = `<summary>📋 Paste an email or DM to fill this in</summary>
+        <textarea id="ssx-as-text" placeholder="Paste the message they sent you: date, times, fee, venue…" style="min-height:110px"></textarea>
+        <div class="ssx-as-a"><button type="button" class="btn small primary" data-as-go>Fill in the form</button><span class="note">Nothing is saved until you tap Add booking.</span></div><div class="ssx-as-out" aria-live="polite"></div>`;
+      h.after(box);
+      box.querySelector('[data-as-go]').onclick = () => {
+        const txt = box.querySelector('#ssx-as-text').value.trim(), outBox = box.querySelector('.ssx-as-out'); if (!txt) { box.querySelector('#ssx-as-text').focus(); return; }
+        const r = flParseInquiry(txt), got = [], miss = [];
+        if (r.title && asSet(root, '#b-title', r.title)) got.push(['Name', r.title]);
+        if (r.date && asSet(root, '#b-date', r.date)) got.push(['Date', niceDate(r.date)]); else miss.push('date');
+        if (asTimeSet(root, 'b-ts', r.start)) got.push(['Set starts', r.start]); if (asTimeSet(root, 'b-te', r.end)) got.push(['Set ends', r.end]);
+        if (r.fee && asSet(root, '#b-fee', r.fee)) got.push(['Fee', '$' + r.fee.toLocaleString('en-US')]); else if (!r.fee) miss.push('fee');
+        if (r.venue && asSet(root, '#b-venue', r.venue.id)) { got.push(['Venue', cName(r.venue)]); if (r.venue.city) asSet(root, '#b-city', r.venue.city); } else miss.push('venue');
+        if (r.promo && asSet(root, '#b-promo', r.promo.id)) got.push(['Promoter', cName(r.promo)]);
+        if (r.person) setTimeout(() => { if (asSet(root, '#b-talk', r.person.id) || (!r.promo && asSet(root, '#b-promo', r.person.id))) {} }, 150);
+        if (r.person) got.push(['Talking to', cName(r.person)]);
+        const notes = root.querySelector('#b-notes'); if (notes && !notes.value.includes(txt.slice(0, 40))) { notes.value = `${notes.value ? notes.value + '\n\n' : ''}From their message:\n${txt.slice(0, 1500)}`; notes.dispatchEvent(new Event('input', { bubbles: true })); }
+        const extra = [...r.newEmails, ...r.phones, ...r.handles.map(x => '@' + x)].filter((x, i, a) => a.indexOf(x) === i).slice(0, 6);
+        outBox.innerHTML = `${got.length ? `<div class="ssx-as-got">${got.map(([k, v]) => `<span><b>${esc(k)}</b> ${esc(v)}</span>`).join('')}</div>` : '<p class="note">I couldn\'t find show details in that message. Fill in the form below.</p>'}
+          ${miss.length ? `<p class="note">Didn't find: ${esc(miss.join(', '))}. Check those below.</p>` : ''}
+          ${extra.length ? `<p class="note">Not in People yet: ${esc(extra.join(', '))}. The whole message is in Notes, and "Add new…" on Venue or Promoter adds them.</p>` : ''}
+          <p class="note">Check everything, then tap <b>Add booking</b>.</p>`;
+        box.querySelector('summary').textContent = '📋 Filled in from the pasted message';
+      };
+    }
+    // a date that's already passed: Show history, or keep it as a booking to invoice it
+    if (!date.__asPast) {
+      date.__asPast = true;
+      const check = () => {
+        let n = root.querySelector('.ssx-as-past'); const v = date.value;
+        if (!v || v >= todayStr()) { if (n) n.remove(); return; }
+        if (!n) { n = document.createElement('div'); n.className = 'ssx-as-past'; (date.closest('.frow') || date.closest('.f') || date).after(n); }
+        n.innerHTML = `<p style="margin:0"><b>This date has passed.</b> If it's done and paid, save it to your Show history. It shows on your EPK and doesn't make tasks, invoices or reminders.</p>
+          <div class="ssx-as-a"><button type="button" class="btn small primary" data-as-hist>Save to Show history</button><button type="button" class="btn small" data-as-keep>Keep it as a booking</button><span class="note">Keep it here if you still need to invoice or get paid.</span></div>`;
+        n.querySelector('[data-as-keep]').onclick = () => n.remove();
+        n.querySelector('[data-as-hist]').onclick = async e => {
+          const btn = e.currentTarget, val = id => ((root.querySelector(id) || {}).value || '').trim(), vSel = root.querySelector('#b-venue'), ven = vSel && vSel.value && contact(vSel.value);
+          const title = val('#b-title').slice(0, 120), venName = ven ? cName(ven) : ''; if (!title && !venName) { toast('Add the show name or venue first'); return; }
+          btn.disabled = true;
+          const id = await window.save('pastShows', null, { date: v, approx: false, title, venue: venName, city: val('#b-city') || (ven && ven.city) || '' });
+          if (id) { closeAll(); toast(`Added ${title || venName} to your Show history`); } else btn.disabled = false;
+        };
+      };
+      date.addEventListener('change', check); date.addEventListener('input', check); check();
+    }
+  }
   function flScan() {
     FL.raf = 0;
     for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, flRoTasksWrap, nmLockWatch, bizCard, flGtCleanHook, nmRender]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
-    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet2, flRoFormShow, flRoOutcome, flGtRow, flBookForm, flBfView, flFuRow2, nmWrapRow, nmLockRow, flRoBookRow, flSortChecklist, bizNotes]) { try { f(root); } catch (e) { console.error(e); } } });
+    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet2, flRoFormShow, flRoOutcome, flGtRow, flBookForm, flBfView, flFuRow2, nmWrapRow, nmLockRow, flRoBookRow, flSortChecklist, bizNotes, flAddShow]) { try { f(root); } catch (e) { console.error(e); } } });
   }
   function hookFlow() {
     if (window.__ssxFL || !st.db) return; window.__ssxFL = true;
