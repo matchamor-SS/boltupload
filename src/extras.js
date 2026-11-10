@@ -867,7 +867,7 @@ function appExtras() {
     TS.el = document.createElement('div'); TS.el.className = 'ssx-tour'; TS.el.setAttribute('role', 'dialog'); TS.el.setAttribute('aria-live', 'polite');
     document.body.append(TS.el);
     TS.onKey = e => { if (!TS.el) return; if (e.key === 'Escape') skipTour(); else if (e.key === 'ArrowRight') tourGo(TS.i + 1); else if (e.key === 'ArrowLeft' && TS.i > 0) tourGo(TS.i - 1); };
-    TS.onMove = () => placeTour();
+    TS.w = innerWidth; TS.onMove = () => { if (TS.w === innerWidth) return; TS.w = innerWidth; placeTour(); }; // phones fire resize while scrolling; only a real width change moves the card
     document.addEventListener('keydown', TS.onKey); addEventListener('resize', TS.onMove);
     tourGo(i);
   }
@@ -2228,7 +2228,8 @@ function appExtras() {
     if (title === 'Emails and templates') { const b = document.querySelector('#commSeg [data-cmode="tpl"]'); if (b) b.click(); }
   }
   function ntTourFollow(step, el, card) {
-    /* Pages can finish drawing after the tour scrolls, so keep the target in view for a moment. */
+    /* Pages can finish drawing after the tour scrolls, so keep the target in view for a moment. Phones: one scroll when the step opens, then the page is yours. */
+    if (innerWidth < 700) return;
     const nav = step.tab === 'settings' && document.querySelector('section[data-view="settings"] .ssg-nav');
     const min = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ss-top')) || 72) + (nav ? nav.offsetHeight : 0);
     let r = el.getBoundingClientRect();
@@ -2257,11 +2258,11 @@ function appExtras() {
     ntTourEnter(title);
     const el = wrap && wrap.classList.contains('in') && step && step.target ? [...document.querySelectorAll(step.target)].find(x => { const r = x.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) : null;
     if (NTOUR.on !== el) { if (NTOUR.on) NTOUR.on.classList.remove('ssx-tour-on'); NTOUR.on = el; }
-    if (el) el.classList.add('ssx-tour-on');
+    if (el && !el.classList.contains('ssx-tour-on')) el.classList.add('ssx-tour-on');
     if (!el) { if (NTOUR.spot) { NTOUR.spot.remove(); NTOUR.spot = null; } return; }
-    if (!NTOUR.spot) { NTOUR.spot = document.createElement('div'); NTOUR.spot.className = 'ssx-tour-spot'; NTOUR.spot.setAttribute('aria-hidden', 'true'); document.body.appendChild(NTOUR.spot); }
+    if (!NTOUR.spot) { NTOUR.spot = document.createElement('div'); NTOUR.spot.className = 'ssx-tour-spot'; NTOUR.spot.setAttribute('aria-hidden', 'true'); document.body.appendChild(NTOUR.spot); NTOUR.box = ''; }
     const r = el.getBoundingClientRect(), pad = 6, top = Math.max(4, r.top - pad), left = Math.max(4, r.left - pad), bottom = Math.min(innerHeight - 4, r.bottom + pad), right = Math.min(innerWidth - 4, r.right + pad);
-    NTOUR.spot.style.cssText = `top:${top}px;left:${left}px;width:${Math.max(0, right - left)}px;height:${Math.max(0, bottom - top)}px;`;
+    const box = `top:${top}px;left:${left}px;width:${Math.max(0, right - left)}px;height:${Math.max(0, bottom - top)}px;`; if (NTOUR.box !== box) { NTOUR.box = box; NTOUR.spot.style.cssText = box; }
     ntTourFollow(step, el, card);
   }
     /* ---------- Tax packet button and phone tour fit. ---------- */
@@ -2278,12 +2279,7 @@ function appExtras() {
       const spot=document.querySelector(".ssx-tour-spot");
       if(!spot||getComputedStyle(spot).display==="none")return;
       if(!body.dataset.ssxTourPad){body.dataset.ssxTourPad="1";body.style.paddingBottom="70vh"}
-      // only while a step settles (so you can scroll freely after), never under the top bar, never for a bar that doesn't scroll
-      const on=document.querySelector(".ssx-tour-on");if(Date.now()>(NTOUR.until||0)||(on&&on.closest("#tabs, header.top")))return;
-      const nav=document.querySelector('section[data-view="settings"]:not([hidden]) .ssg-nav'),min=(parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--ss-top"))||72)+(nav?nav.offsetHeight:0)+8;
-      const t=spot.getBoundingClientRect(),c=card.getBoundingClientRect();
-      const gap=t.bottom-c.top+12,room=t.top-min;
-      if(gap>4&&room>4)scrollBy(0,Math.min(gap,room));
+      // the tour no longer scrolls the page on phones after a step opens, so nothing moves under your finger
     },200);
   }
   /* ---------- Show history: past shows kept apart from Bookings, so they never touch money, tasks, mileage or reminders.
