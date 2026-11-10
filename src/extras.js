@@ -3680,14 +3680,26 @@ function appExtras() {
     const id = root.dataset && root.dataset.booking, b = id && flBk().find(x => x.id === id), dl = root.querySelector('dl.kv'); if (!b || !dl || dl.querySelector('.ssx-fl-money')) return;
     const feeDt = [...dl.querySelectorAll('dt')].find(d => d.textContent.trim() === 'Fee'), feeDd = feeDt && feeDt.nextElementSibling; if (!feeDd) return;
     const { inc, exp } = flMoneyOf(id), fee = +b.fee || 0, ti = inc.reduce((s, i) => s + (+i.amount || 0), 0), te = exp.reduce((s, e) => s + (+e.amount || 0), 0);
+    const lines = (b.invoice && b.invoice.lines) || [], onInv = new Set(lines.map(l => l.incomeId || l.expId).filter(Boolean));
+    const pen = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
     const items = [...inc.map(i => ({ k: 'i', id: i.id, amt: +i.amount || 0, label: i.desc || incCatLabel(i) })), ...exp.map(e => ({ k: 'e', id: e.id, amt: +e.amount || 0, label: e.desc || expCatLabel(e) }))];
-    const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = 'Extra money'; dd.className = 'ssx-fl-money';
-    dd.innerHTML = `${items.length ? `<div class="ssx-fl-mlist">${items.map(x => `<button type="button" class="ssx-fl-mi" data-fl-m="${x.k}:${esc(x.id)}" aria-label="Edit ${esc(x.label)}"><span class="num ${x.k === 'e' ? 'out' : 'in'}">${x.k === 'e' ? '−' : '+'}${money(x.amt)}</span><span>${esc(x.label)}</span></button>`).join('')}</div>
-      <div class="ssx-fl-mtot"><b>Show total ${money(fee + ti - te)}</b><span class="note">Fee ${money(fee)}${ti ? ` + ${money(ti)} income` : ''}${te ? ` − ${money(te)} expenses` : ''}</span></div>` : ''}
-      <div class="ssx-fl-mact"><button type="button" class="btn small" data-fl-addinc>+ Add income</button><button type="button" class="btn small" data-fl-addexp>+ Add expense</button>${items.length ? '<button type="button" class="linkbtn" data-fl-fin>See in Financials</button>' : ''}</div>`;
+    // the show's money in one clear box: fee, each extra income or cost (tap to edit), and the total
+    const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = 'Money'; dd.className = 'ssx-fl-money';
+    dd.innerHTML = `<div class="ssx-mn">
+      <div class="ssx-mn-row"><span>Fee</span><span class="num">${money(fee)}</span><button type="button" class="btn small ghost" data-mn-fee aria-label="Edit the fee">${pen} Edit</button></div>
+      ${items.map(x => `<div class="ssx-mn-row"><span>${esc(x.label)}${x.k === 'i' && b.invoice && b.invoice.number ? `<span class="ssx-mn-tag">${onInv.has(x.id) ? 'On the invoice' : 'Not on the invoice'}</span>` : ''}</span><span class="num ${x.k === 'e' ? 'out' : 'in'}">${x.k === 'e' ? '−' : '+'}${money(x.amt)}</span><button type="button" class="btn small ghost" data-fl-m="${x.k}:${esc(x.id)}" aria-label="Edit ${esc(x.label)}">${pen} Edit</button></div>`).join('')}
+      ${items.length ? `<div class="ssx-mn-row ssx-mn-tot"><span>Show total</span><span class="num">${money(fee + ti - te)}</span><span></span></div>` : ''}
+      <div class="ssx-mn-act"><button type="button" class="btn small" data-fl-addinc>＋ Add income</button><button type="button" class="btn small" data-fl-addexp>＋ Add expense</button>${inc.some(i => !onInv.has(i.id)) ? '<button type="button" class="btn small" data-mn-inv>Put extra income on the invoice</button>' : ''}${items.length ? '<button type="button" class="linkbtn" data-fl-fin>See in Financials</button>' : ''}</div></div>`;
     feeDd.after(dt, dd);
+    // the old Fee line is shown inside the box now
+    feeDt.hidden = true; feeDd.hidden = true;
     dd.querySelector('[data-fl-addinc]').onclick = () => flAddIncome(b);
     dd.querySelector('[data-fl-addexp]').onclick = () => flAddExpense(b);
+    dd.querySelector('[data-mn-fee]').onclick = () => { const row = dd.querySelector('[data-mn-fee]').closest('.ssx-mn-row'); row.innerHTML = `<span>Fee</span><input type="number" inputmode="decimal" min="0" step="0.01" value="${fee || ''}" aria-label="Fee in dollars" class="ssx-mn-in"><button type="button" class="btn small primary" data-mn-save>Save</button>`;
+      const inp = row.querySelector('input'); inp.focus(); inp.select();
+      const go = async () => { const v = Math.max(0, Math.round((Number(inp.value) || 0) * 100) / 100); if (v === fee) { bookingView(id); return; } if (await window.patch('bookings', id, { fee: v, updatedAt: new Date().toISOString() })) { toast(`Fee is now ${money(v)}`, async () => { await window.patch('bookings', id, { fee }); }); bookingView(id); } };
+      row.querySelector('[data-mn-save]').onclick = go; inp.onkeydown = e => { if (e.key === 'Enter') go(); }; };
+    const toInv = dd.querySelector('[data-mn-inv]'); if (toInv) toInv.onclick = () => { invoiceSheet(id); let n = 0; const t = () => { const c = document.querySelector('#sheetRoot [data-addl="income"]'); if (c) c.click(); else if (n++ < 20) setTimeout(t, 150); }; setTimeout(t, 200); };
     const fin = dd.querySelector('[data-fl-fin]'); if (fin) fin.onclick = () => { closeAll(); goTab('money'); };
     dd.querySelectorAll('[data-fl-m]').forEach(x => x.onclick = () => { const [k, mid] = x.dataset.flM.split(':'); if (k === 'i') { const i = inc.find(y => y.id === mid); if (i) flAddIncome(b, i); } else { const e = exp.find(y => y.id === mid); if (e) flAddExpense(b, e); } });
   }
@@ -5175,6 +5187,7 @@ function appExtras() {
           const x = steps[+row.dataset.i], go = row.querySelector('[data-wr-go]'), sk = row.querySelector('[data-wr-skip]'), un = row.querySelector('[data-wr-undo]');
           if (go) go.onclick = async () => {
             if (x.mark) await apSave({ done: { ...apCfg().done, [x.k + ':' + bid]: true } });
+            if (['invoice', 'thanks', 'media', 'costs'].includes(x.k)) { try { closeAll(); } catch (_) {} } // the next window opens in front; this list waits in Next moves
             if (x.go) { try { await x.go(); } catch (e) { console.error(e); } }
             if (document.body.contains(root)) setTimeout(draw, 250);
           };
@@ -5444,11 +5457,12 @@ function appExtras() {
   const NM_LOCK = { seen: null, opened: {} };
   const nmLockable = b => b && stat(b) === 'confirmed' && b.date && b.date >= todayStr();
   function nmLockSteps(b) {
-    const c = apCfg(), id = b.id, gc = b.gcal || {};
+    const c = apCfg(), id = b.id, since = (b.stageAt || {}).confirmed || '0000';
+    // the confirmation counts as done only once an email about this show has actually been sent (or you say you sent it another way)
+    const sent = (() => { try { return (S.sentLog || []).some(x => x.bookingId === id && x.kind !== 'invoice' && String(x.at || '').slice(0, 10) >= since); } catch (_) { return false; } })();
     let ts = []; try { ts = tasksOf(b).filter(x => K(x.st) === 'confirmed').sort((p, q) => (p.done ? 1 : 0) - (q.done ? 1 : 0) || String(p.due || '9999').localeCompare(String(q.due || '9999'))); } catch (_) {}
     return [
-      { k: 'cal', icon: '📅', label: gc.eventId ? 'On your Google Calendar' : 'Add it to your Google Calendar', done: !!gc.eventId, skipped: !gc.eventId && (!!b.gcalOff || !!c.dismissed['lockcal:' + id]), btn: 'Add it', go: () => syncBookingEvent(id, b), skipKey: 'lockcal:' + id },
-      { k: 'mail', icon: '✉️', label: 'Send a confirmation: date, set time, fee, contract and load-in', done: !!c.done['confirm:' + id], skipped: !!c.dismissed['confirm:' + id], btn: 'Write it', mark: 'confirm:' + id, keep: true, go: () => confirmMail(b), skipKey: 'confirm:' + id },
+      { k: 'mail', icon: '✉️', label: sent ? 'Confirmation sent' : 'Send a confirmation: date, set time, fee, contract and load-in', done: sent || !!c.done['lockmail:' + id], skipped: !!c.dismissed['confirm:' + id], btn: 'Write it', keep: !sent, go: () => confirmMail(b), skipKey: 'confirm:' + id, alt: 'lockmail:' + id },
       ...ts.map(x => ({ k: 'task', key: x.key, icon: '☐', label: x.label, due: x.due, done: !!x.done, skipped: false, btn: 'Done', task: true })),
     ];
   }
@@ -5482,7 +5496,7 @@ function appExtras() {
           <span class="ssx-wr-tx">${esc(x.label)}${x.due && !x.done ? `<span class="note">${esc(nmWhen(x.due))}</span>` : x.skipped ? `<span class="note">${x.k === 'cal' && b.gcalOff ? 'Calendar is turned off for this show' : 'Skipped'}</span>` : ''}</span>
           <span class="ssx-wr-bt">${x.task ? (x.done ? '<button type="button" class="btn small ghost" data-lk-undo>Undo</button>' : '<button type="button" class="btn small primary" data-lk-go>Done</button>')
             : x.done && !x.keep ? '' : x.skipped ? (x.k === 'cal' && b.gcalOff ? '' : '<button type="button" class="btn small" data-lk-back>Bring back</button>')
-            : `<button type="button" class="btn small${x.done ? '' : ' primary'}" data-lk-go>${esc(x.btn)}</button>${x.done ? '' : '<button type="button" class="btn small ghost" data-lk-skip>Skip</button>'}`}</span></div>`).join('');
+            : `<button type="button" class="btn small${x.done ? '' : ' primary'}" data-lk-go>${esc(x.btn)}</button>${x.done ? '' : `${x.alt ? '<button type="button" class="btn small ghost" data-lk-alt>I sent it another way</button>' : ''}<button type="button" class="btn small ghost" data-lk-skip>Skip</button>`}`}</span></div>`).join('');
         const ep = root.querySelector('.ssx-lk-epk');
         ep.innerHTML = `<label class="ssx-check"><input type="checkbox" ${b.epkOff ? '' : 'checked'}> Show it on my EPK as an upcoming show</label>`;
         ep.querySelector('input').onchange = async e => { const on = e.target.checked; if (await window.patch('bookings', bid, { epkOff: !on })) toast(on ? 'On your EPK' : 'Hidden from your EPK'); };
@@ -5491,9 +5505,10 @@ function appExtras() {
           if (go) go.onclick = async () => {
             go.disabled = true;
             if (x.task) { await setTask(bid, x.key, true); try { syncChecks(bid, x.key, true); } catch (_) {} }
-            else { if (x.mark) await apSave({ done: { ...apCfg().done, [x.mark]: true } }); try { await x.go(); } catch (e) { console.error(e); } }
-            if (document.body.contains(root)) setTimeout(draw, x.k === 'cal' ? 1500 : 250);
+            else { try { closeAll(); } catch (_) {} try { await x.go(); } catch (e) { console.error(e); } return; } // the email opens on its own, in front; this list waits in Next moves
+            if (document.body.contains(root)) setTimeout(draw, 250);
           };
+          const alt = row.querySelector('[data-lk-alt]'); if (alt) alt.onclick = async () => { await apSave({ done: { ...apCfg().done, [x.alt]: true } }); draw(); };
           if (un) un.onclick = async () => { await setTask(bid, x.key, false); try { syncChecks(bid, x.key, false); } catch (_) {} setTimeout(draw, 250); };
           if (sk) sk.onclick = async () => { await apSave({ dismissed: { ...apCfg().dismissed, [x.skipKey]: true } }); draw(); };
           if (back) back.onclick = async () => { const d = { ...apCfg().dismissed }; delete d[x.skipKey]; await apSave({ dismissed: d }); draw(); };
