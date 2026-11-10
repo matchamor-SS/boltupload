@@ -1020,3 +1020,7 @@ html body .ssx-cp-slot > .ssx-ro { margin: 0; border-color: color-mix(in srgb, v
 html body .ssx-cp-more { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
 html body .ssx-cp-more > summary { cursor: pointer; font-weight: 600; }
 html body .ssx-cp-more[open] > summary { margin-bottom: 10px; }
+/* Follow-ups: Google Tasks row on the profile, group on the Tasks page */
+html body .ssx-fu-g { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0 4px; }
+html body .ssx-fu-g .note { flex: 1 1 200px; margin: 0; }
+html body #tList .ssx-fu-tasks { margin-bottom: 12px; }
