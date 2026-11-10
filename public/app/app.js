@@ -347,7 +347,7 @@ function renderBookings(){
 function renderContacts(){
   $("#contactFilter").innerHTML=[["all","All"],...CTYPES].map(([k,l])=>`<button class="chip" aria-pressed="${cFilter===k}" data-cf="${k}">${l}</button>`).join("");
   const L=S.contacts.filter(c=>cFilter==="all"||c.type===cFilter).sort((a,b)=>cName(a).localeCompare(cName(b)));
-  $("#contactList").innerHTML=L.length?L.map(c=>`<div class="row" style="cursor:default;flex-wrap:wrap;row-gap:4px"><button class="row" style="padding:0;border:0;flex:1;min-width:0" data-open-contact="${c.id}"><span class="main"><span class="t" style="display:block">${esc(cName(c))}</span><span class="sub" style="display:block">${esc(cSub(c)||c.email||"")}</span></span><span class="pill" style="color:var(--muted)">${esc(c.type==="venue"&&c.vkind==="festival"?"Festival":c.type==="promoter"&&c.pkind==="collective"?"Collective":(CTYPES.find(t=>t[0]===c.type)||[,"Other"])[1].split(" /")[0])}</span></button><button class="btn small" data-reach="${c.id}" aria-label="Contact ${esc(cName(c))}">Contact</button>${c.address?`<div style="flex-basis:100%;font-size:13px">${addrLink(c.address)}</div>`:""}</div>`).join("")
+  $("#contactList").innerHTML=L.length?L.map(c=>`<div class="row" style="cursor:default;flex-wrap:wrap;row-gap:4px"><button class="row" style="padding:0;border:0;flex:1;min-width:0" data-open-contact="${c.id}"><span class="main"><span class="t" style="display:block">${esc(cName(c))}</span><span class="sub" style="display:block">${esc(cSub(c)||c.email||"")}</span></span><span class="pill" style="color:var(--muted)">${esc(c.type==="venue"&&c.vkind==="festival"?"Festival":c.type==="promoter"&&c.pkind==="collective"?"Collective":(CTYPES.find(t=>t[0]===c.type)||[,"Other"])[1].split(" /")[0])}</span></button>${c.address?`<div style="flex-basis:100%;font-size:13px">${addrLink(c.address)}</div>`:""}</div>`).join("")
    :`<div class="empty">Add the venues, promoters and media people you work with. Once they're here, picking one on a booking fills in their details.</div>`;
 }
 /* ---------- financials ---------- */
@@ -2042,7 +2042,7 @@ document.addEventListener("click",e=>{const el=e.target.closest("[data-new],[dat
   else if(d.openIncome){incomeForm(S.income.find(c=>c.id===d.openIncome))}
   else if(d.tx){const tile=el.classList.contains('stat-tile');txFilter=(tile&&txFilter===d.tx)?'all':d.tx;renderMoney();if(tile)$('#txCard').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'})}
   else if(d.openBooking){bookingView(d.openBooking)}
-  else if(d.openContact){contactForm(S.contacts.find(c=>c.id===d.openContact))}
+  else if(d.openContact){reachSheet(d.openContact)}
   else if(d.reach){reachSheet(d.reach)}
   else if(d.openExpense){expenseForm(S.expenses.find(c=>c.id===d.openExpense))}
   else if(d.openLink){linkForm(S.links.find(c=>c.id===d.openLink))}
