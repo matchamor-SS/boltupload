@@ -5819,9 +5819,57 @@ function appExtras() {
     root.addEventListener('change', e => { if (e.target === venue) run('venueId', venue.value); else if (promo && e.target === promo) run('promoterId', promo.value); }, true);
     if (date) date.addEventListener('change', applyDue);
   }
+  /* -- Fewer places to look: the menu is Home (with Goals), Bookings (named for your artist type, with its list and
+     Calendar), Tasks, People, Financials, Kit (with Media) and Settings. The pages themselves don't change: grouped pages get
+     a small switch under the title, the menu keeps the group lit while you're on any of its pages, and People gets its own
+     clear "Messages & templates" card (with a way back from there). */
+  const NAV_GROUP = { calendar: 'bookings', goals: 'home', comms: 'contacts', media: 'kit' };
+  const NAV_SUB = { bookings: [['bookings', 'List'], ['calendar', 'Calendar']], kit: [['kit', 'Kit & EPK'], ['media', 'Media']], home: [['home', 'Home'], ['goals', 'Goals']] };
+  // what the bookings section is called, by artist type
+  const navBookName = () => { let A = {}; try { A = flArtist(); } catch (_) {} return A.kind === 'producer' ? 'Sessions' : A.group === 'service' ? 'Appointments' : A.group === 'movement' ? 'Gigs' : A.group === 'music' || A.group === 'comedy' ? 'Shows' : 'Bookings'; };
+  function navGroups() {
+    const tabs = document.getElementById('tabs'); if (!tabs) return;
+    const bName = navBookName();
+    tabs.querySelectorAll('button[data-tab]').forEach(b => {
+      const t = b.dataset.tab;
+      if (NAV_GROUP[t] && !b.classList.contains('ssx-navhide')) b.classList.add('ssx-navhide');
+      if (t === 'bookings' && b.__ssxName !== bName) { const tn = [...b.childNodes].reverse().find(n => n.nodeType === 3 && n.textContent.trim()); if (tn) { tn.textContent = bName; b.title = bName; b.__ssxName = bName; } }
+    });
+    // page titles match the menu
+    for (const [v, txt] of [['bookings', bName], ['comms', 'Messages']]) { const h2 = document.querySelector(`section[data-view="${v}"] > .head h2`); if (h2 && !h2.children.length && h2.textContent !== txt) h2.textContent = txt; }
+    const secEl = document.querySelector('section[data-view]:not([hidden])'), cur = secEl && secEl.dataset.view; if (!cur) return;
+    const grp = NAV_GROUP[cur] || cur;
+    tabs.querySelectorAll('button[data-tab]').forEach(b => { const on = String(b.dataset.tab === grp); if (b.getAttribute('aria-current') !== on) b.setAttribute('aria-current', on); });
+    const under = el => { const hd = secEl.querySelector(':scope > .head'); hd ? hd.after(el) : secEl.prepend(el); };
+    // People: Messages & templates as its own card; on that page, a way back to People
+    if (cur === 'contacts' && !secEl.querySelector(':scope > .ssx-msgcard')) {
+      const c = document.createElement('button'); c.type = 'button'; c.className = 'card ssx-msgcard';
+      c.innerHTML = `<span class="ssx-msgcard-ic" aria-hidden="true">✉️</span><span class="ssx-msgcard-tx"><b>Messages &amp; templates</b><span class="note">Your email and DM templates, and the emails you've sent</span></span><span class="ssx-msgcard-go" aria-hidden="true">›</span>`;
+      c.onclick = () => window.setTab('comms'); under(c);
+    }
+    if (cur === 'comms' && !secEl.querySelector(':scope > .ssx-backto')) {
+      const c = document.createElement('button'); c.type = 'button'; c.className = 'btn small ssx-backto'; c.textContent = '‹ People'; c.onclick = () => window.setTab('contacts');
+      const hd = secEl.querySelector(':scope > .head'); hd ? hd.before(c) : secEl.prepend(c);
+    }
+    const subs = NAV_SUB[grp]; if (!subs) return;
+    let sw = secEl.querySelector(':scope > .ssx-subnav');
+    if (!sw) {
+      sw = document.createElement('div'); sw.className = 'ssx-subnav'; sw.setAttribute('role', 'tablist'); sw.setAttribute('aria-label', 'Pages in this section');
+      sw.innerHTML = subs.map(([t, l]) => `<button type="button" role="tab" data-ssx-sub="${t}">${esc(l)}</button>`).join('');
+      sw.onclick = e => { const b = e.target.closest('[data-ssx-sub]'); if (b && b.getAttribute('aria-selected') !== 'true') window.setTab(b.dataset.ssxSub); };
+      under(sw); // right under the page title
+    }
+    sw.querySelectorAll('[data-ssx-sub]').forEach(b => { const on = String(b.dataset.ssxSub === cur); if (b.getAttribute('aria-selected') !== on) b.setAttribute('aria-selected', on); });
+  }
+  // the menu and switches update every time the page changes
+  function navWrap() {
+    const f = window.setTab; if (typeof f !== 'function' || f.__ssxNav) return;
+    const w = function () { const r = f.apply(this, arguments); try { navGroups(); } catch (_) {} return r; };
+    w.__ssxNav = true; window.setTab = w; navGroups();
+  }
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, flRoTasksWrap, nmLockWatch, bizCard, flGtCleanHook, nmRender]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, flRoTasksWrap, nmLockWatch, bizCard, flGtCleanHook, navWrap, navGroups, nmRender]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
     sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet2, flRoFormShow, flRoOutcome, flGtRow, flBookForm, flBfView, flFuRow2, nmWrapRow, nmLockRow, flRoBookRow, flSortChecklist, bizNotes, flAddShow, flLearn]) { try { f(root); } catch (e) { console.error(e); } } });
   }
