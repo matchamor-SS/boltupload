@@ -4789,9 +4789,119 @@ function appExtras() {
     };
     card.querySelectorAll('input[type="checkbox"]').forEach(x => x.onchange = save);
   }
+  /* -- W-9 in Financials: fills the official IRS Form W-9 (Rev. March 2024, saved in the site as /fw9.pdf) in the browser.
+     Name, business, tax type and address are saved in settings/w9; the SSN or EIN is typed each time, never saved, and cleared after. */
+  const FL_W9 = { saved: null, hooked: false };
+  const FL_W9_CLS = [['ind', 'Individual / sole proprietor', 0], ['llc', 'LLC', 5], ['ccorp', 'C corporation', 1], ['scorp', 'S corporation', 2], ['part', 'Partnership', 3], ['trust', 'Trust / estate', 4], ['other', 'Other', 6]];
+  function flW9Card() {
+    if (!FL_W9.hooked && st.db) { FL_W9.hooked = true; st.db.doc('settings/w9').onSnapshot(s => { FL_W9.saved = s.exists ? s.data() : null; }, () => {}); }
+    const sec = document.querySelector('section[data-view="money"]'), fin = document.getElementById('ssx-fin'); if (!sec || !fin) return;
+    let card = document.getElementById('ssx-w9'); if (card && card.previousElementSibling === fin) return;
+    if (!card) {
+      card = document.createElement('div'); card.className = 'card ssx'; card.id = 'ssx-w9';
+      card.innerHTML = `<div class="ssx-head"><div><h3>W-9 for venues and clients</h3><p class="note">Venues, promoters and clients often ask for a W-9 before they pay you. Fill it in once here and download a ready-to-send copy of the official IRS form any time. Your Social Security or EIN number is never saved.</p></div></div>
+        <div class="ssx-row"><button type="button" class="btn primary small" data-w9-go>Make my W-9</button><a class="linkbtn" href="https://www.irs.gov/forms-pubs/about-form-w-9" target="_blank" rel="noopener">About Form W-9 (IRS)</a></div>`;
+      card.querySelector('[data-w9-go]').onclick = () => flW9Sheet();
+    }
+    fin.after(card);
+  }
+  function flW9Sheet() {
+    if (typeof sheet !== 'function') return;
+    const k = (() => { try { return S.invset || {}; } catch (_) { return {}; } })(), p = (() => { try { return S.profile || {}; } catch (_) { return {}; } })(), w = FL_W9.saved || {};
+    const addr = String(k.address || '').split('\n').map(x => x.trim()).filter(Boolean);
+    const v = { name: w.name ?? (k.name || p.myName || ''), biz: w.biz ?? (k.biz && k.biz !== (k.name || p.myName) ? k.biz : ''), cls: w.cls || 'ind', llc: w.llc || '', other: w.other || '', street: w.street ?? (addr[0] || ''), city: w.city ?? addr.slice(1).join(', ') };
+    const f = (id, label, val, attrs = '') => `<div class="f"><label for="${id}">${label}</label><input id="${id}" value="${esc(val)}" ${attrs}></div>`;
+    sheet(`<h3>Your W-9</h3>
+      <p class="note">This fills in the official IRS Form W-9. Check each line before you send it. If you're not sure which tax type you are, most solo performers are "Individual / sole proprietor". This isn't tax advice.</p>
+      ${f('w9-name', '1. Your name (as shown on your tax return)', v.name, 'maxlength="80" autocomplete="name"')}
+      ${f('w9-biz', '2. Business name, if different <i class="note">(optional)</i>', v.biz, 'maxlength="80"')}
+      <div class="f"><label for="w9-cls">3. Tax type</label><select id="w9-cls">${FL_W9_CLS.map(([c, l]) => `<option value="${c}" ${c === v.cls ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="f" id="w9-llcw" ${v.cls === 'llc' ? '' : 'hidden'}><label for="w9-llc">How your LLC is taxed</label><select id="w9-llc"><option value="">Choose…</option>${[['C', 'C corporation'], ['S', 'S corporation'], ['P', 'Partnership']].map(([c, l]) => `<option value="${c}" ${c === v.llc ? 'selected' : ''}>${c}: ${l}</option>`).join('')}</select><span class="note">A one-person LLC taxed as a sole proprietor picks "Individual / sole proprietor" above instead.</span></div>
+      <div id="w9-otherw" ${v.cls === 'other' ? '' : 'hidden'}>${f('w9-other', 'Describe it', v.other, 'maxlength="60"')}</div>
+      ${f('w9-street', '5. Street address', v.street, 'maxlength="100" autocomplete="street-address"')}
+      ${f('w9-city', '6. City, state and ZIP', v.city, 'maxlength="80" placeholder="e.g. San Diego, CA 92104"')}
+      ${f('w9-req', "Who's asking for it <i class=\"note\">(optional: their name and address)</i>", '', 'maxlength="100"')}
+      <div class="f ssx-w9-tin"><label>Part I. Your taxpayer number</label>
+        <div class="seg" id="w9-kind"><button type="button" data-tk="ssn" aria-pressed="${w.tinKind !== 'ein'}">SSN</button><button type="button" data-tk="ein" aria-pressed="${w.tinKind === 'ein'}">EIN</button></div>
+        <input id="w9-tin" inputmode="numeric" maxlength="11" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore placeholder="${w.tinKind === 'ein' ? '12-3456789' : '123-45-6789'}" aria-label="Taxpayer number">
+        <span class="note">Only goes into the PDF you download. Never saved in Set &amp; Settled, and the box clears after.</span></div>
+      <div class="f"><label>Signature</label>
+        <div class="seg" id="w9-sig"><button type="button" data-s="draw" aria-pressed="true">Draw</button><button type="button" data-s="type" aria-pressed="false">Type</button><button type="button" data-s="none" aria-pressed="false">Sign it myself later</button></div>
+        <div id="w9-draw" class="ssx-w9-pad"><canvas width="600" height="140" aria-label="Sign here with your finger or mouse"></canvas><button type="button" class="linkbtn" data-w9-clear>Clear</button></div>
+        <div id="w9-typew" hidden><input id="w9-type" maxlength="60" placeholder="Type your full name" aria-label="Typed signature"></div>
+        <span class="note">Dated today, ${esc(new Date().toLocaleDateString('en-US'))}. By signing you certify the statements in Part II of the form.</span></div>
+      <p class="note ssx-w9-err" id="w9-err" role="alert"></p>
+      <div class="actions"><button class="btn" data-cancel>Close</button><button class="btn primary" data-w9-make>Download W-9 (PDF)</button></div>`, root => {
+      const $ = s => root.querySelector(s), cls = $('#w9-cls'), tin = $('#w9-tin');
+      root.querySelector('[data-cancel]').onclick = () => { tin.value = ''; close(); };
+      cls.onchange = () => { $('#w9-llcw').hidden = cls.value !== 'llc'; $('#w9-otherw').hidden = cls.value !== 'other'; };
+      let kind = w.tinKind === 'ein' ? 'ein' : 'ssn';
+      $('#w9-kind').querySelectorAll('[data-tk]').forEach(b => b.onclick = () => { kind = b.dataset.tk; $('#w9-kind').querySelectorAll('[data-tk]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); tin.placeholder = kind === 'ein' ? '12-3456789' : '123-45-6789'; fmt(); });
+      const fmt = () => { const d = tin.value.replace(/\D/g, '').slice(0, 9); tin.value = kind === 'ein' ? (d.length > 2 ? d.slice(0, 2) + '-' + d.slice(2) : d) : [d.slice(0, 3), d.slice(3, 5), d.slice(5)].filter(Boolean).join('-'); };
+      tin.addEventListener('input', fmt);
+      // signature pad
+      let sig = 'draw', inked = false; const cv = $('#w9-draw canvas'), cx = cv.getContext('2d');
+      cx.lineWidth = 3; cx.lineCap = 'round'; cx.lineJoin = 'round'; cx.strokeStyle = '#111';
+      const pt = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; };
+      let down = false;
+      cv.addEventListener('pointerdown', e => { down = true; inked = true; cv.setPointerCapture(e.pointerId); const [x, y] = pt(e); cx.beginPath(); cx.moveTo(x, y); e.preventDefault(); });
+      cv.addEventListener('pointermove', e => { if (!down) return; const [x, y] = pt(e); cx.lineTo(x, y); cx.stroke(); e.preventDefault(); });
+      ['pointerup', 'pointercancel'].forEach(t => cv.addEventListener(t, () => { down = false; }));
+      $('[data-w9-clear]').onclick = () => { cx.clearRect(0, 0, cv.width, cv.height); inked = false; };
+      $('#w9-sig').querySelectorAll('[data-s]').forEach(b => b.onclick = () => { sig = b.dataset.s; $('#w9-sig').querySelectorAll('[data-s]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); $('#w9-draw').hidden = sig !== 'draw'; $('#w9-typew').hidden = sig !== 'type'; });
+      const err = t => { const e = $('#w9-err'); e.textContent = t || ''; if (t) e.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
+      $('[data-w9-make]').onclick = async () => {
+        const btn = $('[data-w9-make]'), val = s => $(s).value.trim(), digits = tin.value.replace(/\D/g, '');
+        const d = { name: val('#w9-name'), biz: val('#w9-biz'), cls: cls.value, llc: $('#w9-llc').value, other: val('#w9-other'), street: val('#w9-street'), city: val('#w9-city'), tinKind: kind };
+        if (!d.name) { $('#w9-name').focus(); return err('Add your name (line 1).'); }
+        if (d.cls === 'llc' && !d.llc) { $('#w9-llc').focus(); return err('Pick how your LLC is taxed.'); }
+        if (!d.street || !d.city) { (d.street ? $('#w9-city') : $('#w9-street')).focus(); return err('Add your street address and your city, state and ZIP (lines 5 and 6).'); }
+        if (digits.length !== 9) { tin.focus(); return err(`Type your full ${kind === 'ein' ? 'EIN' : 'Social Security number'} (9 digits).`); }
+        if (sig === 'draw' && !inked) return err('Sign in the box, or pick "Type" or "Sign it myself later".');
+        if (sig === 'type' && !val('#w9-type')) { $('#w9-type').focus(); return err('Type your name as your signature.'); }
+        err(''); btn.disabled = true; btn.textContent = 'Making your W-9…';
+        try {
+          const bytes = await flW9Pdf(d, digits, val('#w9-req'), sig === 'draw' ? cv.toDataURL('image/png') : '', sig === 'type' ? val('#w9-type') : '');
+          tin.value = '';
+          const file = `W-9 ${d.biz || d.name}.pdf`.replace(/[\\/:*?"<>|]+/g, ''), blob = new Blob([bytes], { type: 'application/pdf' });
+          const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+          if (st.db) st.db.doc('settings/w9').set(d).catch(() => {});
+          toast('W-9 downloaded. It has your full taxpayer number, so send it only to the people paying you.');
+        } catch (e) {
+          console.error(e);
+          err(e && e.message === 'form' ? "Couldn't load the W-9 form file. Try again in a minute; if it keeps happening, the site's fw9.pdf file is missing." : "Couldn't make the PDF. Check the details and try again.");
+        }
+        btn.disabled = false; btn.textContent = 'Download W-9 (PDF)';
+      };
+    });
+  }
+  // fills the official form's own fields, then adds the signature and date on the signature line
+  async function flW9Pdf(d, digits, req, sigPng, sigText) {
+    const { PDFDocument, StandardFonts, rgb } = await window.ssxPdfLib();
+    const src = await fetch('/fw9.pdf', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('form'); return r.arrayBuffer(); }).catch(e => { throw new Error(e && e.message === 'form' ? 'form' : 'form'); });
+    const pdf = await PDFDocument.load(src), form = pdf.getForm(), all = form.getFields();
+    try { form.deleteXFA(); } catch (_) {}
+    const field = short => { const x = all.find(f => f.getName().endsWith('.' + short) || f.getName() === short); if (!x) throw new Error('field ' + short); return x; };
+    const text = (short, v) => { const x = field(short); if (typeof x.setText === 'function') x.setText(String(v || '')); };
+    text('f1_01[0]', d.name); text('f1_02[0]', d.biz);
+    const c = FL_W9_CLS.find(x => x[0] === d.cls) || FL_W9_CLS[0], box = field(`c1_1[${c[2]}]`); if (typeof box.check === 'function') box.check();
+    if (d.cls === 'llc') text('f1_03[0]', d.llc);
+    if (d.cls === 'other') text('f1_04[0]', d.other);
+    text('f1_07[0]', d.street); text('f1_08[0]', d.city); if (req) text('f1_09[0]', req);
+    if (d.tinKind === 'ein') { text('f1_14[0]', digits.slice(0, 2)); text('f1_15[0]', digits.slice(2)); }
+    else { text('f1_11[0]', digits.slice(0, 3)); text('f1_12[0]', digits.slice(3, 5)); text('f1_13[0]', digits.slice(5)); }
+    const helv = await pdf.embedFont(StandardFonts.Helvetica);
+    form.updateFieldAppearances(helv); form.flatten();
+    const page = pdf.getPages()[0];
+    // Part II signature line: "Signature of U.S. person" box runs x 120–380, y 192–216; "Date" at x 405
+    if (sigPng) { const img = await pdf.embedPng(sigPng), h = 22, wd = Math.min(250, img.width * h / img.height); page.drawImage(img, { x: 122, y: 193, width: wd, height: h }); }
+    else if (sigText) { const ti = await pdf.embedFont(StandardFonts.TimesRomanItalic); page.drawText(sigText, { x: 124, y: 198, size: 14, font: ti, color: rgb(0.05, 0.05, 0.15) }); }
+    if (sigPng || sigText) page.drawText(new Date().toLocaleDateString('en-US'), { x: 410, y: 198, size: 10, font: helv, color: rgb(0, 0, 0) });
+    return pdf.save();
+  }
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
     sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet, flGtRow, flBookForm, flBfView]) { try { f(root); } catch (e) { console.error(e); } } });
   }
