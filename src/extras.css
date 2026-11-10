@@ -1117,3 +1117,11 @@ html body .ssx-qa { border: 1px solid color-mix(in srgb, var(--accent) 40%, var(
 html body .ssx-qa-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
 html body .ssx-qa-a { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
 html body .ssx-qa-a .spacer { flex: 1; }
+/* Add a show: paste an email or DM, past dates to Show history */
+html body .ssx-as { border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line)); border-radius: 12px; padding: 8px 12px; margin: 6px 0 12px; }
+html body .ssx-as > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+html body .ssx-as textarea { width: 100%; box-sizing: border-box; margin-top: 8px; }
+html body .ssx-as-a { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 4px; }
+html body .ssx-as-got { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+html body .ssx-as-got > span { padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, #30a46c 12%, transparent); border: 1px solid color-mix(in srgb, #30a46c 40%, var(--line)); font-size: 13px; }
+html body .ssx-as-past { padding: 10px 12px; margin: 4px 0 12px; border-radius: 12px; border: 1px solid color-mix(in srgb, #f5a524 55%, var(--line)); background: color-mix(in srgb, #f5a524 10%, transparent); }
