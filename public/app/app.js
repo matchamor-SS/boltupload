@@ -1857,9 +1857,25 @@ function contactForm(c={},opts={}){const isNew=!c.id;if(c.id&&!opts.keep&&!opts.
   <div class="actions">${isNew?"":delBtn()}<button class="btn" data-cancel>${opts.back||"Cancel"}</button><button class="btn primary" data-save>${isNew?(opts.onSaved?"Add and use":"Add contact"):"Save"}</button></div>`,root=>{
     const body=root.querySelector("#c-body");
     const capture=()=>{Object.assign(st,formVals(body))};
-    const nestNew=(type,pre,apply)=>{capture();const snap={...st,venueIds:[...st.venueIds],promoterIds:[...st.promoterIds],collectiveIds:[...st.collectiveIds],memberIds:[...st.memberIds]};
+    const nestFull=(type,pre,apply)=>{capture();const snap={...st,venueIds:[...st.venueIds],promoterIds:[...st.promoterIds],collectiveIds:[...st.collectiveIds],memberIds:[...st.memberIds]};
       const label=cName(snap)||(snap.type==="venue"?"venue":snap.type==="promoter"?"promoter":"contact");
       contactForm({type,...pre},{onSaved:id=>{apply(snap,id);contactForm(snap,{...opts,keep:true});toast("Added and linked")},onCancel:()=>contactForm(snap,{...opts,keep:true}),back:"Back to "+label})};
+    // add a new person, collective, promoter or venue right inside this form, so nothing you typed is left behind ("More details" opens the full form)
+    const nestNew=(type,pre,apply)=>{capture();const ae=document.activeElement,at=ae&&body.contains(ae)?ae.closest(".f"):null;root.querySelector(".ssx-qa")?.remove();
+      const coll=type==="promoter"&&pre.pkind==="collective",kind=type==="venue"?"venue or festival":coll?"collective":"person";
+      const box=document.createElement("div");box.className="ssx-qa";box.setAttribute("role","group");box.setAttribute("aria-label","New "+kind);
+      box.innerHTML=`<div class="ssx-qa-h"><b>New ${kind}</b><button type="button" class="x" data-qx aria-label="Cancel">×</button></div>
+        <div class="f"><label for="qa-name">${type==="venue"?"Venue or festival name":coll?"Collective name":"Name"}</label><input id="qa-name" maxlength="120" autocomplete="off"></div>
+        <div class="frow">${type==="venue"?`<div class="f"><label for="qa-city">City</label><input id="qa-city" maxlength="60" value="${esc(st.city||"")}"></div>`:`<div class="f"><label for="qa-email">Email (optional)</label><input id="qa-email" type="email" autocomplete="off"></div>`}<div class="f"><label for="qa-phone">Phone (optional)</label><input id="qa-phone" type="tel" autocomplete="off"></div></div>
+        <div class="ssx-qa-a"><button type="button" class="linkbtn" data-qmore>More details</button><span class="spacer"></span><button type="button" class="btn small" data-qx>Cancel</button><button type="button" class="btn small primary" data-qadd>Add and link</button></div>`;
+      at?at.after(box):body.prepend(box);const q=s=>box.querySelector(s);q("#qa-name").focus();box.scrollIntoView({block:"nearest",behavior:"smooth"});
+      box.querySelectorAll("[data-qx]").forEach(x=>x.onclick=()=>box.remove());
+      q("[data-qmore]").onclick=()=>{box.remove();nestFull(type,pre,apply)};
+      const add=async()=>{const name=q("#qa-name").value.trim();if(!name){toast("Add a name first");q("#qa-name").focus();return}
+        const v=s=>(q(s)||{}).value?q(s).value.trim():"";const data=type==="venue"?{type:"venue",vkind:"club",org:name,city:v("#qa-city"),phone:v("#qa-phone"),...pre}:coll?{type:"promoter",org:name,email:v("#qa-email"),phone:v("#qa-phone"),venueIds:[],...pre}:{type,name,email:v("#qa-email"),phone:v("#qa-phone"),venueIds:[],collectiveIds:[],...pre};
+        const b=q("[data-qadd]");b.disabled=true;b.textContent="Adding…";const id=await save("contacts",null,data);if(!id){b.disabled=false;b.textContent="Add and link";return}
+        capture();apply(st,id);box.remove();let n=0;const done=()=>{if(!contact(id)&&n++<20)return setTimeout(done,150);draw();toast(`Added ${name} and linked`)};done()};
+      q("[data-qadd]").onclick=add;q("#qa-name").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();add()}}};
     const draw=()=>{body.innerHTML=bodyHtml();
       const bindSeg=(id,key)=>{const el=body.querySelector("#"+id);if(el)el.querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>{capture();st[key]=b.dataset.v;draw()})};
       bindSeg("c-vkind","vkind");bindSeg("c-pkind","pkind");bindSeg("c-mkind","mkind");
