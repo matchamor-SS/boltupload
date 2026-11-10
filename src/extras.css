@@ -1141,3 +1141,6 @@ html body .ssx-msgcard-go { font-size: 22px; opacity: .6; flex: none; }
 html body .ssx-backto { align-self: flex-start; margin: 0 0 8px; }
 html body section[data-view] > .ssx-subnav, html body section[data-view] > .ssx-msgcard { order: 0 !important; }
 html body section[data-view] > .ssx-backto { order: -2 !important; }
+/* Home Screen app on iPhone: the page starts below the clock and notch, and pop-ups never slide under them */
+html.ssx-standalone body { padding-top: env(safe-area-inset-top, 0px); }
+html.ssx-standalone body .sheet { max-height: calc(100vh - env(safe-area-inset-top, 0px) - 12px) !important; }
