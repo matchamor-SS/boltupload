@@ -1045,3 +1045,30 @@ html body .ssx-wr-row.done .ssx-wr-tx, html body .ssx-wr-row.skip .ssx-wr-tx { o
 html body .ssx-wr-task { display: flex; gap: 10px; align-items: center; padding: 6px 0; }
 html body .ssx-wr-task .tcb { width: 22px; height: 22px; flex: none; }
 html body .ssx-wr-open { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 10px 12px; margin: 10px 0; border-radius: 12px; border: 1px solid var(--line, rgba(127,127,127,.3)); }
+/* Profile v2: Contact options, follow-up panel, Tasks follow-ups filter */
+html body .ssx-cp-reach { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; }
+html body .ssx-cp-rt { margin: 0; font-size: 15px; }
+html body .ssx-cp-acts .btn[aria-expanded="true"] { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+html body .ssx-cp-way { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px dashed var(--line); }
+html body .ssx-cp-way[hidden] { display: none; }
+html body .ssx-cp-way textarea { width: 100%; box-sizing: border-box; }
+html body .ssx-cp-to { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+html body .ssx-cp-go { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+html body .ssx-ro2 .ssx-ro-fu { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; padding: 12px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 9%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); }
+html body .ssx-ro2 .ssx-ro-fu.late { background: color-mix(in srgb, #e5484d 10%, transparent); border-color: color-mix(in srgb, #e5484d 45%, var(--line)); }
+html body .ssx-ro2 .ssx-ro-fu.none { background: transparent; border-style: dashed; }
+html body .ssx-ro2 .ssx-ro-fut { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 220px; }
+html body .ssx-ro2 .ssx-ro-fut b { font-size: 17px; }
+html body .ssx-ro2 .ssx-ro-fu.late .ssx-ro-fut b { color: #e5484d; }
+html body .ssx-ro2 .ssx-ro-fua { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+html body .ssx-ro2 .ssx-ro-date { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+html body .ssx-ro2 .ssx-ro-date input { width: auto; min-width: 0; padding: 4px 6px; }
+html body .ssx-ro2 .ssx-fu-gslot { margin: 8px 0 0; }
+html body .ssx-ro2 .ssx-fu-gslot:empty { display: none; }
+html body .ssx-ro2 .ssx-ro-foot { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 12px; }
+html body .ssx-ro2 .ssx-ro-foot[hidden] { display: none; }
+html body .ssx-ro2 .ssx-ro-hist { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+html body .ssx-ro2 .ssx-ro-hist > summary { cursor: pointer; font-weight: 600; }
+html body .ssx-ro2 .ssx-ro-hist[open] > summary { margin-bottom: 6px; }
+html body #tList.ssx-fu-only > :not(.ssx-fu-tasks) { display: none !important; }
+html body .ssx-fu-more { margin: 6px 0 0; }
