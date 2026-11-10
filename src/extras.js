@@ -4302,13 +4302,13 @@ function appExtras() {
      Works for anyone in People, with or without a booking. Follow-ups that are due show at the top of People and on Home.
      Emails the app sends to someone in People (not about a booking) and "Copy & open DM" are logged for you. */
   const FL_RO_VIA = [['email', 'Email'], ['dm', 'Instagram DM'], ['text', 'Text'], ['call', 'Call'], ['inperson', 'In person'], ['other', 'Other']];
-  const FL_RO_ST = [['waiting', 'Waiting to hear back'], ['replied', 'They replied'], ['interested', 'Interested'], ['notnow', 'Not right now'], ['booked', 'Booked a show'], ['noreply', 'No reply']];
+  const FL_RO_ST = [['waiting', 'Waiting to hear back'], ['replied', 'They replied'], ['interested', 'Interested'], ['notnow', 'Not right now (stops follow-ups)'], ['booked', 'Booked a show (stops follow-ups)'], ['noreply', 'Never replied (stops follow-ups)']];
   const FL_RO_OPEN = new Set(['waiting', 'replied', 'interested']);
   const flRoList = c => (Array.isArray(c && c.outreach) ? c.outreach : []).filter(Boolean).sort((a, b) => String(b.at).localeCompare(String(a.at)) || String(b.id).localeCompare(String(a.id)));
   const flRoVia = k => (FL_RO_VIA.find(x => x[0] === k) || [, 'Other'])[1];
   const flRoSt = k => (FL_RO_ST.find(x => x[0] === k) || [, k])[1];
   const flRoShort = d => { try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); } catch (_) { return d; } };
-  const flRoNext = c => { const l = flRoList(c)[0]; return l && l.follow && FL_RO_OPEN.has(l.status) ? l : null; };
+  const flRoNext = c => { for (const l of flRoList(c)) { const open = FL_RO_OPEN.has(l.status || 'waiting'); if (l.follow && open && !l.fuDone) return l; if (l.fuDone || !open) return null; } return null; }; // newest open follow-up; a newer reach-out without a date doesn't hide it
   const flRoDue = () => S.contacts.map(c => { const l = flRoNext(c); return l && l.follow <= todayStr() ? { c, l } : null; }).filter(Boolean).sort((a, b) => a.l.follow.localeCompare(b.l.follow));
   async function flRoSave(cid, list) { const ok = await window.patch('contacts', cid, { outreach: list, updatedAt: new Date().toISOString() }); if (!ok) toast("Couldn't save that. Check your connection and try again."); return ok; }
   async function flRoAdd(cid, e, quiet) {
@@ -4349,18 +4349,18 @@ function appExtras() {
       }, true);
     }
   }
-  const flRoRow = (c, l, who) => `<div class="ssx-ro-row" data-ro-id="${esc(l.id)}">
-      <div class="ssx-ro-main">${who ? `<button type="button" class="ssx-ro-who" data-reach="${esc(c.id)}">${esc(cName(c))}</button>` : ''}<span><b>${esc(flRoShort(l.at))}</b> · ${esc(flRoVia(l.via))}${l.note ? ` · ${esc(l.note)}` : ''}</span>
-        <span class="note">${FL_RO_OPEN.has(l.status) && l.follow ? `${l.follow < todayStr() ? 'Follow-up was due' : l.follow === todayStr() ? 'Follow up today' : 'Follow up'} ${esc(flRoShort(l.follow))}` : esc(flRoSt(l.status))}</span></div>
-      <div class="ssx-ro-act">${who ? `<button type="button" class="btn small" data-reach="${esc(c.id)}">Open</button>` : `<select data-ro-st aria-label="How it went">${FL_RO_ST.map(([k, n]) => `<option value="${k}" ${k === l.status ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`}
-        ${FL_RO_OPEN.has(l.status) && l.follow ? `<button type="button" class="btn small" data-ro-snooze title="Push the follow-up a week">+1 week</button><button type="button" class="btn small" data-ro-clear title="No follow-up needed">Done</button>` : ''}
-        ${who ? '' : `<button type="button" class="x" data-ro-del aria-label="Delete this reach-out">×</button>`}</div></div>`;
+  const flRoRow = (c, l, who) => { const nx = flRoNext(c), live = !!(nx && nx.id === l.id), t = todayStr(); return `<div class="ssx-ro-row" data-ro-id="${esc(l.id)}">
+      <div class="ssx-ro-main">${who ? `<button type="button" class="ssx-ro-who" data-reach="${esc(c.id)}">${esc(cName(c))}</button>` : ''}<span><b>${esc(flRoShort(l.at))}</b> · ${esc(flRoVia(l.via))}${l.note && l.note !== flRoVia(l.via) ? ` · ${esc(l.note)}` : ''}</span>
+        <span class="note">${live ? `${l.follow < t ? 'Follow-up was due' : l.follow === t ? 'Follow up today' : 'Follow up'} ${esc(flRoShort(l.follow))}` : l.fuDone ? 'Follow-up done' : esc(flRoSt(l.status || 'waiting'))}</span></div>
+      <div class="ssx-ro-act">${who ? `<button type="button" class="btn small" data-reach="${esc(c.id)}">Open</button>` : `<select data-ro-st aria-label="How it went">${FL_RO_ST.map(([k, n]) => `<option value="${k}" ${k === (l.status || 'waiting') ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`}
+        ${live && who ? `<button type="button" class="btn small" data-ro-snooze title="Push the follow-up a week">+1 week</button><button type="button" class="btn small" data-ro-clear title="Mark this follow-up done">Done</button>` : ''}
+        ${who ? '' : `<button type="button" class="x" data-ro-del aria-label="Delete this reach-out">×</button>`}</div></div>`; };
   function flRoWire(box, cidOf) {
     box.onclick = async e => {
       const row = e.target.closest('[data-ro-id]'); if (!row) return; const id = row.dataset.roId, cid = cidOf(row);
       const l = flRoList(contact(cid)).find(x => x.id === id); if (!l) return;
       if (e.target.closest('[data-ro-snooze]')) { const base = l.follow > todayStr() ? l.follow : todayStr(); if (await flRoEdit(cid, id, { follow: addDays(base, 7) })) toast(`Follow up ${flRoShort(addDays(base, 7))}`); }
-      else if (e.target.closest('[data-ro-clear]')) { if (await flRoEdit(cid, id, { follow: '' })) toast('No follow-up needed'); }
+      else if (e.target.closest('[data-ro-clear]')) { if (await flRoEdit(cid, id, { follow: '', fuDone: todayStr() })) toast('Follow-up done'); }
       else if (e.target.closest('[data-ro-del]')) {
         const c = contact(cid), before = flRoList(c);
         if (l.g && l.g.id) flGtCall('delete_task', { taskId: l.g.id }).catch(() => {}); // its Google Task goes too
@@ -5186,11 +5186,133 @@ function appExtras() {
     row.querySelector('button').onclick = () => nmWrap(b.id);
     const h = root.querySelector('.head'); h ? h.after(row) : root.prepend(row);
   }
+  /* -- Profile v2: "Reach-outs & follow-up" card. The next follow-up sits on top with Mark done / +1 week / change date and its
+     Google Tasks status; the history folds away underneath. Tasks gets a "Follow-ups" filter chip. Texts and calls started
+     from a profile are added to Reach-outs (with Undo), like emails and Instagram DMs already are. */
+  try { FL_FU.only = sessionStorage.getItem('ssxFuOnly') === '1'; } catch (_) { FL_FU.only = false; }
+  function flRoSheet2(root) {
+    const cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key; if (!cur || !/^r:/.test(cur) || !root.querySelector('[data-editc]')) return;
+    const cid = cur.slice(2), c = contact(cid); if (!c) return;
+    let box = root.querySelector('.ssx-ro');
+    if (!box) {
+      box = document.createElement('div'); box.className = 'card ssx-ro ssx-ro2';
+      box.innerHTML = `<div class="head"><h3>Reach-outs &amp; follow-up</h3></div>
+        <div class="ssx-ro-next"></div><div class="ssx-fu-gslot"></div>
+        <div class="ssx-ro-form" hidden>
+          <div class="f"><label>How</label><div class="chips" role="group" aria-label="How you reached out">${FL_RO_VIA.map(([k, n], i) => `<button type="button" class="chip" data-ro-via="${k}" aria-pressed="${i === 0}">${esc(n)}</button>`).join('')}</div></div>
+          <div class="frow"><div class="f"><label for="ssx-ro-at">When</label><input type="date" id="ssx-ro-at"></div><div class="f"><label for="ssx-ro-fu">Follow up on</label><input type="date" id="ssx-ro-fu"></div></div>
+          <div class="f"><label for="ssx-ro-note">What it was about (optional)</label><input id="ssx-ro-note" maxlength="200" placeholder="e.g. Pitched a Friday in March"></div>
+          <div class="actions"><button type="button" class="btn" data-ro-cancel>Cancel</button><button type="button" class="btn primary" data-ro-save>Save</button></div>
+        </div>
+        <div class="ssx-ro-foot"><button type="button" class="btn small" data-ro-add>＋ Log a reach-out</button><span class="note">For anything you did outside the app, like talking in person.</span></div>
+        <details class="ssx-ro-hist"><summary>History <span class="ssx-ro-n"></span></summary><div class="ssx-ro-list"></div></details>`;
+      const slot = root.querySelector('.ssx-cp-slot'), acts = [...root.children].filter(x => x.classList.contains('actions')).pop(); slot ? slot.prepend(box) : acts ? acts.before(box) : root.append(box);
+      const form = box.querySelector('.ssx-ro-form'), foot = box.querySelector('.ssx-ro-foot');
+      box.querySelector('[data-ro-add]').onclick = () => { form.hidden = false; foot.hidden = true; box.querySelector('#ssx-ro-at').value = todayStr(); box.querySelector('#ssx-ro-fu').value = addDays(todayStr(), 7); box.querySelector('#ssx-ro-note').focus(); };
+      box.querySelectorAll('[data-ro-via]').forEach(b => b.onclick = () => box.querySelectorAll('[data-ro-via]').forEach(x => x.setAttribute('aria-pressed', String(x === b))));
+      box.querySelector('[data-ro-cancel]').onclick = () => { form.hidden = true; foot.hidden = false; };
+      box.querySelector('[data-ro-save]').onclick = async e => {
+        const btn = e.currentTarget, via = (box.querySelector('[data-ro-via][aria-pressed="true"]') || {}).dataset?.roVia || 'other';
+        const at = box.querySelector('#ssx-ro-at').value || todayStr(), fu = box.querySelector('#ssx-ro-fu').value;
+        if (fu && fu < at) { toast('The follow-up date is before the reach-out. Pick a later date or clear it.'); return; }
+        btn.disabled = true; const ok = await flRoAdd(cid, { via, at, follow: fu, note: box.querySelector('#ssx-ro-note').value.trim().slice(0, 200) });
+        btn.disabled = false; if (ok) { form.hidden = true; foot.hidden = false; box.querySelector('#ssx-ro-note').value = ''; }
+      };
+      // the follow-up panel's buttons (it's redrawn, so they're handled here)
+      const nx = box.querySelector('.ssx-ro-next');
+      nx.onclick = async e => {
+        const cc = contact(cid), n = cc && flRoNext(cc);
+        if (e.target.closest('[data-fu-done]') && n) flFuDone(cid, n.id);
+        else if (e.target.closest('[data-fu-week]') && n) { const d = addDays(n.follow > todayStr() ? n.follow : todayStr(), 7); if (await flRoEdit(cid, n.id, { follow: d })) toast(`Follow up ${flRoShort(d)}`, async () => { await flRoEdit(cid, n.id, { follow: n.follow }); }); }
+      };
+      nx.onchange = async e => {
+        const cc = contact(cid), v = e.target.value; if (!cc || !v) return;
+        if (e.target.matches('[data-fu-date]')) { const n = flRoNext(cc); if (n && await flRoEdit(cid, n.id, { follow: v })) toast(`Follow up ${flRoShort(v)}`); }
+        else if (e.target.matches('[data-fu-set]')) { const l = flRoList(cc)[0]; if (l && await flRoEdit(cid, l.id, { follow: v, fuDone: '', status: FL_RO_OPEN.has(l.status) ? l.status : 'waiting' })) toast(`Follow up ${flRoShort(v)}`); }
+      };
+      flRoWire(box.querySelector('.ssx-ro-list'), () => cid);
+      if (flRoList(c).length <= 3) box.querySelector('.ssx-ro-hist').open = true;
+    }
+    const list = flRoList(c), n = flRoNext(c), sig = JSON.stringify([list, todayStr()]); if (box.dataset.sig === sig) return; box.dataset.sig = sig;
+    const t = todayStr(), late = n && n.follow < t, who = c.type === 'venue' || isColl(c) ? cName(c) : (cName(c).split(' ')[0] || cName(c));
+    box.querySelector('.ssx-ro-next').innerHTML = n
+      ? `<div class="ssx-ro-fu${late ? ' late' : n.follow === t ? ' today' : ''}"><div class="ssx-ro-fut"><span class="eyebrow">Next follow-up</span><b>${late ? 'Overdue · ' : n.follow === t ? 'Today · ' : ''}${esc(flRoShort(n.follow))}</b><span class="note">After your ${esc(flRoVia(n.via).toLowerCase())} on ${esc(flRoShort(n.at))}${n.note ? ` · ${esc(n.note)}` : ''}. Use "Contact ${esc(who)}" above when you're ready.</span></div>
+          <div class="ssx-ro-fua"><button type="button" class="btn small primary" data-fu-done>Mark done</button><button type="button" class="btn small" data-fu-week>+1 week</button><label class="ssx-ro-date"><span>Change date</span><input type="date" data-fu-date value="${esc(n.follow)}" min="${esc(t)}"></label></div></div>`
+      : list.length
+        ? `<div class="ssx-ro-fu none"><div class="ssx-ro-fut"><span class="eyebrow">No follow-up set</span><span class="note">Last reached out ${esc(flRoShort(list[0].at))} by ${esc(flRoVia(list[0].via).toLowerCase())}.</span></div><div class="ssx-ro-fua"><label class="ssx-ro-date"><span>Set a follow-up</span><input type="date" data-fu-set min="${esc(t)}"></label></div></div>`
+        : `<p class="note" style="margin:0">Nothing yet. When you contact ${esc(who)} from the buttons above, it's tracked here with a follow-up a week later.</p>`;
+    box.querySelector('.ssx-ro-n').textContent = list.length ? `(${list.length})` : '';
+    box.querySelector('.ssx-ro-hist').hidden = !list.length;
+    box.querySelector('.ssx-ro-list').innerHTML = list.slice(0, 20).map(l => flRoRow(c, l, false)).join('') + (list.length > 20 ? `<p class="note">Showing the latest 20 of ${list.length}.</p>` : '');
+  }
+  // the follow-up panel's Google Tasks line
+  function flFuRow2(root) {
+    const ro = root.querySelector('.ssx-ro2'), slot = ro && ro.querySelector('.ssx-fu-gslot'); if (!slot) return;
+    const cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key, c = cur && /^r:/.test(cur) && contact(cur.slice(2)); if (!c) return;
+    const l = flRoNext(c), linked = !!(l && l.g && l.g.id), past = !!(l && l.follow < todayStr());
+    const state = !l ? '' : [linked ? 'in' : 'out', FL_GT.auto ? 'A' : '', past ? 'P' : '', l.id, l.follow].join('|');
+    if (slot.dataset.state === state) return; slot.dataset.state = state;
+    slot.innerHTML = !l ? '' : linked ? `<span class="note">☑︎ In your Google Tasks${l.g.link ? ` · <a href="${esc(l.g.link)}" target="_blank" rel="noopener">open it</a>` : ''}. Ticking it off there marks it done here too.</span>`
+      : FL_GT.auto && !past ? `<span class="note">☑︎ Goes to your Google Tasks on its own.</span>`
+      : `<button type="button" class="btn small ghost" data-fu-add>＋ Add to Google Tasks</button>`;
+    const add = slot.querySelector('[data-fu-add]');
+    if (add) add.onclick = async () => { if (!(await flGtReady())) return; add.disabled = true; add.textContent = 'Adding…'; if (!(await flFuAdd(c.id))) { add.disabled = false; add.textContent = '＋ Add to Google Tasks'; } };
+  }
+  // Tasks page: Follow-ups group at the top, plus a "Follow-ups" chip that shows only them
+  function flFuTasks2() {
+    const host = document.getElementById('tList'); if (!host || typeof TF === 'undefined') return;
+    const chips = document.getElementById('tStage');
+    if (chips && !chips.querySelector('[data-tfu]')) { const b = document.createElement('button'); b.type = 'button'; b.className = 'chip ssx-fu-chip'; b.dataset.tfu = '1'; b.textContent = 'Follow-ups'; chips.appendChild(b); }
+    if (chips && !chips.__ssxFu) {
+      chips.__ssxFu = true;
+      chips.addEventListener('click', e => {
+        if (e.target.closest('[data-tfu]')) { FL_FU.only = !FL_FU.only; if (FL_FU.only && TF.show === 'done') TF.show = 'open'; }
+        else if (e.target.closest('[data-tstage]')) FL_FU.only = false;
+        else return;
+        try { FL_FU.only ? sessionStorage.setItem('ssxFuOnly', '1') : sessionStorage.removeItem('ssxFuOnly'); } catch (_) {}
+        if (e.target.closest('[data-tfu]')) { try { renderTasks(); } catch (_) {} }
+      });
+    }
+    const only = !!FL_FU.only && TF.show !== 'done', t0 = todayStr(), w = addDays(t0, 7), m = addDays(t0, 30);
+    host.classList.toggle('ssx-fu-only', only);
+    if (chips) { const fb = chips.querySelector('[data-tfu]'); if (fb && fb.getAttribute('aria-pressed') !== String(only)) fb.setAttribute('aria-pressed', String(only)); if (only) chips.querySelectorAll('[data-tstage][aria-pressed="true"]').forEach(x => x.setAttribute('aria-pressed', 'false')); }
+    const okWhen = d => { switch (TF.when) { case 'late': return d < t0; case 'today': return d <= t0; case 'week': return d <= w; case 'month': return d <= m; case 'nodate': return false; case 'custom': return d >= (TF.from || '0000') && d <= (TF.to || '9999'); default: return true; } };
+    const all = TF.show === 'done' ? [] : flFuOpen(), list = all.filter(x => okWhen(x.l.follow)), more = all.length - list.length;
+    if (only) { const tt = document.getElementById('tTitle'), tc = document.getElementById('tCount'), late = list.filter(x => x.l.follow < t0).length, cnt = `${list.length} follow-up${list.length === 1 ? '' : 's'}${late ? ` · ${late} overdue` : ''}`; if (tt && tt.textContent !== 'Follow-ups') tt.textContent = 'Follow-ups'; if (tc && tc.textContent !== cnt) tc.textContent = cnt; }
+    const sig = JSON.stringify([list.map(x => [x.c.id, x.l.id, x.l.follow, !!(x.l.g && x.l.g.id), cName(x.c)]), more, only, TF.show, TF.when]);
+    let box = host.querySelector('.ssx-fu-tasks');
+    if (box && box.dataset.sig === sig) return;
+    if (box) box.remove(); if (!list.length && !more && !only) return;
+    box = document.createElement('div'); box.className = 'list ssx-fu-tasks'; box.dataset.sig = sig;
+    box.innerHTML = `<div class="tgrp">Follow-ups</div>${list.map(({ c, l }) => { const late = l.follow < t0, soon = !late && l.follow <= addDays(t0, 3);
+      return `<div class="row trow" style="cursor:default"><input type="checkbox" class="tcb" data-fu="${esc(c.id)}|${esc(l.id)}" aria-label="Mark done: ${esc(flFuTitle(c))}">
+        <button class="main tmain" data-reach="${esc(c.id)}" title="Open ${esc(cName(c))}"><span class="t" style="display:block">${esc(flFuTitle(c))}</span><span class="sub" style="display:block">Last reach-out: ${esc(flFuSub(l))}${l.g && l.g.id ? ' · ☑︎ in Google Tasks' : ''}</span></button>
+        <span class="duepill ${late ? 'late' : soon ? 'soon' : ''}">${late ? 'Overdue · ' : l.follow === t0 ? 'Today · ' : ''}${esc(flRoShort(l.follow))}</span></div>`; }).join('')}
+      ${!list.length && only ? `<div class="empty">No follow-ups${more ? ' in these dates' : ''}. Open someone in People, contact them or tap "＋ Log a reach-out", and pick a follow-up date.</div>` : ''}
+      ${more ? `<p class="note ssx-fu-more">${more} more follow-up${more === 1 ? ' is' : 's are'} outside the date filter. <button type="button" class="linkbtn" data-fu-alldates>Show all dates</button></p>` : ''}`;
+    host.prepend(box);
+    box.querySelectorAll('[data-fu]').forEach(x => x.onchange = () => { const [cid, lid] = x.dataset.fu.split('|'); flFuDone(cid, lid); });
+    const ad = box.querySelector('[data-fu-alldates]'); if (ad) ad.onclick = () => { TF.when = 'all'; try { saveTF(); } catch (_) {} try { renderTasks(); } catch (_) {} };
+  }
+  // texts and calls started from a profile go into Reach-outs (once a day each), with Undo
+  function flRoAutoLog() {
+    if (FL.roTC) return; FL.roTC = true;
+    document.addEventListener('click', e => {
+      const a = e.target.closest && e.target.closest('#sheetRoot [data-sms], #sheetRoot [data-call]'); if (!a) return;
+      const cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key; if (!cur || !/^r:/.test(cur)) return;
+      const cid = cur.slice(2), c = contact(cid), via = a.hasAttribute('data-sms') ? 'text' : 'call'; if (!c) return;
+      if (flRoList(c).some(l => l.via === via && l.at === todayStr())) return;
+      setTimeout(async () => {
+        const before = flRoList(contact(cid));
+        if (await flRoAdd(cid, { via, note: via === 'text' ? 'Text message' : 'Phone call' }, true)) toast(`Added to Reach-outs: ${via === 'text' ? 'text' : 'call'} to ${cName(c)}`, async () => { await flRoSave(cid, before); });
+      }, 300);
+    }, true);
+  }
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks, nmRender]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, nmRender]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
-    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet, flGtRow, flBookForm, flBfView, flFuRow, nmWrapRow]) { try { f(root); } catch (e) { console.error(e); } } });
+    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet2, flGtRow, flBookForm, flBfView, flFuRow2, nmWrapRow]) { try { f(root); } catch (e) { console.error(e); } } });
   }
   function hookFlow() {
     if (window.__ssxFL || !st.db) return; window.__ssxFL = true;
