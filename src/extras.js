@@ -5787,11 +5787,43 @@ function appExtras() {
       date.addEventListener('change', check); date.addEventListener('input', check); check();
     }
   }
+  /* -- Learned defaults: on a new booking, picking a venue or promoter fills the empty fields from your last show with them:
+     fee, set times, who you talk to, media person, income type and when payment is due (same number of days after the
+     show). Only empty fields are filled, and a note says what came from where. */
+  function flLearn(root) {
+    const h = root.querySelector('h3'); if (!h || !/^new booking$/i.test(h.textContent.trim()) || root.__flLearn) return;
+    const venue = root.querySelector('#b-venue'), promo = root.querySelector('#b-promo'), date = root.querySelector('#b-date'); if (!venue) return; root.__flLearn = true;
+    const note = document.createElement('p'); note.className = 'note ssx-learn'; note.hidden = true; ((promo && (promo.closest('.frow') || promo)) || venue.closest('.frow') || venue).after(note);
+    const blank = el => el && !String(el.value || '').trim();
+    const setSel = (sel, v, dflt) => { const el = root.querySelector(sel); if (!el || !v || !(blank(el) || (dflt && el.selectedIndex === 0)) || el.value === v || ![...el.options].some(o => o.value === v)) return false; el.value = v; try { if (typeof el._sync === 'function') el._sync(); } catch (_) {} el.dispatchEvent(new Event('change', { bubbles: true })); return true; };
+    const setVal = (sel, v) => { const el = root.querySelector(sel); if (!blank(el) || v == null || v === '') return false; el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); return true; };
+    const lastWith = (k, id) => bk().filter(x => x[k] === id && stat(x) !== 'lost').sort((a, c) => String(c.date || '').localeCompare(String(a.date || '')))[0];
+    let dueOff = null, said = [];
+    const applyDue = () => { if (dueOff == null || !date || !date.value) return; if (setVal('#b-due', addDays(date.value, dueOff)) && !said.includes('payment due date')) { said.push('payment due date'); show(); } };
+    let src = '';
+    const show = () => { if (!said.length) return; note.hidden = false; note.textContent = `Filled in the ${said.join(', ')} from ${src}. Change anything that's different.`; };
+    const run = (k, id) => {
+      if (!id || /^__/.test(id)) return; const last = lastWith(k, id), c = contact(id); if (!last || !c) return;
+      if (!src) src = `your last show ${k === 'venueId' ? 'at' : 'with'} ${cName(c)} (${niceDate(last.date)})`;
+      const got = [];
+      if (+last.fee && setVal('#b-fee', last.fee)) got.push('fee');
+      try { if (last.setStart && !readTime(root, 'b-ts')) { setTimeSel(root, 'b-ts', last.setStart); if (last.setEnd) setTimeSel(root, 'b-te', last.setEnd); got.push('set times'); } } catch (_) {}
+      if (k === 'venueId' && setSel('#b-promo', last.promoterId)) got.push('promoter');
+      if (setSel('#b-inctype', last.incomeType, true)) got.push('income type');
+      if (setSel('#b-media', last.mediaId)) got.push('media person');
+      setTimeout(() => { if (setSel('#b-talk', last.contactPersonId)) { said.push('who you talk to'); show(); } }, 200); // its list follows the promoter
+      if (last.date && last.payDue) { const d = daysBetween(last.date, last.payDue); if (d >= 0 && d <= 120) { dueOff = d; applyDue(); } }
+      if (got.length) { said = [...new Set([...said, ...got])]; show(); }
+    };
+    // runs before the older venue pre-fill, so one note covers everything that was filled in
+    root.addEventListener('change', e => { if (e.target === venue) run('venueId', venue.value); else if (promo && e.target === promo) run('promoterId', promo.value); }, true);
+    if (date) date.addEventListener('change', applyDue);
+  }
   function flScan() {
     FL.raf = 0;
     for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, flRoTasksWrap, nmLockWatch, bizCard, flGtCleanHook, nmRender]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
-    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet2, flRoFormShow, flRoOutcome, flGtRow, flBookForm, flBfView, flFuRow2, nmWrapRow, nmLockRow, flRoBookRow, flSortChecklist, bizNotes, flAddShow]) { try { f(root); } catch (e) { console.error(e); } } });
+    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet2, flRoFormShow, flRoOutcome, flGtRow, flBookForm, flBfView, flFuRow2, nmWrapRow, nmLockRow, flRoBookRow, flSortChecklist, bizNotes, flAddShow, flLearn]) { try { f(root); } catch (e) { console.error(e); } } });
   }
   function hookFlow() {
     if (window.__ssxFL || !st.db) return; window.__ssxFL = true;
