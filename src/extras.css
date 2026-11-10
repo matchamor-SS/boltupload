@@ -1144,3 +1144,5 @@ html body section[data-view] > .ssx-backto { order: -2 !important; }
 /* Home Screen app on iPhone: the page starts below the clock and notch, and pop-ups never slide under them */
 html.ssx-standalone body { padding-top: env(safe-area-inset-top, 0px); }
 html.ssx-standalone body .sheet { max-height: calc(100vh - env(safe-area-inset-top, 0px) - 12px) !important; }
+/* Tour on phones: a plain outline (the big glow made iPhone Safari flicker) */
+@media (max-width: 699px) { html body .ssx-tour-on, html[data-mode="dark"] body .ssx-tour-on { box-shadow: none !important; } }
