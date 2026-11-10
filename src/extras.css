@@ -1084,3 +1084,5 @@ html body .ssx-ro-outf input { width: auto; flex: 1 1 140px; min-width: 0; }
 html body .ssx-rob { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 10px 12px; margin: 10px 0; border-radius: 12px; border: 1px solid var(--line); }
 html body .ssx-rob > span { min-width: 0; flex: 1 1 220px; }
 html body .ssx-rob .note { display: block; margin: 2px 0 0; }
+/* Lock it in */
+html body .ssx-lk-epk { margin-top: 14px; }
