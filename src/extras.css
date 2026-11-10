@@ -1006,3 +1006,17 @@ html:root:root body #ss-auth .ss-auth-card .note,html:root:root body #ss-auth .s
 @media (prefers-reduced-motion:reduce){html:root:root body #ss-auth .ss-points{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -22 768 204' fill='none' stroke='url(%23g)' stroke-width='1.8' stroke-linecap='round'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='768' y2='0' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%235C5346'/%3E%3Cstop offset='.55' stop-color='%23DCC59B'/%3E%3Cstop offset='1' stop-color='%23EAD7B0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M0 50c27-80 53-80 80 0s53 58 80 0 53-36 80 0 53 18 80 0 53-6 80 0H768'/%3E%3Cpath d='M0 70c27 64 53 64 80 0s53-46 80 0 53 29 80 0 53-14 80 0 53 5 80 0H768'/%3E%3Cpath d='M0 90c27-88 53-88 80 0s53 64 80 0 53-40 80 0 53 20 80 0 53-7 80 0H768'/%3E%3Cpath d='M0 110c27 56 53 56 80 0s53-41 80 0 53 25 80 0 53-13 80 0 53 4 80 0H768'/%3E%3Cpath d='M0 130c27-72 53-72 80 0s53 52 80 0 53-32 80 0 53 16 80 0 53-5 80 0H768'/%3E%3C/svg%3E")}}
 html:root:root body #ss-auth .ss-auth-intro h1{display:flex;align-items:center;gap:14px;margin:18px 0 22px !important}
 html:root:root body #ss-auth .ss-auth-intro h1::before{flex:0 0 auto;width:64px;height:64px;margin:0}
+/* One profile per person or venue: details, ways to reach them, reach-outs and notes; Edit is small */
+html body .ssx-cp-head { align-items: flex-start; gap: 12px; }
+html body .ssx-cp-edit { display: inline-flex; align-items: center; gap: 6px; flex: none; background: transparent; border: 1px solid var(--line); color: var(--muted); font-weight: 500; box-shadow: none; }
+html body .ssx-cp-edit:hover { color: var(--ink); }
+html body .ssx-cp-info { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; }
+html body .ssx-cp-info span { min-width: 0; overflow-wrap: anywhere; }
+html body .ssx-cp-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+html body .ssx-cp-ppl { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+html body .ssx-cp-slot { display: flex; flex-direction: column; gap: 14px; }
+html body .ssx-cp-slot:empty { display: none; }
+html body .ssx-cp-slot > .ssx-ro { margin: 0; border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+html body .ssx-cp-more { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+html body .ssx-cp-more > summary { cursor: pointer; font-weight: 600; }
+html body .ssx-cp-more[open] > summary { margin-bottom: 10px; }
