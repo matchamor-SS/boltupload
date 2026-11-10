@@ -1024,3 +1024,24 @@ html body .ssx-cp-more[open] > summary { margin-bottom: 10px; }
 html body .ssx-fu-g { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0 4px; }
 html body .ssx-fu-g .note { flex: 1 1 200px; margin: 0; }
 html body #tList .ssx-fu-tasks { margin-bottom: 12px; }
+/* Next moves on Home + Wrap up a show */
+html body .ssx-nm-hide { display: none !important; }
+html body #ssx-upnext .ssx-head { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+html body #ssx-upnext .ssx-uptx { min-width: 0; }
+html body .ssx-nm-sub { display: block; font-size: .86em; opacity: .72; margin-top: 2px; overflow-wrap: anywhere; }
+html body .ssx-nm-when { display: table; font-size: .78em; margin-top: 3px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line, rgba(127,127,127,.3)); opacity: .85; }
+html body .ssx-nm-when.late { color: #e5484d; border-color: currentColor; opacity: 1; }
+html body .ssx-nm-cb { flex: none; width: 24px; height: 24px; margin: 0 2px; }
+html body #ssx-upnext [data-nm-more] { margin-top: 8px; }
+html body .ssx-wr-bar { height: 6px; border-radius: 999px; background: var(--line, rgba(127,127,127,.25)); overflow: hidden; margin: 0 0 12px; }
+html body .ssx-wr-bar i { display: block; height: 100%; background: var(--accent, #8b5cf6); transition: width .3s; }
+html body .ssx-wr-row { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line, rgba(127,127,127,.2)); flex-wrap: wrap; }
+html body .ssx-wr-ic { flex: none; width: 26px; text-align: center; font-size: 1.1em; }
+html body .ssx-wr-tx { flex: 1 1 180px; min-width: 0; }
+html body .ssx-wr-tx .note { display: block; margin: 2px 0 0; }
+html body .ssx-wr-bt { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+html body .ssx-wr-row.done .ssx-wr-ic { color: #30a46c; font-weight: 700; }
+html body .ssx-wr-row.done .ssx-wr-tx, html body .ssx-wr-row.skip .ssx-wr-tx { opacity: .6; }
+html body .ssx-wr-task { display: flex; gap: 10px; align-items: center; padding: 6px 0; }
+html body .ssx-wr-task .tcb { width: 22px; height: 22px; flex: none; }
+html body .ssx-wr-open { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 10px 12px; margin: 10px 0; border-radius: 12px; border: 1px solid var(--line, rgba(127,127,127,.3)); }
