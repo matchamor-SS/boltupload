@@ -4926,9 +4926,14 @@ function appExtras() {
     if (sigPng || sigText) page.drawText(new Date().toLocaleDateString('en-US'), { x: 410, y: 198, size: 10, font: helv, color: rgb(0, 0, 0) });
     return pdf.save();
   }
+  // welcome email: asks the server once per visit; the server decides (new accounts only, once ever) and sends it through Resend
+  function flWelcome() {
+    if (FL.welcomed || !st.db) return; FL.welcomed = true;
+    st.db.doc('settings/welcome').get().then(s => { if (!s.exists) return sb.functions.invoke('welcome', { body: {} }); }).catch(() => {});
+  }
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
     sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet, flGtRow, flBookForm, flBfView]) { try { f(root); } catch (e) { console.error(e); } } });
   }
