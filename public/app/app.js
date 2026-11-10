@@ -1352,7 +1352,7 @@ async function invPreview(b,inv,o={}){document.querySelector(".ivp-bg")?.remove(
 
 function invoiceSheet(bid){navSheet("inv:"+bid,()=>invoiceSheet(bid));const b0=S.bookings.find(x=>x.id===bid);if(!b0)return;
   const k=INVSET();let inv=JSON.parse(JSON.stringify(b0.invoice||newInvoice(b0)));inv.payInfo=payClean(inv.payInfo);let me={...k};
-  const exps=S.expenses.filter(e=>e.bookingId===bid);
+  const exps=S.expenses.filter(e=>e.bookingId===bid),incs=(S.income||[]).filter(x=>x.bookingId===bid);
   const lineHtml=(l,i)=>`<div class="inv-line" data-li="${i}"><div class="d"><input data-lf="desc" value="${esc(l.desc)}" placeholder="${l.kind==="expense"?"What was the expense?":"Description"}" aria-label="Line ${i+1} description">${l.kind==="expense"?`<span class="pill" style="color:var(--muted);flex:none">Expense</span>`:""}</div>
     <select data-lf="unit" aria-label="Line ${i+1} type">${UNITS.map(([u,n])=>`<option value="${u}" ${l.unit===u?"selected":""}>${n}</option>`).join("")}</select>
     <input data-lf="qty" type="number" inputmode="decimal" step="0.25" min="0" value="${esc(l.qty)}" aria-label="Line ${i+1} ${l.unit==="hours"?"hours":"quantity"}" title="${l.unit==="hours"?"Hours":"Quantity"}">
@@ -1360,7 +1360,7 @@ function invoiceSheet(bid){navSheet("inv:"+bid,()=>invoiceSheet(bid));const b0=S
     <span class="amt" data-amt>${money2((Number(l.qty)||0)*(Number(l.rate)||0))}</span><button type="button" class="x" data-ldel="${i}" aria-label="Remove line ${i+1}">×</button>
 </div>`;
   const totHtml=()=>{const T=invTotals(inv);return `<span class="note">Subtotal</span><span class="num">${money2(T.sub)}</span>${T.dep?`<span class="note">Deposit received</span><span class="num">−${money2(T.dep)}</span>`:""}<span class="big">Balance due</span><span class="big num">${money2(T.due)}</span>`};
-  const bi=billInfo(inv),feeDiff=()=>Math.abs(invTotals(inv).sub-(Number(b0.fee)||0))>0.004;
+  const bi=billInfo(inv),feeOf=()=>Math.round((inv.lines||[]).filter(l=>!l.incomeId).reduce((t,l)=>t+(Number(l.qty)||0)*(Number(l.rate)||0),0)*100)/100,feeDiff=()=>Math.abs(feeOf()-(Number(b0.fee)||0))>0.004;
   sheet(`<div class="head"><div><span class="eyebrow">Invoice${inv.number?" · "+esc(inv.number):" · new"}</span><h3 style="margin-top:4px">${esc(showName(b0))}</h3></div></div>
   <div class="f"><label for="iv-num">Invoice number</label><div style="display:flex;gap:8px;align-items:center"><input id="iv-num" value="${esc(inv.number||invSuggest(k.prefix,(inv.issueDate||today()).slice(0,4),bid).num)}" style="flex:1;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:9px 11px;font-variant-numeric:tabular-nums"><button type="button" class="btn small" id="iv-sug" hidden>Use suggested</button></div><span class="note" id="iv-numnote"></span></div>
   <div class="frow"><div class="f"><label for="iv-to">Bill to</label><select id="iv-to" class="srch"><option value="">Someone not in People</option>${contactOpts(null,inv.billToId).replace(/^<option value="">[^<]*<\/option>/,"")}</select></div>
@@ -1368,13 +1368,13 @@ function invoiceSheet(bid){navSheet("inv:"+bid,()=>invoiceSheet(bid));const b0=S
   <div class="frow">${field("iv-name","Name on invoice",bi.name,"text",'placeholder="Person or company"')}${field("iv-addr","Their address (optional)",bi.address)}</div>
   <div class="frow">${field("iv-issue","Invoice date",inv.issueDate,"date")}${field("iv-due","Due on",inv.dueDate,"date")}</div>
   <div class="f"><label>Charges</label><div class="inv-line inv-head" aria-hidden="true"><span>Type</span><span>Qty / hrs</span><span>Rate</span><span class="amt">Amount</span><span></span></div><div id="iv-lines">${inv.lines.map(lineHtml).join("")}</div>
-    <div class="chips" style="margin-top:8px"><button type="button" class="btn small" data-addl="hours">＋ Hourly fee</button><button type="button" class="btn small" data-addl="flat">＋ Flat fee</button><button type="button" class="btn small" data-addl="travel">＋ Travel</button><button type="button" class="btn small" data-addl="expense">＋ Other expense</button>${exps.length?`<button type="button" class="btn small" data-addl="logged">＋ Logged expenses (${exps.length})</button>`:""}</div></div>
+    <div class="chips" style="margin-top:8px"><button type="button" class="btn small" data-addl="hours">＋ Hourly fee</button><button type="button" class="btn small" data-addl="flat">＋ Flat fee</button><button type="button" class="btn small" data-addl="travel">＋ Travel</button><button type="button" class="btn small" data-addl="expense">＋ Other expense</button>${exps.length?`<button type="button" class="btn small" data-addl="logged">＋ Logged expenses (${exps.length})</button>`:""}${incs.length?`<button type="button" class="btn small" data-addl="income">＋ Extra income from this show (${incs.length})</button>`:""}</div></div>
   <div class="frow">${field("iv-dep","Deposit already received ($)",inv.deposit,"number",'inputmode="decimal" min="0" step="0.01"')}<div class="f"><label>&nbsp;</label><div class="inv-tot" id="iv-tot">${totHtml()}</div></div></div>
   <div class="f"><label>How they can pay you</label><div class="chips" id="iv-pm">${PAYM.filter(([m])=>m!=="other").map(([m,l])=>{const h=PH()[m];return `<button type="button" class="chip" data-ivpm="${m}" aria-pressed="${(inv.payMethods||[]).includes(m)}">${esc(l)}${h?` <span style="opacity:.7;font-weight:500">${esc(h)}</span>`:""}</button>`}).join("")}</div>
     <span class="note" id="iv-pmnote"></span></div>
 <div class="f"><label for="iv-pay">Anything else about paying (optional)</label><textarea id="iv-pay" data-fincheck style="min-height:52px" placeholder="e.g. Checks payable to … or bank transfer details">${esc(inv.payInfo||"")}</textarea><span class="note">Shows under the ways to pay you picked above, so there's no need to repeat your usernames here. Bank or card numbers go on this invoice but aren't saved in the app.</span></div>
   <div class="f"><label for="iv-notes">Note on the invoice</label><textarea id="iv-notes" style="min-height:56px">${esc(inv.notes)}</textarea></div>
-  <label class="note" id="iv-feew" style="display:${feeDiff()?"flex":"none"};gap:8px;align-items:center"><input type="checkbox" id="iv-fee" checked> Update this booking's fee to the invoice total so Financials match</label>
+  <p class="note" id="iv-feew" style="display:${feeDiff()?"flex":"none"};margin:0">When you save, this show's fee updates to match these charges so Financials match the invoice. Extra income you add here is already in Financials, so it isn't counted twice.<input type="checkbox" id="iv-fee" checked hidden></p>
 <details ${k.email?"":"open"}><summary style="cursor:pointer;font-weight:600;padding:6px 0">Your details on every invoice</summary>
     <div class="frow">${field("ivs-biz","Business or DJ name",me.biz)}${field("ivs-name","Your legal name",me.name)}</div>
     <div class="frow">${field("ivs-email","Email",me.email,"email")}${field("ivs-phone","Phone",me.phone,"tel")}</div>
@@ -1403,6 +1403,7 @@ function invoiceSheet(bid){navSheet("inv:"+bid,()=>invoiceSheet(bid));const b0=S
     q("#iv-to").onchange=()=>{const c=contact(q("#iv-to").value);if(c){q("#iv-email").value=c.email||"";q("#iv-name").value=cName(c);q("#iv-addr").value=c.address||""}};
     let lastIssue=q("#iv-issue").value;q("#iv-issue").onchange=()=>{const a=parseD(lastIssue),d=parseD(q("#iv-due").value),gap=a&&d?Math.round((d-a)/864e5):(Number(me.terms)||15);if(q("#iv-issue").value)q("#iv-due").value=addDays(q("#iv-issue").value,Math.max(0,gap));lastIssue=q("#iv-issue").value};
     root.querySelectorAll("[data-addl]").forEach(x=>x.onclick=()=>{read();const a=x.dataset.addl;
+      if(a==="income"){const have=new Set(inv.lines.map(l=>l.incomeId).filter(Boolean));const add=incs.filter(i=>!have.has(i.id));if(!add.length){toast("That income is already on the invoice");return}add.forEach(i=>inv.lines.push({desc:i.desc||"Extra income",qty:1,unit:"flat",rate:Number(i.amount)||0,kind:"service",incomeId:i.id}));q("#iv-lines").innerHTML=inv.lines.map(lineHtml).join("");wireLines();retot();toast(add.length===1?"Added to the invoice":"Added "+add.length+" items to the invoice");return}
       if(a==="logged"){const have=new Set(inv.lines.map(l=>l.expId).filter(Boolean));const add=exps.filter(e=>!have.has(e.id));if(!add.length){toast("Those expenses are already on it");return}
         add.forEach(e=>inv.lines.push({desc:e.desc||e.category||"Expense",qty:1,unit:"flat",rate:Number(e.amount)||0,kind:"expense",expId:e.id}))}
       else inv.lines.push(a==="hours"?{desc:"DJ performance (hourly)",qty:4,unit:"hours",rate:Number(me.hourly)||"",kind:"service"}:a==="flat"?{desc:"",qty:1,unit:"flat",rate:"",kind:"service"}:a==="travel"?{desc:"Travel (mileage, gas, parking)",qty:1,unit:"flat",rate:"",kind:"expense"}:{desc:"",qty:1,unit:"flat",rate:"",kind:"expense"});
@@ -1415,7 +1416,7 @@ function invoiceSheet(bid){navSheet("inv:"+bid,()=>invoiceSheet(bid));const b0=S
       if(invDup(num,bid)){toast(num+" is already used on another booking. Use the suggested number.");q("#iv-num").focus();return null}
       inv.number=num;q("#iv-num").value=num;
       if(!(await save("settings","invoice",setDoc)))return null;S.invset=setDoc;
-      inv.updatedAt=new Date().toISOString();const upd={invoice:inv};if(feeDiff()&&q("#iv-fee").checked)upd.fee=Math.round(invTotals(inv).sub*100)/100;
+      inv.updatedAt=new Date().toISOString();const upd={invoice:inv};if(feeDiff())upd.fee=feeOf();
       if(!(await patch("bookings",bid,upd)))return null;const bb=S.bookings.find(x=>x.id===bid)||b0;return {b:{...bb,...upd},inv}};
     const status=()=>{q("#iv-status").innerHTML=`${inv.fileUrl?`Saved in Drive: <a href="${esc(inv.fileUrl)}" target="_blank" rel="noopener">${esc(inv.fileName||"invoice PDF")}</a>`:""}${inv.draftUrl?`${inv.fileUrl?" · ":""}<a href="${esc(inv.draftUrl)}" target="_blank" rel="noopener">Sent${inv.sentAt?" "+esc(fmtD(inv.sentAt)):""} · open in Gmail</a>`:""}`};
     const busy=(btn,on,txt)=>{btn.disabled=on;if(txt)btn.textContent=txt};
