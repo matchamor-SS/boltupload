@@ -1112,3 +1112,8 @@ html body .ivp-bg { z-index: 10000 !important; }
 html body #ss-auth ~ #composeRoot { z-index: 45 !important; }
 /* Invoice preview opens on top of everything, full screen (beats the sign-in screen's rule that puts added windows in the page flow) */
 html body #ss-auth ~ .ivp-bg, html body .ivp-bg { position: fixed !important; top: 0 !important; right: 0 !important; bottom: 0 !important; left: 0 !important; z-index: 10000 !important; display: flex !important; flex-direction: column; }
+/* Add a new contact right inside the contact form */
+html body .ssx-qa { border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); background: color-mix(in srgb, var(--accent) 6%, transparent); border-radius: 12px; padding: 10px 12px; margin: 4px 0 12px; }
+html body .ssx-qa-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+html body .ssx-qa-a { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+html body .ssx-qa-a .spacer { flex: 1; }
