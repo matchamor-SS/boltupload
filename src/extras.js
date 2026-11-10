@@ -3816,6 +3816,7 @@ function appExtras() {
     if (d.lineup) lines.push(`Also playing: ${d.lineup}`);
     if (d.rf && FL_REP_DEF[d.rf]) { const n = Math.max(2, Math.min(52, parseInt(d.rn, 10) || FL_REP_DEF[d.rf])); lines.push(d.rf === 'cu' ? `Repeats: a custom schedule (see their message), about ${n} dates` : `Repeats: ${FL_REP_NAMES[d.rf]}, about ${n} dates`);upd.repeatReq = { freq: d.rf, count: n }; }
     if (d.ig || d.site || d.vsite) lines.push(`Links: ${[d.ig, d.site, d.vsite].filter(Boolean).join(' · ')}`);
+    if (d.q && typeof d.q === 'object') for (const [qid, val] of Object.entries(d.q)) if (/^[a-z0-9]{1,20}$/.test(qid) && typeof val === 'string') upd['cf_' + qid] = val.slice(0, 200);
     upd.notes = base.replace(/\nRole: [^\n]*/, '\n' + lines.join('\n')); upd.requestKind = k; upd.updatedAt = new Date().toISOString();
     await window.patch('bookings', b.id, upd);
   }
@@ -5190,6 +5191,7 @@ function appExtras() {
     for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks, nmRender]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
     sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet, flGtRow, flBookForm, flBfView, flFuRow, nmWrapRow]) { try { f(root); } catch (e) { console.error(e); } } });
+  }
   function hookFlow() {
     if (window.__ssxFL || !st.db) return; window.__ssxFL = true;
     st.db.doc('settings/flow').onSnapshot(s => { const was = flCfg(); FL.cfg = s.exists ? s.data() : {}; const now = flCfg(); flRefresh(was.closeOld !== now.closeOld || JSON.stringify(was.plan) !== JSON.stringify(now.plan)); if (was.epkPhoto !== now.epkPhoto) { try { if (EPK.el) epkRender(); } catch (_) {} } if (!FL.loaded || JSON.stringify(was.artist) !== JSON.stringify(now.artist)) flRelabel(document.body); FL.loaded = true; flSoon(); }, () => {});
