@@ -3604,8 +3604,17 @@ function appExtras() {
       const sh = dd.closest('[data-booking]'), id = sh && sh.dataset.booking; if (!id) return;
       dd.dataset.flHub = '1'; const dt = dd.previousElementSibling; if (dt && dt.tagName === 'DT') dt.textContent = 'Media';
       const n = FL.media.filter(m => m.bookingId === id).length;
-      dd.innerHTML = `${n ? `<button type="button" class="linkbtn" data-fl-goto>${n} in Media</button> ` : ''}<button type="button" class="btn small" data-fl-addl>Add a link</button>`;
+      const bb = flBk().find(x => x.id === id), folder = bb ? flFolder(bb) : '', picked = !!folder || FL.media.some(m => m.bookingId === id && /drive\.google\.com\/drive\/(u\/\d+\/)?folders|dropbox\.com\/(sh|scl\/fo)\//i.test(String(m.url || '')));
+      dd.innerHTML = `${n ? `<button type="button" class="linkbtn" data-fl-goto>${n} in Media</button> ` : ''}${folder ? `<a class="btn small" href="${esc(folder)}" target="_blank" rel="noopener">Open folder</a> ` : ''}<button type="button" class="btn small" data-fl-addl>Add a link</button>${picked ? '' : ' <button type="button" class="btn small" data-fl-mkfold>Create folder</button>'}`;
       dd.querySelector('[data-fl-addl]').onclick = () => flLinkSheet({ bookingId: id });
+      // no folder yet: make the show's Google Drive folder (with its Media and Flyers folders) right here
+      const mk = dd.querySelector('[data-fl-mkfold]'); if (mk) mk.onclick = async () => {
+        const b2 = flBk().find(x => x.id === id); if (!b2) return;
+        if (!(b2.title || b2.venueId)) { toast('Add a show name or venue first'); return; }
+        mk.disabled = true; mk.textContent = 'Creating…';
+        try { const r = await makeEventFolder(b2, 'mkt'); if (r) { toast(`Media folder ready: ${ROOTS.mkt.name} / ${r.year} / ${eventLabel(b2)}`); bookingView(id); return; } } catch (e) { console.error(e); }
+        if (mk.isConnected) { mk.disabled = false; mk.textContent = 'Create folder'; }
+      };
       const g = dd.querySelector('[data-fl-goto]'); if (g) g.onclick = () => { close(); goTab('media'); };
     });
     let el = null; try { el = EPK.el; } catch (_) {}
