@@ -1487,20 +1487,22 @@ function reachSheet(cid){navSheet("r:"+cid,()=>reachSheet(cid));const c=contact(
   const ppl=isColl(c)?membersOf(c).filter(m=>m.email):[];
   const nb=nextBookingWith(c),aud=c.type==="media"?"media":"venue";
   const tpls=S.templates.filter(t=>(t.audience||"venue")===aud).sort((a,b)=>(nb&&b.stage===nb.status)-(nb&&a.stage===nb.status)||String(a.name).localeCompare(String(b.name)));
-  const igBlock=ig?`<div class="card" style="margin:0"><div class="head"><h3>${email?"Or send a DM":"Send a DM on Instagram"}</h3><span class="note">@${esc(ig)}</span></div>
-      ${email?"":`<p class="note" style="margin:4px 0 0">No email on file, so Instagram is the best way in.</p>`}
-      <div class="f" style="margin-top:8px"><label for="rc-dm">Message to paste</label><textarea id="rc-dm" style="min-height:110px">${esc(dmText(c))}</textarea></div>
-      <div class="actions" style="justify-content:flex-start;flex-wrap:wrap"><button class="btn${email?"":" primary"}" data-dm>Copy &amp; open DM</button><a class="btn" href="https://instagram.com/${encodeURIComponent(ig)}" target="_blank" rel="noopener">View profile</a></div></div>`:"";
-  sheet(`<div class="head"><div><span class="eyebrow">Contact</span><h3 style="margin-top:4px">${esc(cName(c))}</h3></div><button class="btn small" data-editc>Edit</button></div>
-  ${nb?`<p class="note" style="margin:0">Linked booking: <b>${esc(showName(nb))}</b>${nb.date?" · "+esc(fmtD(nb.date)):""}. Templates fill in its details.</p>`:""}
-  ${email?`<div class="card" style="margin:0"><div class="head"><h3>Email</h3><span class="note">${esc(email)}</span></div>
-      <div class="actions" style="justify-content:flex-start;flex-wrap:wrap;margin-top:8px"><button class="btn primary" data-wr>Write an email</button><button class="btn" data-past>Sent emails</button></div>
-      ${tpls.length?`<div class="f" style="margin-top:8px"><label>Or start from a template</label><div class="chips">${tpls.map(t=>`<button class="btn small${nb&&t.stage===nb.status?" primary":""}" data-rtpl="${t.id}">${nb&&t.stage===nb.status?"★ ":""}${esc(t.name)}</button>`).join("")}</div></div>`:""}</div>`
-    :ppl.length?`<div class="card" style="margin:0"><div class="head"><h3>Email someone at ${esc(cName(c))}</h3></div><div class="chips" style="margin-top:8px">${ppl.map(m=>`<button class="btn small" data-reachp="${m.id}">${esc(cName(m))}</button>`).join("")}</div></div>`:""}
-  ${igBlock}
-  ${!email&&!ig&&!ppl.length?`<div class="empty">No email or Instagram for ${esc(cName(c))} yet. Add one to reach out from here.</div>`:""}
-  ${phone?`<p class="note" style="margin:0">Or <a href="sms:${esc(phone)}">text</a> or <a href="tel:${esc(phone)}">call</a> ${esc(c.phone)}.</p>`:""}
-  <div class="actions">${!email&&!ig?`<button class="btn primary" data-editc2>Add email or Instagram</button>`:""}<button class="btn" data-close>Close</button></div>`,root=>{
+  // one profile for each person or venue: who they are, how to reach them, reach-outs and notes up front; editing is a small button
+  const kind=c.type==="venue"&&c.vkind==="festival"?"Festival":c.type==="promoter"&&c.pkind==="collective"?"Collective":((CTYPES.find(t=>t[0]===c.type)||[,"Contact"])[1]||"Contact").split(" /")[0];
+  const site=String(c.website||c.portfolio||"").trim(),siteHref=site?(/^https?:\/\//i.test(site)?site:"https://"+site):"",sub=cSub(c);
+  const info=[email?`<a href="mailto:${esc(email)}">${esc(email)}</a>`:"",phone?`<a href="tel:${esc(phone)}">${esc(c.phone)}</a>`:"",ig?`<a href="https://instagram.com/${encodeURIComponent(ig)}" target="_blank" rel="noopener">@${esc(ig)}</a>`:"",site?`<a href="${esc(siteHref)}" target="_blank" rel="noopener">${esc(site.replace(/^https?:\/\//i,"").replace(/\/$/,""))}</a>`:"",c.address?addrLink(c.address):c.city?esc(c.city):""].filter(Boolean);
+  const pen='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+  sheet(`<div class="head ssx-cp-head"><div style="min-width:0"><span class="eyebrow">${esc(kind)}</span><h3 style="margin-top:4px">${esc(cName(c))}</h3>${sub?`<p class="note" style="margin:2px 0 0">${esc(sub)}</p>`:""}</div><button class="btn small ssx-cp-edit" data-editc aria-label="Edit ${esc(cName(c))}">${pen} Edit</button></div>
+  ${info.length?`<div class="ssx-cp-info">${info.map(x=>`<span>${x}</span>`).join("")}</div>`:""}
+  ${nb?`<p class="note" style="margin:0">Next booking together: <b>${esc(showName(nb))}</b>${nb.date?" · "+esc(fmtD(nb.date)):""}. Email templates fill in its details.</p>`:""}
+  ${email||ig||phone?`<div class="ssx-cp-acts">${email?`<button class="btn primary" data-wr>Email</button>`:""}${ig?`<button class="btn${email?"":" primary"}" data-dm>Instagram DM</button>`:""}${phone?`<a class="btn" href="sms:${esc(phone)}">Text</a><a class="btn" href="tel:${esc(phone)}">Call</a>`:""}${email?`<button class="btn" data-past>Sent emails</button>`:""}</div>`
+    :ppl.length?"":`<div class="empty">No email, Instagram or phone for ${esc(cName(c))} yet. <button type="button" class="linkbtn" data-editc2>Add contact info</button></div>`}
+  ${!email&&ppl.length?`<div class="ssx-cp-ppl"><span class="note">Email someone at ${esc(cName(c))}:</span> ${ppl.map(m=>`<button class="btn small" data-reachp="${m.id}">${esc(cName(m))}</button>`).join("")}</div>`:""}
+  <div class="ssx-cp-slot"></div>
+  ${(email&&tpls.length)||ig?`<details class="ssx-cp-more"><summary>${email&&tpls.length?"Email templates":""}${email&&tpls.length&&ig?" and ":""}${ig?(email&&tpls.length?"DM message":"Instagram DM message"):""}</summary>
+    ${email&&tpls.length?`<div class="f"><label>Start an email from a template</label><div class="chips">${tpls.map(t=>`<button class="btn small${nb&&t.stage===nb.status?" primary":""}" data-rtpl="${t.id}">${nb&&t.stage===nb.status?"★ ":""}${esc(t.name)}</button>`).join("")}</div></div>`:""}
+    ${ig?`<div class="f"><label for="rc-dm">DM to paste on Instagram</label><textarea id="rc-dm" style="min-height:110px">${esc(dmText(c))}</textarea><span class="note">"Instagram DM" copies this and opens your chat with @${esc(ig)}.</span></div>`:""}</details>`:""}
+  <div class="actions"><button class="btn" data-close>Close</button></div>`,root=>{
     const q=x=>root.querySelector(x);q("[data-close]").onclick=close;q("[data-editc]").onclick=()=>contactForm(c);const e2=q("[data-editc2]");if(e2)e2.onclick=()=>contactForm(c);
     const wr=q("[data-wr]");if(wr)wr.onclick=()=>composeSheet({to:c.id,email,booking:nb?nb.id:""});
     const past=q("[data-past]");if(past)past.onclick=()=>sentSheet({contactId:c.id});
