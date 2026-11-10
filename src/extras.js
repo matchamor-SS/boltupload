@@ -1089,7 +1089,7 @@ function appExtras() {
     try { L.push(...apPacket(R).lines); } catch (_) {}
     L.push('', 'BRING THESE TOO (the app does not track them)', '  - Home studio or office: square footage of the space used only for work, and of the whole home.', '  - Phone and internet: rough percentage used for work.', '  - Health insurance premiums you paid yourself, and retirement contributions (SEP-IRA, Solo 401(k)).', '  - Big gear purchases: your preparer can deduct them all this year or spread them out (depreciation / Section 179).', '  - Any W-2 jobs and other 1099s.', '');
     L.push('KEEPING RECORDS', '  The IRS generally asks you to keep records and receipts for 3 years after you file; many preparers suggest 7. Your receipts stay in Google Drive under Business / <year> / Receipts.', '');
-    L.push('This packet organizes your records; it is not tax advice. Line numbers refer to the federal IRS Schedule C. California starts from the same federal figures on Form 540 and adjusts some items on Schedule CA.');
+    L.push('This packet organizes your records; it is not tax advice. Line numbers refer to the federal IRS Schedule C.     L.push('This packet organizes your records; it is not tax advice. Line numbers refer to the federal IRS Schedule C. Most states start from the same federal figures and then adjust some items on their own return.'); on Form 540 and adjusts some items on Schedule CA.');
     return { R, d, slug, exps, invs: [...invs, ...owedInvs], idxCsv: csv(idx), readme: L.join('\r\n'), summary: taxHtml(d), txCsv: taxCsv(d) };
   }
   const catLine = k => { try { const c = (ECATS || []).find(x => x[0] === k); return c ? c[2] : 'Line 27a Other expenses'; } catch (_) { return ''; } };
@@ -1190,10 +1190,28 @@ function appExtras() {
     Object.keys(pend).forEach(id => { if (!countable(bk().find(b => b.id === id))) { delete pend[id]; ch = true; } });
     if (ch) apSave({ pend });
   }
-  // estimated tax due dates for a tax year (weekends move to Monday); California has no September payment
-  const estDates = y => { const adj = d => { const x = new Date(d + 'T12:00:00'), w = x.getDay(); if (w === 6) x.setDate(x.getDate() + 2); if (w === 0) x.setDate(x.getDate() + 1); return isoLocal(x); };
-    return [[`${y}-04-15`, 'Q1', 30], [`${y}-06-15`, 'Q2', 40], [`${y}-09-15`, 'Q3', 0], [`${y + 1}-01-15`, 'Q4', 30]].map(([d, q, ca]) => ({ date: adj(d), q, ca, year: y })); };
+  // estimated tax due dates for a tax year (weekends move to Monday): federal, and the performer's own state (Taxes card picker)
+  const adjDue = d => { const x = new Date(d + 'T12:00:00'), w = x.getDay(); if (w === 6) x.setDate(x.getDate() + 2); if (w === 0) x.setDate(x.getDate() + 1); return isoLocal(x); };
+  const estDates = y => [[`${y}-04-15`, 'Q1'], [`${y}-06-15`, 'Q2'], [`${y}-09-15`, 'Q3'], [`${y + 1}-01-15`, 'Q4']].map(([d, q]) => ({ date: adjDue(d), q, year: y }));
+  // [code, name, tax site ('' = no state income tax on wages or self-employment)]; schedules below for states that don't use the federal dates
+  const STATES = [['AL', 'Alabama', 'https://www.revenue.alabama.gov/'], ['AK', 'Alaska', ''], ['AZ', 'Arizona', 'https://azdor.gov/'], ['AR', 'Arkansas', 'https://www.dfa.arkansas.gov/'], ['CA', 'California', 'https://www.ftb.ca.gov/pay/'],
+    ['CO', 'Colorado', 'https://tax.colorado.gov/'], ['CT', 'Connecticut', 'https://portal.ct.gov/drs'], ['DE', 'Delaware', 'https://revenue.delaware.gov/'], ['DC', 'District of Columbia', 'https://otr.cfo.dc.gov/'], ['FL', 'Florida', ''],
+    ['GA', 'Georgia', 'https://dor.georgia.gov/'], ['HI', 'Hawaii', 'https://tax.hawaii.gov/'], ['ID', 'Idaho', 'https://tax.idaho.gov/'], ['IL', 'Illinois', 'https://tax.illinois.gov/'], ['IN', 'Indiana', 'https://www.in.gov/dor/'],
+    ['IA', 'Iowa', 'https://revenue.iowa.gov/'], ['KS', 'Kansas', 'https://www.ksrevenue.gov/'], ['KY', 'Kentucky', 'https://revenue.ky.gov/'], ['LA', 'Louisiana', 'https://revenue.louisiana.gov/'], ['ME', 'Maine', 'https://www.maine.gov/revenue/'],
+    ['MD', 'Maryland', 'https://www.marylandtaxes.gov/'], ['MA', 'Massachusetts', 'https://www.mass.gov/orgs/massachusetts-department-of-revenue'], ['MI', 'Michigan', 'https://www.michigan.gov/taxes'], ['MN', 'Minnesota', 'https://www.revenue.state.mn.us/'], ['MS', 'Mississippi', 'https://www.dor.ms.gov/'],
+    ['MO', 'Missouri', 'https://dor.mo.gov/'], ['MT', 'Montana', 'https://mtrevenue.gov/'], ['NE', 'Nebraska', 'https://revenue.nebraska.gov/'], ['NV', 'Nevada', ''], ['NH', 'New Hampshire', ''],
+    ['NJ', 'New Jersey', 'https://www.nj.gov/treasury/taxation/'], ['NM', 'New Mexico', 'https://www.tax.newmexico.gov/'], ['NY', 'New York', 'https://www.tax.ny.gov/'], ['NC', 'North Carolina', 'https://www.ncdor.gov/'], ['ND', 'North Dakota', 'https://www.tax.nd.gov/'],
+    ['OH', 'Ohio', 'https://tax.ohio.gov/'], ['OK', 'Oklahoma', 'https://oklahoma.gov/tax.html'], ['OR', 'Oregon', 'https://www.oregon.gov/dor/'], ['PA', 'Pennsylvania', 'https://www.revenue.pa.gov/'], ['RI', 'Rhode Island', 'https://tax.ri.gov/'],
+    ['SC', 'South Carolina', 'https://dor.sc.gov/'], ['SD', 'South Dakota', ''], ['TN', 'Tennessee', ''], ['TX', 'Texas', ''], ['UT', 'Utah', 'https://tax.utah.gov/'],
+    ['VT', 'Vermont', 'https://tax.vermont.gov/'], ['VA', 'Virginia', 'https://www.tax.virginia.gov/'], ['WA', 'Washington', ''], ['WV', 'West Virginia', 'https://tax.wv.gov/'], ['WI', 'Wisconsin', 'https://www.revenue.wi.gov/'], ['WY', 'Wyoming', '']];
+  // [month-day for Q1..Q4 (Q4 falls in January of the next year), share of the year's estimate]; checked Nov 2026
+  const ST_SCHED = { CA: [['04-15', 30], ['06-15', 40], ['09-15', 0], ['01-15', 30]], HI: [['04-20'], ['06-20'], ['09-20'], ['01-20']], IA: [['04-30'], ['06-30'], ['09-30'], ['01-31']], VA: [['05-01'], ['06-15'], ['09-15'], ['01-15']], DE: [['04-30'], ['06-15'], ['09-15'], ['01-15']] };
+  const myState = () => STATES.find(s => s[0] === apCfg().state) || null;
+  const agencyName = a => a === 'IRS' || !a ? 'IRS' : ((STATES.find(s => s[0] === a) || [])[1] || a);
+  const stDates = y => { const s = myState(); if (!s || !s[2]) return []; const sc = ST_SCHED[s[0]] || [['04-15'], ['06-15'], ['09-15'], ['01-15']];
+    return sc.map(([md, pct], i) => ({ date: adjDue(`${i === 3 ? y + 1 : y}-${md}`), q: 'Q' + (i + 1), year: y, pct: pct == null ? 25 : pct })).filter(x => x.pct > 0); };
   const nextDue = () => { const t = todayStr(), y = +t.slice(0, 4); return [...estDates(y - 1), ...estDates(y)].find(x => x.date >= t); };
+  const nextStDue = () => { const t = todayStr(), y = +t.slice(0, 4); return [...stDates(y - 1), ...stDates(y)].find(x => x.date >= t); };
   function taxNumbers(y) {
     let d = null; try { d = window.taxData(yearR(y)); } catch (_) {}
     const c = apCfg(), rate = Math.max(0, Math.min(60, Number(c.taxRate) || 25)) / 100;
