@@ -810,26 +810,26 @@ function appExtras() {
   /* ---------- First-time walkthrough: offered once to new performers, can be skipped, replay from Settings */
   const TOUR = [
     { title: 'Welcome to Set & Settled', body: 'Your home base as a performer: bookings, tasks, money, outreach, goals and your press kit in one place. This tour shows you around and helps you set up the basics. About 5 minutes.' },
-    { tab: 'home', target: '#ssx-railbtn', title: 'Your menu', body: 'Every page lives in the menu on the left. Tap this button at the top to fold the menu away when you want more room, and tap it again to bring it back.' },
+    { tab: 'home', target: '#ssx-railbtn', title: 'Your menu', body: 'Every page lives in the menu: Home (with your Goals), your shows (with the Calendar), Tasks, People (with Messages & templates), Financials, Kit (with Media) and Settings. Tap this button to fold the menu away when you want more room, and tap it again to bring it back.' },
     { tab: 'home', target: '#ssx-search', title: 'Find anything', body: 'Search your shows, people, templates and money from here. On a computer, press / or Ctrl/Cmd+K from anywhere.' },
     { tab: 'home', target: '#ssx-upnext, #nextShow', title: 'Up next', body: 'Home keeps an eye on your shows for you. It suggests the next step, like sending an invoice, a thank-you, a follow-up on late payment or a note to book again. Your next show is here too.' },
-    { tab: 'home', target: 'section[data-view="home"] .ssx-arrbar button', title: 'Arrange your pages', body: 'Move blocks up or down, or hide the ones you do not need. You can do this on Home, Bookings, Calendar, Financials and Kit, and it follows you to every device.' },
-    { tab: 'settings', group: 'profile', target: '#ssx-profile', title: 'Start with your profile', body: 'Your DJ name, contact details, website and Instagram live right here. They fill in your Kit, EPK, emails, invoices and booking page so you only type them once.' },
+    { tab: 'home', target: 'section[data-view="home"] .ssx-arrbar button', title: 'Arrange your pages', body: 'Move blocks up or down, or hide the ones you do not need. You can do this on Home, your shows list, the Calendar, Financials and Kit, and it follows you to every device.' },
+    { tab: 'settings', group: 'bookings', target: '#ssx-link', title: 'Share when you are available', body: 'Turn on your booking link so promoters can pick an open date. It uses the same days and blocked dates as your Calendar, so you only update one place. Your shows and holds close their dates on their own.' },
     { tab: 'settings', group: 'look', target: '#palPick', title: 'Make it yours', body: 'Pick a color theme (Champagne is the default) and switch between Light and Dark. Your choice follows you on every device.' },
     { tab: 'goals', target: '#ssx-goals', title: 'Set your goals', body: 'Track followers, releases, shows and income. Some goals count themselves from your bookings, checklist goals can have a due date for every step, and your progress shows on Home.', action: ['Add a goal', () => { const b = document.querySelector('[data-ssx-gadd]'); b && b.click(); }] },
     { tab: 'settings', group: 'bookings', target: '#ssx-link', title: 'Share when you are available', body: 'Turn on your booking link so promoters can pick an open date. It uses the same days and blocked dates as your Calendar, so you only update one place. Shows and holds close their dates on their own.' },
     { tab: 'settings', group: 'google', target: '#ss-google', title: 'Connect Google', body: 'Connect Gmail to send emails and invoices from your own address, Drive to keep your files together and Calendar to see your shows. You choose what to connect.' },
-    { tab: 'bookings', target: '[data-new="booking"]', title: 'Every show in one list', body: 'Add a show and move it from Lead to Confirmed, Played and Paid. Each stage adds its own checklist. Pick a venue you have played and the details fill in from last time. Shows move to Played on their own, and Undo is there if you slip.' },
+    { tab: 'bookings', target: '[data-new="booking"]', title: 'Every show in one list', body: 'Switch between List and Calendar at the top. Add a show and move it from Lead to Confirmed, Played and Paid. Each stage adds its own checklist. Pick a venue you have played and the details fill in from last time. Your shows move to Played on their own, and Undo is there if you slip.' },
     { tab: 'bookings', target: '#ssx-bklink', title: 'Booking requests', body: 'Copy your booking link from here to send to promoters. Their requests show up on this page as Leads. Open one to Accept, Reply or Decline.' },
     { tab: 'bookings', target: '#bookingFilter', title: 'Notes on every show', body: 'Open any show and add a note right there: load-in, sound, who you spoke to, how the night went. Each note is dated, and it also appears on the venue and people connected to that show.' },
-    { tab: 'calendar', target: '#cal', title: 'See your month', body: 'All your shows on one calendar, along with your Google Calendar plans. Tap an open day and choose Hold this date to save it for a venue or promoter.' },
+    { tab: 'calendar', target: '#cal', title: 'See your month', body: 'Tap Calendar in the switch at the top to see every show on one calendar, along with your Google Calendar plans. Tap an open day and choose Hold this date to save it for a venue or promoter.' },
     { tab: 'calendar', target: '#availEdit', title: 'Edit availability', body: 'Set the days you play and tap any date to block it. This is the same list as your booking link, so a change in one place shows up in the other.', action: ['Open Edit availability', () => { const b = document.getElementById('availEdit'), p = document.getElementById('availPanel'); if (b && p && p.hidden) b.click(); }] },
-    { tab: 'tasks', target: '#newTask', title: 'Never miss a step', body: 'Contracts, deposits, promo posts and set prep, sorted by due date. Anything past its due date is marked overdue, and your reminders will nudge you to finish it.' },
+    { tab: 'tasks', target: '#newTask', title: 'Never miss a step', body: 'Contracts, deposits, promo posts and prep for your set, sorted by due date. Anything past its due date is marked overdue, and your reminders will nudge you to finish it.' },
     { tab: 'kit', target: '#ssx-kit', title: 'Your Kit', body: 'Bio, photos, mixes, socials and riders in one spot, with your booking link ready to copy. Copy your whole press info into an email in one tap.' },
     { tab: 'kit', target: '#ssx-hist', title: 'Your show history', body: 'Add the shows you played before Set & Settled, one at a time or with our template. Your history fills your EPK and stays out of your bookings and money.', action: ['Add past shows', () => nhImport()] },
-    { tab: 'kit', target: '#ssx-epk-btn', title: 'Create an EPK', body: 'Turn your Kit and shows into a designed press kit. Pick colors, Light or Dark, and which sections to include, move them around, edit any text, then download a PDF to send to venues.', action: ['Create my EPK', () => openEPK()] },
+    { tab: 'kit', target: '#ssx-epk-btn', title: 'Create an EPK', body: 'Turn your Kit and your shows into a designed press kit. Pick colors, Light or Dark, and which sections to include, move them around, edit any text, then download a PDF to send to venues.', action: ['Create my EPK', () => openEPK()] },
     { tab: 'contacts', target: '[data-new="contact"]', title: 'Your people', body: 'Promoters, venues, photographers and collaborators. Open anyone to keep notes, see your shows together and reach out with one tap. Tidy up People helps you connect or merge contacts when something looks doubled up.' },
-    { tab: 'comms', target: '[data-new="template"]', title: 'Emails and templates', body: 'Start from friendly templates for pitches, confirmations and thank-yous, or save your own. Fill-ins like the venue and date show as bubbles and complete themselves from any show. Minimize an email to keep it in the corner, then tap + to reopen it or × to discard it.' },
+    { tab: 'comms', target: '[data-new="template"]', title: 'Emails and templates', body: 'Open Messages & templates from the card at the top of People. Start from friendly templates for pitches, confirmations and thank-yous, or save your own. Fill-ins like the venue and date show as bubbles and complete themselves from any show. Minimize an email to keep it in the corner, then tap + to reopen it or × to discard it.' },
     { tab: 'money', target: '[data-new="expense"]', title: 'Financials', body: 'Log income and expenses, save receipts to your Drive, send invoices and see what you have earned this season.' },
     { tab: 'money', target: '#ssx-tax', title: 'Ready for taxes', body: 'See what to set aside from your profit, track estimated payments and keep a 1099 checklist. At tax time, download everything as one tax packet. This keeps your records organized, and it is not tax advice.' },
     { tab: 'money', target: '#ssx-miles', title: 'Mileage and repeating costs', body: 'Add your home address and the app can count the drive to each show for you. It asks you to check shows that are far from home. Below this, add costs that repeat, like subscriptions, so they log themselves.' },
@@ -2579,11 +2579,39 @@ function appExtras() {
   }
   // what a booking is called on invoices and calendar events
   const flPerf = () => { const A = flArtist(); return A.group === 'service' ? 'Session' : A.label + ' performance'; };
+  /* -- show / set / EPK words follow the artist type too (music and comedy keep "show", "set" and "EPK"). Only app
+     wording changes, never your own text; nouns are matched by the word in front ("your show", "set times"). */
+  function flWords() {
+    const A = flArtist(), k = A.kind, g = A.group;
+    if (k === 'producer') return { show: 'session', set: 'session', epk: 'Portfolio' };
+    if (g === 'service') return { show: 'appointment', set: 'appointment', epk: k === 'massage' || k === 'acupuncture' ? 'Resume' : 'Portfolio' };
+    if (g === 'movement') return { show: 'gig', set: 'performance', epk: k === 'painter' || k === 'vj' ? 'Portfolio' : 'EPK' };
+    if (g === 'other') return { show: 'booking', set: 'booking', epk: 'EPK' };
+    return { show: 'show', set: 'set', epk: 'EPK' };
+  }
+  const FL_RX = /\bDJs?\b|\b[Ss]hows?\b|\b[Ss]et\b|\bEPKs?\b/;
+  const FL_DET = 'a|an|the|this|that|these|those|your|my|our|their|each|every|next|last|one|any|all|new|past|first|other|same|per|upcoming|confirmed|played|paid|future|earlier|recent|more|no|some|\\d+';
+  const flCap = (m, w) => /^[A-Z]/.test(m) ? w.charAt(0).toUpperCase() + w.slice(1) : w;
+  function flWordSwap(s) {
+    const W = flWords(); if (W.show === 'show' && W.set === 'set' && W.epk === 'EPK') return s;
+    const sw = (m, base) => flCap(m, base + (/s$/i.test(m) ? 's' : ''));
+    let o = s;
+    if (W.show !== 'show') o = o
+      .replace(new RegExp(`\\b(${FL_DET}|of|by) (shows?)\\b`, 'gi'), (m, d, w, at, str) => /^(this|that|one|each)$/i.test(d) && /s$/i.test(w) && /^ (up|on|in|here|what|how|when|where|as|it|them|only|once|below|that|this)\b/i.test(str.slice(at + m.length)) ? m : d + ' ' + sw(w, W.show))
+      .replace(/\b(shows?)(?= (history|notes?|names?|dates?|day|fee|night|folder|times?|checklist|goals?)\b)/gi, (m, w) => sw(w, W.show))
+      .replace(/(^\s*|, )(shows?)(?=\s*$|,| and | or )/gi, (m, a, w) => a + sw(w, W.show));
+    if (W.set !== 'set') o = o
+      .replace(/\b(set) (times?|lengths?|start|end|list)\b/gi, (m, w, n) => flCap(w, W.set) + ' ' + n)
+      .replace(/\b(your|my|the|each|this|every|a) (set)\b(?! (up|of|you|it|aside|to|for|a|the|your|them)\b)/gi, (m, d, w) => d + ' ' + flCap(w, W.set));
+    if (W.epk !== 'EPK') o = o.replace(/\bEPK(s?)\b/g, (m, p) => W.epk + p);
+    // "a appointment" -> "an appointment", "an Portfolio" -> "a Portfolio"
+    return o.replace(/\b(an?|An?) (appointments?|sessions?|gigs?|performances?|bookings?|Portfolio|Resume|EPK)\b/g, (m, a, w) => (a[0] === 'A' ? 'A' : 'a') + (/^[aeiou]/i.test(w) || w === 'EPK' ? 'n' : '') + ' ' + w);
+  }
   function flSwap(s) {
-    const A = flArtist(); if (A.label === 'DJ' || !/\bDJs?\b/.test(s)) return s;
+    const A = flArtist(); if (A.label === 'DJ' || !/\bDJs?\b/.test(s)) return flWordSwap(s);
     const L = A.label, N = A.name, low = N.charAt(0).toLowerCase() + N.slice(1);
-    return flA(s.replace(/\bDJ or artist name\b/g, low).replace(/\bYour DJ name\b/g, 'Your ' + low).replace(/\bor DJ name\b/g, 'or ' + low).replace(/\bDJ name\b/g, N))
-      .replace(/\bDJs\b/g, L + 's').replace(/\bDJ\b/g, L);
+    return flWordSwap(flA(s.replace(/\bDJ or artist name\b/g, low).replace(/\bYour DJ name\b/g, 'Your ' + low).replace(/\bor DJ name\b/g, 'or ' + low).replace(/\bDJ name\b/g, N))
+      .replace(/\bDJs\b/g, L + 's').replace(/\bDJ\b/g, L));
   }
   // "a DJ" in a sentence becomes "a singer", "an instrumentalist"
   const flLow = L => /^[A-Z0-9]+$/.test(L) ? L : L.charAt(0).toLowerCase() + L.slice(1);
@@ -2600,15 +2628,15 @@ function appExtras() {
   }
   function flRelabel(root) {
     if (!root || !st.db || !FL.cfg) return; const on = flArtist().label !== 'DJ';
-    const fix = n => { if (n.__flOrig == null) { if (!on || !/\bDJs?\b/.test(n.nodeValue)) return; n.__flOrig = n.nodeValue; } const v = on ? flSwap(n.__flOrig) : n.__flOrig; if (n.nodeValue !== v) n.nodeValue = v; };
+    const fix = n => { if (n.__flOrig != null && n.nodeValue !== n.__flOut) n.__flOrig = null; if (n.__flOrig == null) { if (!on || !FL_RX.test(n.nodeValue)) return; n.__flOrig = n.nodeValue; } const v = on ? flSwap(n.__flOrig) : n.__flOrig; n.__flOut = v; if (n.nodeValue !== v) n.nodeValue = v; };
     if (root.nodeType === 3) { if (flUiText(root.parentElement)) fix(root); return; }
     if (root.nodeType !== 1) return;
     const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); let n;
-    while ((n = w.nextNode())) if ((n.__flOrig != null || /\bDJs?\b/.test(n.nodeValue)) && flUiText(n.parentElement) && !(n.parentElement.id === 'kitName' && (n.__flOrig || n.nodeValue) !== 'Your DJ name')) fix(n);
+    while ((n = w.nextNode())) if ((n.__flOrig != null || FL_RX.test(n.nodeValue)) && flUiText(n.parentElement) && !(n.parentElement.id === 'kitName' && (n.__flOrig || n.nodeValue) !== 'Your DJ name')) fix(n);
     const els = [...(root.matches && root.matches('[placeholder],[data-ph]') ? [root] : []), ...root.querySelectorAll('[placeholder],[data-ph]')];
     for (const el of els) for (const at of ['placeholder', 'data-ph']) {
       if (!el.hasAttribute(at)) continue; const k = 'flo' + at; let o = el[k];
-      if (o == null) { const v = el.getAttribute(at); if (!on || !/\bDJs?\b/.test(v)) continue; o = el[k] = v; }
+      if (o == null) { const v = el.getAttribute(at); if (!on || !FL_RX.test(v)) continue; o = el[k] = v; }
       const v = on ? flSwap(o) : o; if (el.getAttribute(at) !== v) el.setAttribute(at, v);
     }
     if (on) root.querySelectorAll('#sheetRoot input:not([type]), #sheetRoot input[type="text"]').forEach(i => { if (/^DJ performance\b/.test(i.value)) { i.value = i.value.replace(/^DJ performance/, flPerf()); i.dispatchEvent(new Event('input', { bubbles: true })); } });
