@@ -5090,6 +5090,7 @@ function appExtras() {
     }
     try { for (const { c: fc, l } of flRoDue()) out.push({ type: 'fu', k: 'fu:' + fc.id + ':' + l.id, at: l.follow, c: fc, l, text: `Follow up with <b>${esc(cName(fc))}</b>`, sub: esc(flFuSub(l)), btn: 'Follow up' }); } catch (_) {}
     try { out.push(...flHoldItems()); } catch (_) {}
+    try { flLockFold(out); } catch (_) {}
     return out.sort((a, b) => String(a.at).localeCompare(String(b.at)));
   }
   function nmRender(force) {
@@ -5123,13 +5124,14 @@ function appExtras() {
         e.stopPropagation();
         if (it.type === 'wrap') return nmWrap(it.b.id);
         if (it.type === 'hold') return flHoldSet(it.b, it.past ? 'lost' : 'confirmed');
+        if (it.type === 'lock') return nmLock(it.b.id);
         if (it.type === 'task') return window.bookingView(it.b.id);
         if (it.type === 'fu') return reachSheet(it.c.id);
         try { await it.go(); } catch (_) {} if (it.mark) apMark('done', it.k); else if (it.snooze) apMark('snooze', it.k, addDays(todayStr(), it.snooze));
       };
       row.querySelector('[data-up-x]').onclick = async e => {
         e.stopPropagation();
-        if (it.type === 'wrap' || it.type === 'hold') { apMark('snooze', it.k, addDays(todayStr(), 2)); toast(it.type === 'hold' ? 'Hold moved to later' : 'Wrap-up moved to later'); return; }
+        if (it.type === 'wrap' || it.type === 'hold' || it.type === 'lock') { apMark('snooze', it.k, addDays(todayStr(), 2)); toast(it.type === 'hold' ? 'Hold moved to later' : it.type === 'lock' ? 'Lock it in moved to later' : 'Wrap-up moved to later'); return; }
         if (it.type === 'fu') { if (await flRoEdit(it.c.id, it.l.id, { follow: addDays(todayStr(), 7) })) toast(`Follow-up moved to ${flRoShort(addDays(todayStr(), 7))}`, async () => { await flRoEdit(it.c.id, it.l.id, { follow: it.l.follow }); }); nmRender(true); return; }
         if (it.type === 'task') { apMark('snooze', it.k, addDays(todayStr(), 1)); return; }
         it.snooze ? apMark('snooze', it.k, addDays(todayStr(), it.snooze)) : apMark('dismissed', it.k);
@@ -5426,11 +5428,111 @@ function appExtras() {
       const anchor = rows[rows.length - 1].nextSibling; sorted.forEach(r => box.insertBefore(r, anchor));
     });
   }
+  /* -- Lock it in: when a show is Confirmed, everything to lock it down sits in one checklist: Google Calendar, the
+     confirmation email, and the Confirmed-stage checklist (contract, deposit, set time and load-in, promo… soonest due
+     first). It opens once on its own right after you mark a show Confirmed, shows as one row in Next moves (instead of
+     separate task rows), and as a button on the show. */
+  const NM_LOCK = { seen: null, opened: {} };
+  const nmLockable = b => b && stat(b) === 'confirmed' && b.date && b.date >= todayStr();
+  function nmLockSteps(b) {
+    const c = apCfg(), id = b.id, gc = b.gcal || {};
+    let ts = []; try { ts = tasksOf(b).filter(x => K(x.st) === 'confirmed').sort((p, q) => (p.done ? 1 : 0) - (q.done ? 1 : 0) || String(p.due || '9999').localeCompare(String(q.due || '9999'))); } catch (_) {}
+    return [
+      { k: 'cal', icon: '📅', label: gc.eventId ? 'On your Google Calendar' : 'Add it to your Google Calendar', done: !!gc.eventId, skipped: !gc.eventId && (!!b.gcalOff || !!c.dismissed['lockcal:' + id]), btn: 'Add it', go: () => syncBookingEvent(id, b), skipKey: 'lockcal:' + id },
+      { k: 'mail', icon: '✉️', label: 'Send a confirmation: date, set time, fee, contract and load-in', done: !!c.done['confirm:' + id], skipped: !!c.dismissed['confirm:' + id], btn: 'Write it', mark: 'confirm:' + id, keep: true, go: () => confirmMail(b), skipKey: 'confirm:' + id },
+      ...ts.map(x => ({ k: 'task', key: x.key, icon: '☐', label: x.label, due: x.due, done: !!x.done, skipped: false, btn: 'Done', task: true })),
+    ];
+  }
+  // Next moves: one "Lock in" row per Confirmed show coming up in the next 60 days (or confirmed this week)
+  function flLockFold(out) {
+    const t = todayStr(), c = apCfg(), lock = new Map();
+    for (const b of bk()) {
+      if (!nmLockable(b)) continue;
+      const soon = daysBetween(t, b.date) <= 60 || ((b.stageAt || {}).confirmed || '') >= addDays(t, -7); if (!soon) continue;
+      if (c.snooze['lock:' + b.id] && c.snooze['lock:' + b.id] > t) { lock.set(b.id, null); continue; }
+      const st = nmLockSteps(b), left = st.filter(x => !x.done && !x.skipped); if (!left.length) continue;
+      const nextDue = left.filter(x => x.due).map(x => x.due).sort()[0];
+      lock.set(b.id, { type: 'lock', k: 'lock:' + b.id, at: nextDue || t, b, icon: '🔒', text: `Lock in <b>${esc(bName(b))}</b>`, sub: `${esc(niceDate(b.date))} · ${st.length - left.length} of ${st.length} done · next: ${esc(left[0].label)}`, btn: 'Lock it in' });
+    }
+    if (!lock.size) return;
+    for (let i = out.length - 1; i >= 0; i--) { const it = out[i]; if ((it.type === 'task' && it.b && lock.has(it.b.id)) || (it.type === 'ap' && /^confirm:/.test(it.k) && lock.has(String(it.k).slice(8)))) out.splice(i, 1); }
+    for (const v of lock.values()) if (v) out.push(v);
+  }
+  function nmLock(bid) {
+    const b0 = nmBk(bid); if (!b0) return;
+    try { navSheet('lock:' + bid, () => nmLock(bid)); } catch (_) {}
+    sheet(`<h3>Lock it in</h3><p class="note" style="margin:0 0 10px">${esc(bName(b0))}${b0.date ? ' · ' + esc(niceDate(b0.date)) : ''}</p><div class="ssx-wr-bar"><i></i></div><div class="ssx-wr-list"></div><div class="ssx-lk-epk"></div>
+      <div class="actions"><button type="button" class="btn" data-wr-open>Open the show</button><span class="spacer"></span><button type="button" class="btn primary" data-wr-done>Done for now</button></div>`, root => {
+      const draw = () => {
+        const b = nmBk(bid); if (!b) return close();
+        const steps = nmLockSteps(b), fin = steps.filter(x => x.done || x.skipped).length;
+        root.querySelector('.ssx-wr-bar i').style.width = Math.round(fin / Math.max(1, steps.length) * 100) + '%';
+        root.querySelector('.ssx-wr-bar').setAttribute('aria-label', `${fin} of ${steps.length} done`);
+        root.querySelector('.ssx-wr-list').innerHTML = steps.map((x, i) => `<div class="ssx-wr-row${x.done ? ' done' : x.skipped ? ' skip' : ''}" data-i="${i}">
+          <span class="ssx-wr-ic" aria-hidden="true">${x.done ? '✓' : x.skipped ? '–' : x.icon}</span>
+          <span class="ssx-wr-tx">${esc(x.label)}${x.due && !x.done ? `<span class="note">${esc(nmWhen(x.due))}</span>` : x.skipped ? `<span class="note">${x.k === 'cal' && b.gcalOff ? 'Calendar is turned off for this show' : 'Skipped'}</span>` : ''}</span>
+          <span class="ssx-wr-bt">${x.task ? (x.done ? '<button type="button" class="btn small ghost" data-lk-undo>Undo</button>' : '<button type="button" class="btn small primary" data-lk-go>Done</button>')
+            : x.done && !x.keep ? '' : x.skipped ? (x.k === 'cal' && b.gcalOff ? '' : '<button type="button" class="btn small" data-lk-back>Bring back</button>')
+            : `<button type="button" class="btn small${x.done ? '' : ' primary'}" data-lk-go>${esc(x.btn)}</button>${x.done ? '' : '<button type="button" class="btn small ghost" data-lk-skip>Skip</button>'}`}</span></div>`).join('');
+        const ep = root.querySelector('.ssx-lk-epk');
+        ep.innerHTML = `<label class="ssx-check"><input type="checkbox" ${b.epkOff ? '' : 'checked'}> Show it on my EPK as an upcoming show</label>`;
+        ep.querySelector('input').onchange = async e => { const on = e.target.checked; if (await window.patch('bookings', bid, { epkOff: !on })) toast(on ? 'On your EPK' : 'Hidden from your EPK'); };
+        root.querySelectorAll('.ssx-wr-row').forEach(row => {
+          const x = steps[+row.dataset.i], go = row.querySelector('[data-lk-go]'), sk = row.querySelector('[data-lk-skip]'), back = row.querySelector('[data-lk-back]'), un = row.querySelector('[data-lk-undo]');
+          if (go) go.onclick = async () => {
+            go.disabled = true;
+            if (x.task) { await setTask(bid, x.key, true); try { syncChecks(bid, x.key, true); } catch (_) {} }
+            else { if (x.mark) await apSave({ done: { ...apCfg().done, [x.mark]: true } }); try { await x.go(); } catch (e) { console.error(e); } }
+            if (document.body.contains(root)) setTimeout(draw, x.k === 'cal' ? 1500 : 250);
+          };
+          if (un) un.onclick = async () => { await setTask(bid, x.key, false); try { syncChecks(bid, x.key, false); } catch (_) {} setTimeout(draw, 250); };
+          if (sk) sk.onclick = async () => { await apSave({ dismissed: { ...apCfg().dismissed, [x.skipKey]: true } }); draw(); };
+          if (back) back.onclick = async () => { const d = { ...apCfg().dismissed }; delete d[x.skipKey]; await apSave({ dismissed: d }); draw(); };
+        });
+        if (steps.length && fin === steps.length && !root.dataset.cheered) { root.dataset.cheered = '1'; toast(`${bName(b)} is locked in`); }
+      };
+      draw();
+      root.querySelector('[data-wr-open]').onclick = () => window.bookingView(bid);
+      root.querySelector('[data-wr-done]').onclick = () => close();
+      root.__lkDraw = draw;
+    });
+  }
+  // the show's own page: a Lock it in button while there's something left to do
+  function nmLockRow(root) {
+    const cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key, m = cur && /^b:(.+)$/.exec(cur); if (!m || !root.querySelector('[data-status]')) return;
+    const b = nmBk(m[1]); let row = root.querySelector('.ssx-lk-open');
+    const steps = nmLockable(b) ? nmLockSteps(b) : [], left = steps.filter(x => !x.done && !x.skipped).length, state = left ? `${steps.length - left}/${steps.length}` : '';
+    if ((row ? row.dataset.state : '') === state) return;
+    if (!state) { if (row) row.remove(); return; }
+    if (!row) { row = document.createElement('div'); row.className = 'ssx-wr-open ssx-lk-open'; const h = root.querySelector('.head'); h ? h.after(row) : root.prepend(row); }
+    row.dataset.state = state;
+    row.innerHTML = `<span>🔒 <b>Lock it in</b> <span class="note">${steps.length - left} of ${steps.length} done</span></span><button type="button" class="btn small primary">Lock it in</button>`;
+    row.querySelector('button').onclick = () => nmLock(b.id);
+  }
+  // right after you mark a show Confirmed (here, not from another device), Lock it in opens once
+  function nmLockWatch() {
+    let list = []; try { list = bk(); } catch (_) { return; }
+    const now = new Map(list.map(b => [b.id, stat(b)]));
+    if (!NM_LOCK.seen) { NM_LOCK.seen = now; return; }
+    for (const b of list) {
+      const was = NM_LOCK.seen.get(b.id);
+      if (was === undefined || was === 'confirmed' || now.get(b.id) !== 'confirmed' || NM_LOCK.opened[b.id] || !nmLockable(b)) continue;
+      if (Date.now() - Date.parse(b.updatedAt || 0) > 20000 || b.requestStatus === 'accepted') continue; // accepted requests open the confirmation email instead
+      NM_LOCK.opened[b.id] = 1;
+      let n = 0; const tryOpen = () => {
+        const sr = document.getElementById('sheetRoot'), cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key;
+        const free = !sr || !sr.innerHTML.trim() || cur === 'b:' + b.id;
+        if (free && nmLockSteps(nmBk(b.id) || b).some(x => !x.done && !x.skipped)) nmLock(b.id); else if (!free && n++ < 20) setTimeout(tryOpen, 500);
+      };
+      setTimeout(tryOpen, 900);
+    }
+    NM_LOCK.seen = now;
+  }
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, flRoTasksWrap, nmRender]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, flRoTasksWrap, nmLockWatch, nmRender]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
-    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet2, flRoFormShow, flRoOutcome, flGtRow, flBookForm, flBfView, flFuRow2, nmWrapRow, flRoBookRow, flSortChecklist]) { try { f(root); } catch (e) { console.error(e); } } });
+    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet2, flRoFormShow, flRoOutcome, flGtRow, flBookForm, flBfView, flFuRow2, nmWrapRow, nmLockRow, flRoBookRow, flSortChecklist]) { try { f(root); } catch (e) { console.error(e); } } });
   }
   function hookFlow() {
     if (window.__ssxFL || !st.db) return; window.__ssxFL = true;
