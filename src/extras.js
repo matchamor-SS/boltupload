@@ -5537,11 +5537,107 @@ function appExtras() {
     }
     NM_LOCK.seen = now;
   }
+  /* -- Business profile: your details in one place. Stage name, legal name, business name, email, phone, website, address,
+     tax type, tax state and how you get paid. Saving writes them to every place that uses them: Profile (settings/profile),
+     invoices (settings/invoice), the W-9 (settings/w9, never the SSN/EIN), mileage (settings/autopilot.home) and Taxes
+     (settings/autopilot.state). Each of those still keeps its own copy, so a one-off change on an invoice stays there. */
+  const BIZ = { busy: false };
+  const bizCur = () => {
+    const p = (() => { try { return S.profile || {}; } catch (_) { return {}; } })(), k = (() => { try { return S.invset || {}; } catch (_) { return {}; } })(), w = FL_W9.saved || {}, c = apCfg();
+    const lines = String(k.address || '').split('\n').map(x => x.trim()).filter(Boolean);
+    const cityLine = w.city || lines.slice(1).join(', ') || '', m = /^(.*?),?\s+([A-Z]{2})\s+(\d{5}(?:-\d{4})?)\s*$/.exec(cityLine) || /^(.*?),\s*([A-Z]{2})\s*$/.exec(cityLine);
+    const stage = p.djName || '', legal = k.name || w.name || p.myName || '';
+    return {
+      stage, legal, biz: w.biz || (k.biz && k.biz !== stage && k.biz !== legal ? k.biz : ''),
+      email: k.email || p.email || '', phone: k.phone || p.phone || '', website: k.website || p.website || '',
+      street: w.street || lines[0] || '', city: m ? m[1].trim() : cityLine, st: m ? m[2] : (c.state || ''), zip: m && m[3] ? m[3] : '',
+      cls: w.cls || 'ind', llc: w.llc || '', taxState: c.state || (m ? m[2] : ''),
+    };
+  };
+  const bizAddr = v => [v.street, [v.city, [v.st, v.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join('\n');
+  const bizPay = () => { try { const h = PH(); return PH_DEF.filter(([k]) => h[k]).map(([k, l]) => `${l}: ${h[k]}`); } catch (_) { return []; } };
+  function bizSheet() {
+    const v = bizCur(), f = (id, label, val, attrs = '') => `<div class="f"><label for="${id}">${label}</label><input id="${id}" value="${esc(val)}" ${attrs}></div>`;
+    const stOpts = sel => `<option value="">Choose…</option>${STATES.map(s => `<option value="${s[0]}" ${s[0] === sel ? 'selected' : ''}>${esc(s[1])}</option>`).join('')}`, pay = bizPay();
+    try { navSheet('biz', () => bizSheet()); } catch (_) {}
+    sheet(`<h3>Business profile</h3><p class="note" style="margin:0 0 6px">Fill this in once. Your invoices, W-9, mileage and taxes all use it, and so do your email fill-ins.</p>
+      <div class="frow">${f('bz-stage', 'Stage name', v.stage, 'maxlength="80"')}${f('bz-legal', 'Legal name', v.legal, 'maxlength="80" autocomplete="name"')}</div>
+      ${f('bz-biz', 'Business name <i class="note">(optional, if you have one)</i>', v.biz, 'maxlength="80"')}
+      <div class="frow">${f('bz-email', 'Email', v.email, 'type="email" maxlength="120"')}${f('bz-phone', 'Phone', v.phone, 'type="tel" maxlength="40"')}</div>
+      ${f('bz-web', 'Website <i class="note">(optional)</i>', v.website, 'type="url" maxlength="160"')}
+      ${f('bz-street', 'Street address', v.street, 'maxlength="100" autocomplete="street-address"')}
+      <div class="ssx-bz-city">${f('bz-city', 'City', v.city, 'maxlength="60"')}<div class="f"><label for="bz-st">State</label><select id="bz-st">${stOpts(v.st)}</select></div>${f('bz-zip', 'ZIP', v.zip, 'maxlength="10" inputmode="numeric"')}</div>
+      <p class="note" style="margin:-4px 0 4px">Your address goes on invoices and your W-9, and mileage is measured from it.</p>
+      <div class="frow"><div class="f"><label for="bz-cls">Tax type</label><select id="bz-cls">${FL_W9_CLS.map(([c, l]) => `<option value="${c}" ${c === v.cls ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div class="f"><label for="bz-tst">State you pay taxes in</label><select id="bz-tst">${stOpts(v.taxState)}</select></div></div>
+      <div class="f" id="bz-llcw" ${v.cls === 'llc' ? '' : 'hidden'}><label for="bz-llc">How your LLC is taxed</label><select id="bz-llc"><option value="">Choose…</option>${[['C', 'C corporation'], ['S', 'S corporation'], ['P', 'Partnership']].map(([c, l]) => `<option value="${c}" ${c === v.llc ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="f"><label>How you get paid</label><div class="ssx-bz-pay"><span class="note">${pay.length ? esc(pay.join(' · ')) : 'No Venmo, Zelle, Cash App or PayPal saved yet.'}</span><button type="button" class="btn small" data-bz-pay>${pay.length ? 'Edit' : 'Add'}</button></div></div>
+      <p class="note">Your SSN or EIN is never saved. You type it on the W-9 each time.</p>
+      <div class="actions"><button type="button" class="btn" data-bz-cancel>Cancel</button><button type="button" class="btn primary" data-bz-save>Save everywhere</button></div>`, root => {
+      const q = s => root.querySelector(s), val = s => (q(s) || {}).value ? q(s).value.trim() : '';
+      q('#bz-cls').onchange = e => { q('#bz-llcw').hidden = e.target.value !== 'llc'; };
+      let tstTouched = false; q('#bz-tst').onchange = () => { tstTouched = true; };
+      q('#bz-st').onchange = e => { if (!tstTouched || !q('#bz-tst').value) q('#bz-tst').value = e.target.value; }; // tax state follows your address unless you pick another
+      q('[data-bz-pay]').onclick = () => { try { payForm(); } catch (_) {} };
+      q('[data-bz-cancel]').onclick = () => close();
+      q('[data-bz-save]').onclick = async e => {
+        if (BIZ.busy) return; const btn = e.currentTarget;
+        const n = { stage: val('#bz-stage'), legal: val('#bz-legal'), biz: val('#bz-biz'), email: val('#bz-email'), phone: val('#bz-phone'), website: val('#bz-web'), street: val('#bz-street'), city: val('#bz-city'), st: q('#bz-st').value, zip: val('#bz-zip'), cls: q('#bz-cls').value, llc: q('#bz-cls').value === 'llc' ? q('#bz-llc').value : '', taxState: q('#bz-tst').value };
+        if (n.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(n.email)) { toast('Check the email address'); q('#bz-email').focus(); return; }
+        if (n.zip && !/^\d{5}(-\d{4})?$/.test(n.zip)) { toast('ZIP should look like 92104'); q('#bz-zip').focus(); return; }
+        BIZ.busy = true; btn.disabled = true; btn.textContent = 'Saving…';
+        try {
+          const p = S.profile || {}, k = S.invset || {}, addr = bizAddr(n), cityLine = [n.city, [n.st, n.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+          await window.save('settings', 'profile', { ...p, djName: n.stage, myName: p.myName || n.legal, email: n.email, phone: n.phone, website: n.website });
+          const inv = { ...k, biz: n.biz || n.stage || n.legal, name: n.legal, email: n.email, phone: n.phone, address: addr, website: n.website };
+          if (await window.save('settings', 'invoice', inv)) { try { S.invset = inv; } catch (_) {} }
+          const w = { ...(FL_W9.saved || {}), name: n.legal, biz: n.biz, cls: n.cls, llc: n.llc, street: n.street, city: cityLine };
+          if (st.db) { await st.db.doc('settings/w9').set(w).catch(() => {}); FL_W9.saved = w; }
+          const upd = {}; if (n.taxState) upd.state = n.taxState;
+          const home = apCfg().home || {}, full = [n.street, cityLine].filter(Boolean).join(', ');
+          let geoNote = '';
+          if (n.street && n.city && normAddr(full) !== normAddr(home.address)) {
+            let h = null; try { h = await geoFind(full); } catch (_) {}
+            if (h) upd.home = { address: full.slice(0, 200), lat: h.lat, lon: h.lon, city: h.city || n.city }; else geoNote = " Mileage couldn't find that address, so it still measures from your old one.";
+          }
+          if (Object.keys(upd).length) apSave(upd);
+          close(); toast('Saved. Your invoices, W-9, mileage and taxes are up to date.' + geoNote);
+        } catch (err) { console.error(err); toast("Couldn't save everything. Check your connection and try again."); }
+        BIZ.busy = false; if (btn.isConnected) { btn.disabled = false; btn.textContent = 'Save everywhere'; }
+      };
+    });
+  }
+  // Settings: the Business profile card under your profile
+  function bizCard() {
+    const prof = document.getElementById('ssx-profile'); if (!prof || !st.db) return;
+    const v = bizCur(), pay = bizPay(), missing = [!v.legal && 'legal name', !v.street && 'address', !v.email && 'email', !pay.length && 'how you get paid'].filter(Boolean);
+    const sig = JSON.stringify([v, pay]); let card = document.getElementById('ssx-biz');
+    if (card && card.dataset.sig === sig) return;
+    if (!card) { card = document.createElement('div'); card.id = 'ssx-biz'; card.className = 'card ssx'; prof.after(card); }
+    card.dataset.sig = sig;
+    const line = (l, x) => x ? `<div class="ssx-bz-l"><span class="eyebrow">${l}</span><span>${esc(x)}</span></div>` : '';
+    card.innerHTML = `<div class="ssx-head"><div><h3>Business profile</h3><p class="note">One place for the details on your invoices, W-9, mileage and taxes.</p></div><button type="button" class="btn small ${missing.length ? 'primary' : ''}" data-bz-open>${missing.length ? 'Finish it' : 'Edit'}</button></div>
+      <div class="ssx-bz-sum">${line('Stage name', v.stage)}${line('Legal name', v.legal)}${line('Business', v.biz)}${line('Contact', [v.email, v.phone].filter(Boolean).join(' · '))}${line('Address', bizAddr(v).replace('\n', ', '))}${line('Tax type', ((FL_W9_CLS.find(c => c[0] === v.cls) || [])[1] || '') + (v.taxState ? ` · taxes in ${(STATES.find(s => s[0] === v.taxState) || [, v.taxState])[1]}` : ''))}${line('Paid by', pay.join(' · '))}</div>
+      ${missing.length ? `<p class="note ssx-warn" style="margin:8px 0 0">Still missing: ${esc(missing.join(', '))}.</p>` : ''}`;
+    card.querySelector('[data-bz-open]').onclick = () => bizSheet();
+  }
+  // where your details are used, a small note points back to the Business profile
+  function bizNotes(root) {
+    const spots = [['#ivs-biz', 'details', 'These come from your Business profile. Changes here only affect your invoices.'], ['#w9-name', null, 'Filled in from your Business profile.']];
+    for (const [sel, wrapSel, text] of spots) {
+      const el = root.querySelector(sel); if (!el || root.querySelector('.ssx-bz-from[data-for="' + sel + '"]')) continue;
+      const wrap = wrapSel ? el.closest(wrapSel) : null, at = wrap ? wrap.querySelector('summary') : el.closest('.f');
+      const n = document.createElement('p'); n.className = 'note ssx-bz-from'; n.dataset.for = sel;
+      n.innerHTML = `${esc(text)} <button type="button" class="linkbtn" data-bz-open>Edit Business profile</button>`;
+      n.querySelector('button').onclick = () => bizSheet();
+      if (wrap && at) at.after(n); else if (at) at.before(n);
+    }
+  }
   function flScan() {
     FL.raf = 0;
-    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, flRoTasksWrap, nmLockWatch, nmRender]) { try { f(); } catch (e) { console.error(e); } }
+    for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, flRoTasksWrap, nmLockWatch, bizCard, nmRender]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
-    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet2, flRoFormShow, flRoOutcome, flGtRow, flBookForm, flBfView, flFuRow2, nmWrapRow, nmLockRow, flRoBookRow, flSortChecklist]) { try { f(root); } catch (e) { console.error(e); } } });
+    sr.querySelectorAll('.sheet').forEach(root => { for (const f of [flInlineHook, flFormExtras, flBuilder, flReview, flSeeAll, flPastForm, flLinkPicker, flMoneyRow, flContactPhone, flInvoiceHook, flRepeatUI, flSeriesRow, flSheetBar, flTaskCal, flRoSheet2, flRoFormShow, flRoOutcome, flGtRow, flBookForm, flBfView, flFuRow2, nmWrapRow, nmLockRow, flRoBookRow, flSortChecklist, bizNotes]) { try { f(root); } catch (e) { console.error(e); } } });
   }
   function hookFlow() {
     if (window.__ssxFL || !st.db) return; window.__ssxFL = true;
