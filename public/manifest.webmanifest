@@ -1,7 +1,7 @@
 {
   "name": "Set & Settled",
   "short_name": "Set & Settled",
-  "description": "Bookings, reminders, invoices and money for performers who book themselves.",
+  "description": "Bookings, reminders, invoices and money, handled. For those who handle it themselves.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
