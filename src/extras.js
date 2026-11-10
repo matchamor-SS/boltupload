@@ -2278,8 +2278,11 @@ function appExtras() {
       const spot=document.querySelector(".ssx-tour-spot");
       if(!spot||getComputedStyle(spot).display==="none")return;
       if(!body.dataset.ssxTourPad){body.dataset.ssxTourPad="1";body.style.paddingBottom="70vh"}
+      // only while a step settles (so you can scroll freely after), never under the top bar, never for a bar that doesn't scroll
+      const on=document.querySelector(".ssx-tour-on");if(Date.now()>(NTOUR.until||0)||(on&&on.closest("#tabs, header.top")))return;
+      const nav=document.querySelector('section[data-view="settings"]:not([hidden]) .ssg-nav'),min=(parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--ss-top"))||72)+(nav?nav.offsetHeight:0)+8;
       const t=spot.getBoundingClientRect(),c=card.getBoundingClientRect();
-      const gap=t.bottom-c.top+12,room=t.top-72;
+      const gap=t.bottom-c.top+12,room=t.top-min;
       if(gap>4&&room>4)scrollBy(0,Math.min(gap,room));
     },200);
   }
@@ -3940,23 +3943,23 @@ function appExtras() {
     { title: 'Welcome to Set & Settled', body: 'Your home base as an artist: shows, people, money, emails, media and your press kit in one place. This tour takes about 3 minutes. First we set up the few things that fill in everything else, then a quick look around.' },
     { tab: 'settings', group: 'profile', target: '#ssx-fl-art, #ssx-profile', title: 'Start with you', body: 'Pick what kind of artist you are and how you want to be called. Then add your name, contact details and socials. They fill in your EPK, emails, invoices and booking page, so you only type them once.' },
     { tab: 'settings', group: 'google', target: '#ss-google', title: 'Connect Google', body: 'Gmail sends emails and invoices from your own address, Drive keeps your files together, and Calendar shows your other plans next to your shows. Connect only what you want. You can change it anytime.' },
-    { tab: 'calendar', target: '#availEdit', title: 'When can you play?', body: 'Set the days you play and tap any date to block it. Your booking link uses this same list, so you only keep one calendar up to date.', action: ['Open Edit availability', () => { const n = document.getElementById('availEdit'), a = document.getElementById('availPanel'); if (n && (!a || a.hidden)) n.click(); }] },
+    { tab: 'calendar', target: '#availEdit', title: 'When are you available?', body: 'Your Calendar is with your shows: tap Calendar in the switch at the top. Set the days you are available and tap any date to block it. Your booking link uses this same list, so you only keep one calendar up to date.', action: ['Open Edit availability', () => { const n = document.getElementById('availEdit'), a = document.getElementById('availPanel'); if (n && (!a || a.hidden)) n.click(); }] },
     { tab: 'bookings', target: '#ssx-bklink', title: 'Let promoters come to you', body: 'Share your booking link. People pick an open date and tell you who they are (a talent buyer, a venue, a collective, a private event). Their request lands here as a Lead with the venue and contacts already filled in.' },
-    { tab: 'bookings', target: '[data-new="booking"]', title: 'Every show in one place', body: 'Add a show, even a new venue or promoter, without leaving the form. Move it from Lead to Confirmed, Played and Paid, and each stage brings its own checklist. Add tips, merch or expenses under the fee. A Lost show leaves your calendar but stays saved.' },
+    { tab: 'bookings', target: '[data-new="booking"]', title: 'Every show in one place', body: 'Switch between List and Calendar at the top. Add a show, even a new venue or promoter, without leaving the form. Move it from Lead to Confirmed, Played and Paid, and each stage brings its own checklist. Add tips, merch or expenses under the fee. A Lost show leaves your calendar but stays saved.' },
     { tab: 'home', target: '#ssx-upnext, #nextShow', title: 'Home keeps watch', body: 'Home suggests your next step for every show: an invoice to send, a thank-you, a late payment to chase. Your next show and open tasks are here too.' },
     { tab: 'contacts', target: '[data-new="contact"]', title: 'Your people', body: 'Promoters, venues, collectives and photographers, each with their notes, phone and the shows you have done together. People you add from a booking land here on their own.' },
-    { tab: 'comms', target: '#composeBtn, [data-new="template"]', title: 'Emails in a tap', body: 'Tap New email and start from a template. Fill-ins like the venue, date and your booking link fill themselves in from the show. Every email opens for you to check before it goes out from your Gmail.' },
+    { tab: 'comms', target: '#composeBtn, [data-new="template"]', title: 'Emails in a tap', body: 'Open Messages & templates from the card at the top of People. Tap New email and start from a template. Fill-ins like the venue, date and your booking link fill themselves in from the show. Every email opens for you to check before it goes out from your Gmail.' },
     { tab: 'money', target: '[data-new="expense"]', title: 'Your money, organized', body: 'Fees, extra income and expenses in one list, with invoices, receipts and mileage. When tax time comes, it shows what to set aside and builds your tax packet. It keeps your records organized, and it is not tax advice.' },
-    { tab: 'media', target: '#ssx-fl-mhost, section[data-view="media"] .head', title: 'Media from every show', body: 'Photo folders, videos and links, sorted by show. Open them, share them in a tap, and ask your photographer for files when a show has none yet.' },
-    { tab: 'kit', target: '#ssx-hist', title: 'Bring your history', body: 'Add the shows you played before Set & Settled: one at a time, from a Google Sheet, or with our template. They build your EPK without touching your bookings or money.', action: ['Add past shows', () => { const b = document.querySelector('#ssx-hist [data-nh-import]'); if (b) b.click(); }] },
-    { tab: 'kit', target: '#ssx-epk-btn', title: 'Your EPK', body: 'Your Kit and shows become a designed press kit. Pick a color theme, choose and reorder the sections, edit any text, then download a PDF for venues.', action: ['Create my EPK', () => { const b = document.getElementById('ssx-epk-btn'); if (b) b.click(); }] },
+        { tab: 'media', target: '#ssx-fl-mhost, section[data-view="media"] .head', title: 'Media from every show', body: 'Media is with your Kit: tap Media in the switch at the top of Kit. Photo folders, videos and links, sorted by show. Open them, share them in a tap, and ask your photographer for files when a show has none yet.' },
+    { tab: 'kit', target: '#ssx-hist', title: 'Bring your history', body: 'Add the shows you did before Set & Settled: one at a time, from a Google Sheet, or with our template. They build your EPK without touching your bookings or money.', action: ['Add past shows', () => { const b = document.querySelector('#ssx-hist [data-nh-import]'); if (b) b.click(); }] },
+    { tab: 'kit', target: '#ssx-epk-btn', title: 'Your EPK', body: 'Your Kit and your shows become a designed press kit. Pick a color theme, choose and reorder the sections, edit any text, then download a PDF for venues.', action: ['Create my EPK', () => { const b = document.getElementById('ssx-epk-btn'); if (b) b.click(); }] },
     { tab: 'settings', group: 'reminders', target: '#ssx-notify', title: 'Reminders', body: 'Choose phone and laptop alerts, a morning email, or both. They come from your checklists and goals, so nothing slips.' },
     { title: "You're all set", body: 'Two shortcuts to remember: search anything with the magnifying glass (or press / on a computer), and use Arrange on any page to show only what you need. Take this tour again anytime from Settings, under Account. Have a great season!' },
   ];
   function flTourSetup() {
     if (!FL.tour) { FL.tour = 1; try { TOUR.splice(0, TOUR.length, ...FL_TOUR); } catch (_) {} }
     const offer = document.querySelector('.ssx-tour-offer .ssx-tour-card > p:not(.note)');
-    if (offer && !offer.dataset.fl) { offer.dataset.fl = '1'; offer.textContent = "A 3-minute walk-through. We'll set up the few things that fill in everything else (your profile, Google and when you can play), then show you around."; }
+    if (offer && !offer.dataset.fl) { offer.dataset.fl = '1'; offer.textContent = "A 3-minute walk-through. We'll set up the few things that fill in everything else (your profile, Google and when you're available), then show you around."; }
   }
 
   /* -- invoice: "Bill to" can add a new person or company right there, the same way the booking form does */
