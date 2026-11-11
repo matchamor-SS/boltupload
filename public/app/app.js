@@ -208,7 +208,7 @@ const TAB_NAMES={home:"Home",bookings:"Bookings",calendar:"Calendar",tasks:"Task
 function goTab(t){if(t!==tab){TAB_STACK.push({tab,y:window.scrollY});if(TAB_STACK.length>20)TAB_STACK.shift()}setTab(t,true)}
 function goBack(){const p=TAB_STACK.pop();if(!p)return;closeAll();setTab(p.tab,true);requestAnimationFrame(()=>window.scrollTo(0,p.y||0))}
 function renderBackBar(){const bb=document.getElementById("backBar");if(!bb)return;const p=TAB_STACK[TAB_STACK.length-1];bb.hidden=!p;if(p)bb.querySelector("span").textContent="Back to "+(TAB_NAMES[p.tab]||"previous")}
-function setTab(t,keep){if(!keep)TAB_STACK=[];const changed=tab!==t;tab=t;if(changed)requestAnimationFrame(()=>{const v=document.querySelector(`section[data-view="${t}"]`);if(v){v.classList.remove("enter");void v.offsetWidth;v.classList.add("enter");setTimeout(()=>v.classList.remove("enter"),700)}});if(t==="comms")setTimeout(renderMailPick,0);if(t==="kit")setTimeout(renderPromoLists,0);{const sb=document.getElementById("setBtn");sb&&sb.setAttribute("aria-pressed",t==="settings")}document.querySelectorAll("[data-view]").forEach(s=>s.hidden=s.dataset.view!==t);
+function setTab(t,keep){if(!keep)TAB_STACK=[];const changed=tab!==t;tab=t;if(t==="comms")setTimeout(renderMailPick,0);if(t==="kit")setTimeout(renderPromoLists,0);{const sb=document.getElementById("setBtn");sb&&sb.setAttribute("aria-pressed",t==="settings")}document.querySelectorAll("[data-view]").forEach(s=>s.hidden=s.dataset.view!==t);
   document.querySelectorAll("#tabs button").forEach(b=>b.setAttribute("aria-current",b.dataset.tab===t));
   try{localStorage.setItem("hq-tab",t)}catch(e){} window.scrollTo(0,0);renderBackBar()}
 document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
