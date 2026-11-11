@@ -1146,3 +1146,8 @@ html.ssx-standalone body { padding-top: env(safe-area-inset-top, 0px); }
 html.ssx-standalone body .sheet { max-height: calc(100vh - env(safe-area-inset-top, 0px) - 12px) !important; }
 /* Tour on phones: a plain outline (the big glow made iPhone Safari flicker) */
 @media (max-width: 699px) { html body .ssx-tour-on, html[data-mode="dark"] body .ssx-tour-on { box-shadow: none !important; } }
+/* Changing pages: a quick fade, no sliding (the slide-ins stacked up and made the cards bounce) */
+html body section[data-view]:not([hidden]) { animation: ssxFade .18s ease; }
+@media (prefers-reduced-motion: reduce) { html body section[data-view]:not([hidden]) { animation: none; } }
+/* Light mode: buttons at the top of each page get dark text (they had cream text meant for the dark header) */
+html[data-mode="light"] body section[data-view] > .head .btn:not(.primary):not(.save) { color: var(--ink) !important; border-color: var(--line) !important; }
