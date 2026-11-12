@@ -399,7 +399,9 @@ function appExtras() {
      or a Google Calendar plan) or you blocked the date. These replace the older versions further down. */
   const avOn = () => { try { return AV().google !== 'ignore'; } catch (_) { return true; } };
   const avMins = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; };
-  const avShows = d => (S.bookings || []).filter(b => b.date === d && ['confirmed', 'pitched', 'played', 'paid'].includes(K(b.status)));
+  // counted on your calendar: confirmed, played and paid shows, holds, and a new request for its first 3 days
+  const avHeld = b => b.source === 'booking-link' && !b.requestStatus && K(b.status) === 'lead' && b.createdAt && addDays(String(b.createdAt).slice(0, 10), 3) >= todayStr();
+  const avShows = d => (S.bookings || []).filter(b => b.date === d && (['confirmed', 'pitched', 'played', 'paid'].includes(K(b.status)) || avHeld(b)));
   const avSpan = b => { const s0 = avMins(b.setStart); if (s0 == null) return [0, 1440]; let e = avMins(b.setEnd); e = e == null ? s0 + 120 : e <= s0 ? e + 1440 : e; return [s0, e]; };
   const avGSpan = (e, day) => { if (e.allDay || !e.start) return [0, 1440]; const sd = new Date(e.start), ed = new Date(e.end || e.start), md = x => x.getHours() * 60 + x.getMinutes(); return [ymd(sd) === day ? md(sd) : 0, ymd(ed) === day ? (md(ed) || 1440) : 1440]; };
   // everything on your calendar around a date, as [start, end, name] in minutes from that date's midnight
@@ -417,7 +419,7 @@ function appExtras() {
     if (d < from) why.push('before your booking window starts');
     if ((bl || blockedDays(d)).has(d)) why.push('you blocked this date');
     if (avOn()) for (const e of agOn(d)) if (e.allDay) why.push(`Google Calendar: ${e.title || 'plan'} (all day)`);
-    if (linkMode(L) === 'day' && !(L.open || []).includes(d)) for (const b of avShows(d)) why.push(`${kindName(K(b.status))}: ${bookingName(b)}`);
+    if (linkMode(L) === 'day' && !(L.open || []).includes(d)) for (const b of avShows(d)) why.push(`${avHeld(b) ? 'New request (held 3 days)' : kindName(K(b.status))}: ${bookingName(b)}`);
     if (why.length) return why;
     const E0 = avMins(L.earliest) ?? 1080, L0 = avMins(L.latest) ?? 1410, last = L0 < E0 ? L0 + 1440 : L0, step = Math.max(5, Number(L.step) || 30), gap = Math.max(0, Number(L.gap) || 0), len = Math.min(...(L.lengths && L.lengths.length ? L.lengths : [60])), iv = avBusyOn(d);
     if (!iv.length) return why;
@@ -435,7 +437,7 @@ function appExtras() {
     const t0 = addDays(todayStr(), -1), out = {}, g = avOn(); let n = 0;
     for (let d = t0, i = 0; d <= to && i < 740 && n < 600; d = addDays(d, 1), i++) {
       const iv = [];
-      for (const b of avShows(d)) if (K(b.status) === 'pitched') iv.push(avSpan(b));
+      for (const b of avShows(d)) if (!['confirmed', 'played', 'paid'].includes(K(b.status))) iv.push(avSpan(b));
       if (g) for (const e of agOn(d)) if (!e.allDay && e.start) iv.push(avGSpan(e, d));
       if (iv.length) { out[d] = iv.filter(([x, y]) => y > x).sort((x, y) => x[0] - y[0]); n += iv.length; }
     }
@@ -491,6 +493,49 @@ function appExtras() {
       const bg = q('#ssx-bgap-c'); if (bg) bg.onchange = () => { saveLink({ gap: Number(bg.value) }, true); later(); };
     } catch (e) { console.error(e); }
   };
+/* -- Booking requests, more automatic: each request shows how it fits (what else is on that day, how far it is, your
+     history and last fee with them, and how long its time is held), and declining opens a kind reply with your booking link. */
+  const REQ_HOLD = 3; // days a new request holds its time on your booking link
+  function reqFit(b) {
+    const out = [], t12 = t => { try { return time12(t); } catch (_) { return t; } };
+    try {
+      const mine = avSpan(b), hit = (x, y) => b.setStart ? x < mine[1] && y > mine[0] : true, clash = [];
+      for (const o of S.bookings || []) { if (o.id === b.id || o.date !== b.date || !['confirmed', 'pitched', 'played', 'paid'].includes(K(o.status))) continue; const [x, y] = avSpan(o); clash.push(`${bookingName(o)}${o.setStart ? ` (${t12(o.setStart)}${o.setEnd ? ' – ' + t12(o.setEnd) : ''})` : ''}${hit(x, y) ? ', overlaps' : ''}`); }
+      if (avOn()) for (const e of agOn(b.date)) { const [x, y] = avGSpan(e, b.date); if (e.allDay || hit(x, y)) clash.push(`Google Calendar: ${e.title || 'plan'}${e.allDay ? ' (all day)' : ', overlaps'}`); }
+      out.push(clash.length ? `⚠️ Also that day: ${clash.slice(0, 3).join('; ')}` : '✓ Nothing else on your calendar at that time');
+    } catch (_) {}
+    try {
+      const past = (S.bookings || []).filter(o => o.id !== b.id && K(o.status) !== 'lost' && ((b.promoterId && (o.promoterId === b.promoterId || o.contactPersonId === b.promoterId)) || (b.venueId && o.venueId === b.venueId))).sort((x, y) => String(y.date || '').localeCompare(String(x.date || '')));
+      if (past.length) { const fee = past.find(o => +o.fee > 0); out.push(`You've worked together ${past.length} time${past.length === 1 ? '' : 's'}${fee ? `. Last fee: $${Number(fee.fee).toLocaleString('en-US')}` : ''}`); }
+      else { const paid = (S.bookings || []).filter(o => +o.fee > 0 && ['played', 'paid'].includes(K(o.status))).sort((x, y) => String(y.date || '').localeCompare(String(x.date || ''))).slice(0, 9).map(o => +o.fee).sort((x, y) => x - y); if (paid.length >= 3) out.push(`New to you. Your usual fee lately: $${paid[Math.floor(paid.length / 2)].toLocaleString('en-US')}`); else out.push('New to you'); }
+    } catch (_) {}
+    try {
+      const h = (apCfg().home || {}), g = b.geo;
+      if (h.lat && g && g.lat) { const R = 3959, r = x => x * Math.PI / 180, dLa = r(g.lat - h.lat), dLo = r(g.lon - h.lon), q = Math.sin(dLa / 2) ** 2 + Math.cos(r(h.lat)) * Math.cos(r(g.lat)) * Math.sin(dLo / 2) ** 2, mi = Math.round(2 * R * Math.asin(Math.sqrt(q)) * 1.25); out.push(`About ${mi} mi from home`); }
+    } catch (_) {}
+    try { if (b.createdAt) { const until = addDays(String(b.createdAt).slice(0, 10), REQ_HOLD); out.push(until >= todayStr() ? `Holding this time on your booking link until ${niceDate(until)}` : 'No longer holding this time on your booking link'); } } catch (_) {}
+    return out;
+  }
+  const _renderRequests = renderRequests;
+  renderRequests = function () {
+    _renderRequests.apply(this, arguments);
+    try {
+      document.querySelectorAll('#ssx-requests [data-req]').forEach(item => {
+        if (item.querySelector('.ssx-reqfit')) return; const b = (S.bookings || []).find(x => x.id === item.dataset.req); if (!b) return;
+        const ul = document.createElement('ul'); ul.className = 'ssx-reqfit'; ul.innerHTML = reqFit(b).map(x => `<li>${esc(x)}</li>`).join('');
+        const row = item.querySelector('.ssx-row'); row ? row.before(ul) : item.appendChild(ul);
+      });
+    } catch (e) { console.error(e); }
+  };
+  const _decideRequest = decideRequest;
+  decideRequest = async function (b, status) {
+    const ok = await _decideRequest.apply(this, arguments);
+    try {
+      if (ok && status === 'lost') { const who = person(b.promoterId || b.venueId || b.contactPersonId), first = who ? String(cName(who) || '').split(' ')[0] : '', link = window.ssBookingLink ? window.ssBookingLink() : '';
+        composeSheet({ booking: b.id, to: b.promoterId || b.venueId || '', subject: `About your booking request${b.date ? ' for ' + niceDate(b.date) : ''}`, body: `Hi ${first || 'there'},\n\nThank you for thinking of me for ${bName(b)}${b.date ? ' on ' + niceDate(b.date) : ''}. I'm not able to take this one, but I'd love to work together another time.${link ? `\n\nMy booking link always shows my open dates and times: ${link}` : ''}\n\nAll the best,\n${myName()}` }); }
+    } catch (_) {}
+    return ok;
+  };  
   const _availCard = availCard;
   availCard = function () {
     _availCard.apply(this, arguments);
@@ -4030,7 +4075,8 @@ function appExtras() {
     if (k === 'booker' && !v('bk-venue')) { $('#bk-venue').focus(); return stop('Add the venue you book for.'); }
     if (k === 'venue') $('#bk-venue').value = v('bk-org');
     const d = { k }; [['t', 'bk-x-title'], ['ig', 'bk-x-ig'], ['site', 'bk-x-site'], ['vsite', 'bk-x-vsite'], ['cap', 'bk-x-cap'], ['ages', 'bk-x-ages'], ['lineup', 'bk-x-lineup'], ['et', 'bk-x-etype'], ['g', 'bk-x-guests'], ['rf', 'bk-x-rep'], ['rn', 'bk-x-repn']].forEach(([a, id]) => { const x = v(id); if (x) d[a] = x.slice(0, 200); });
-    const msg = $('#bk-msg'); if (!msg) return;
+  const msg = $('#bk-msg'); if (!msg) return;
+  if (BKX_GEO.lat && ((BKX_GEO.name && BKX_GEO.name === v('bk-venue')) || (BKX_GEO.addr && BKX_GEO.addr === v('bk-address')))) d.ll = [+BKX_GEO.lat.toFixed(5), +BKX_GEO.lon.toFixed(5)];
     const own = msg.value.replace(/\n*\[details\]\{[\s\S]*$/, '');
     msg.value = (own.trim() ? own.trim() + '\n\n' : '') + '[details]' + JSON.stringify(d);
     setTimeout(() => { msg.value = own; }, 0); // the page reads the message right away; put back what they typed
@@ -4086,6 +4132,7 @@ function appExtras() {
     if (d.rf && FL_REP_DEF[d.rf]) { const n = Math.max(2, Math.min(52, parseInt(d.rn, 10) || FL_REP_DEF[d.rf])); lines.push(d.rf === 'cu' ? `Repeats: a custom schedule (see their message), about ${n} dates` : `Repeats: ${FL_REP_NAMES[d.rf]}, about ${n} dates`);upd.repeatReq = { freq: d.rf, count: n }; }
     if (d.ig || d.site || d.vsite) lines.push(`Links: ${[d.ig, d.site, d.vsite].filter(Boolean).join(' · ')}`);
     if (d.q && typeof d.q === 'object') for (const [qid, val] of Object.entries(d.q)) if (/^[a-z0-9]{1,20}$/.test(qid) && typeof val === 'string') upd['cf_' + qid] = val.slice(0, 200);
+    if (Array.isArray(d.ll) && isFinite(+d.ll[0]) && isFinite(+d.ll[1]) && Math.abs(+d.ll[0]) <= 90 && Math.abs(+d.ll[1]) <= 180) upd.geo = { lat: +d.ll[0], lon: +d.ll[1] };
     upd.notes = base.replace(/\nRole: [^\n]*/, '\n' + lines.join('\n')); upd.requestKind = k; upd.updatedAt = new Date().toISOString();
     await window.patch('bookings', b.id, upd);
   }
@@ -6708,6 +6755,37 @@ async function bookingPage(rawSlug) {
 /* ============================================================== booking request page upgrades
    Runs on the public booking page itself (appExtras doesn't run there). "Who are you?" first, then only the questions that fit; the
    performer's own questions and hidden questions (from the book function's `form`), and service wording for service providers. */
+/* -- Booking request page: type a venue or address and pick it from the list; the address and city fill themselves in
+   (free place search from OpenStreetMap, the same one the booking form uses). */
+const BKX_GEO = { name: '', lat: 0, lon: 0 };
+function bkxPlace(input, kind) {
+  if (!input || input.__bkxPlace) return; input.__bkxPlace = true; input.setAttribute('autocomplete', 'off');
+  const host = input.closest('label') || input.parentElement; host.classList.add('bk-placewrap');
+  const box = document.createElement('div'); box.className = 'bk-place'; box.hidden = true; box.setAttribute('role', 'listbox'); input.after(box);
+  let timer = 0, seq = 0, picked = '';
+  const form = input.closest('form'), el = id => form && form.querySelector('#' + id), close = () => { box.hidden = true; box.innerHTML = ''; };
+  const addr = p => [[p.housenumber, p.street].filter(Boolean).join(' '), p.city || p.town || p.village || p.district, [p.state, p.postcode].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  const search = async () => {
+    const q = input.value.trim(); if (q.length < 3 || q === picked) return close();
+    if (kind === 'org' && ((el('bk-x-kind') || {}).value !== 'venue')) return close();
+    const mine = ++seq, city = kind === 'addr' ? '' : ((el('bk-city') || {}).value || '').trim();
+    try {
+      const r = await fetch(`https://photon.komoot.io/api/?limit=5&lang=en&q=${encodeURIComponent((q + (city ? ' ' + city : '')).slice(0, 120))}${kind === 'addr' ? '&layer=house&layer=street' : ''}`); if (!r.ok || mine !== seq) return;
+      const list = ((await r.json()).features || []).map(f => { const p = f.properties || {}; return { name: p.name || '', addr: addr(p), city: p.city || p.town || p.village || '', lat: f.geometry && f.geometry.coordinates[1], lon: f.geometry && f.geometry.coordinates[0] }; }).filter(x => kind === 'addr' ? x.addr : x.name);
+      if (mine !== seq || document.activeElement !== input) return; if (!list.length) return close();
+      box.innerHTML = list.map((x, i) => `<button type="button" role="option" data-i="${i}"><b>${esc(kind === 'addr' ? x.addr : x.name)}</b>${kind !== 'addr' && x.addr ? `<span>${esc(x.addr)}</span>` : ''}</button>`).join(''); box.hidden = false;
+      box.querySelectorAll('button').forEach(b => { b.onmousedown = e => e.preventDefault(); b.onclick = e => { e.preventDefault(); const x = list[+b.dataset.i]; clearTimeout(timer); seq++;
+        if (kind === 'addr') { picked = x.addr; input.value = x.addr; } else { picked = x.name; input.value = x.name; const a = el('bk-address'); if (a && x.addr) a.value = x.addr; }
+        const c = el('bk-city'); if (c && x.city) c.value = x.city;
+        if (x.lat && x.lon) Object.assign(BKX_GEO, { name: kind === 'addr' ? '' : x.name, addr: x.addr, lat: x.lat, lon: x.lon });
+        close(); input.dispatchEvent(new Event('change', { bubbles: true })); }; });
+    } catch (_) { close(); }
+  };
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 350); });
+  input.addEventListener('blur', () => setTimeout(close, 150));
+  input.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+}
+function bkxPlaces() { const f = document.querySelector('#ss-book #bk-form'); if (!f) return; bkxPlace(f.querySelector('#bk-venue'), 'venue'); bkxPlace(f.querySelector('#bk-org'), 'org'); bkxPlace(f.querySelector('#bk-address'), 'addr'); }
 const BKX_KINDS = [
   ['booker', 'I book talent for a venue'], ['venue', 'I run or own a venue'], ['collective', 'I lead a collective or crew'],
   ['promoter', "I'm an independent promoter"], ['private', "I'm planning a private event"], ['other', 'Something else']];
@@ -6820,8 +6898,8 @@ function bkxSubmit(e) {
   setTimeout(() => { msg.value = own; }, 0); // the page reads the message right away; put back what they typed
 }
 if (/[?&]book=/.test(location.search)) {
-  const mo = new MutationObserver(() => { try { bkxPage(); } catch (err) { console.error(err); } });
-  const start = () => { mo.observe(document.body, { childList: true, subtree: true }); bkxPage(); };
+  const mo = new MutationObserver(() => { try { bkxPage(); bkxPlaces(); } catch (err) { console.error(err); } });
+  const start = () => { mo.observe(document.body, { childList: true, subtree: true }); bkxPage(); bkxPlaces(); };
   document.body ? start() : document.addEventListener('DOMContentLoaded', start);
   document.addEventListener('submit', bkxSubmit, true);
 }
