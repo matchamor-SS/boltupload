@@ -6168,7 +6168,23 @@ function appExtras() {
     const w = function () { const r = f.apply(this, arguments); try { navGroups(); } catch (_) {} return r; };
     w.__ssxNav = true; window.setTab = w; navGroups();
   }
+  /* -- Media folder fills itself in: a show's Media link always points at the Media folder the app made in Google Drive,
+     and when a show is confirmed (with Google Drive set up) its Marketing folders (Media and Flyers) are made on their own. */
+  const FL_MA = { tried: new Set(), at: 0 };
+  function flMediaAuto() {
+    if (Date.now() - FL_MA.at < 15000) return; FL_MA.at = Date.now();
+    const list = flBk();
+    // a Media folder the app already made, but the show's Media link is still empty
+    for (const b of list) { let u = ''; try { u = subUrl(b, 'mkt', 'media'); } catch (_) {} if (u && !b.driveUrl && !FL_MA.tried.has('l' + b.id)) { FL_MA.tried.add('l' + b.id); window.patch('bookings', b.id, { driveUrl: u, driveId: b.folders.mkt.subs.media }); } }
+    // confirmed shows coming up get their folders made, one at a time (services don't use a media folder)
+    let ready = false; try { ready = flArtist().group !== 'service' && !!rootOf('mkt') && !!(S.drive && S.drive.account); } catch (_) {}
+    if (!ready) return;
+    const t = todayStr(), next = list.find(b => flKind(b.status) === 'confirmed' && b.date && b.date >= t && !b.driveUrl && !(b.folders || {}).mkt && (b.title || b.venueId) && !FL_MA.tried.has('m' + b.id));
+    if (!next) return; FL_MA.tried.add('m' + next.id);
+    makeEventFolder(next, 'mkt').then(r => { if (r) toast(`Media folder ready for ${bookingName(next)}`); }).catch(() => {});
+  }
   function flScan() {
+    try { flMediaAuto(); } catch (e) { console.error(e); }
     FL.raf = 0;
     for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, flRoTasksWrap, nmLockWatch, bizCard, flGtCleanHook, navWrap, navGroups, nmRender]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
