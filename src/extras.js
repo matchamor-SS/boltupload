@@ -4142,6 +4142,7 @@ function appExtras() {
     if (d.rf && FL_REP_DEF[d.rf]) { const n = Math.max(2, Math.min(52, parseInt(d.rn, 10) || FL_REP_DEF[d.rf])); lines.push(d.rf === 'cu' ? `Repeats: a custom schedule (see their message), about ${n} dates` : `Repeats: ${FL_REP_NAMES[d.rf]}, about ${n} dates`);upd.repeatReq = { freq: d.rf, count: n }; }
     if (d.ig || d.site || d.vsite) lines.push(`Links: ${[d.ig, d.site, d.vsite].filter(Boolean).join(' · ')}`);
     if (d.q && typeof d.q === 'object') for (const [qid, val] of Object.entries(d.q)) if (/^[a-z0-9]{1,20}$/.test(qid) && typeof val === 'string') upd['cf_' + qid] = val.slice(0, 200);
+    Object.assign(upd, flFoundFromRequest(d, b));
     if (Array.isArray(d.ll) && isFinite(+d.ll[0]) && isFinite(+d.ll[1]) && Math.abs(+d.ll[0]) <= 90 && Math.abs(+d.ll[1]) <= 180) upd.geo = { lat: +d.ll[0], lon: +d.ll[1] };
     upd.notes = base.replace(/\nRole: [^\n]*/, '\n' + lines.join('\n')); upd.requestKind = k; upd.updatedAt = new Date().toISOString();
     await window.patch('bookings', b.id, upd);
@@ -6183,8 +6184,75 @@ function appExtras() {
     if (!next) return; FL_MA.tried.add('m' + next.id);
     makeEventFolder(next, 'mkt').then(r => { if (r) toast(`Media folder ready for ${bookingName(next)}`); }).catch(() => {});
   }
+/* -- Where your work comes from: "How they found you" on every booking ("How did you hear about me?" on the request page),
+     filled in on its own when you've worked with them before, plus a "Where your bookings come from" report on your shows page. */
+  const FOUND = () => { let sv = false; try { sv = flArtist().group === 'service'; } catch (_) {} return [['saw', sv ? 'Saw my work' : 'Saw me play'], ['referral', 'Someone referred me'], ['repeat', 'Worked together before'], ['outreach', 'I reached out to them'], ['link', 'My booking link'], ['instagram', 'Instagram'], ['social', 'Other social media'], ['google', 'Google or my website'], ['other', 'Other']]; };
+  const foundName = k => (FOUND().find(x => x[0] === k) || [, ''])[1];
+  FL_BF.push(['found', 'How they found you', r => r.querySelector('#b-found'), 0, 0]);
+  const _flBfList = flBfList;
+  flBfList = function () { const l = _flBfList.apply(this, arguments); if (!l.some(x => x.key === 'found')) { const i = l.findIndex(x => x.key === 'notes'); l.splice(i < 0 ? l.length : i, 0, { key: 'found', place: 'more', label: '' }); } return l; };
+  // shows they could have seen you at: your past bookings plus Show history
+  function foundShows(skipId) {
+    const t = todayStr(), out = [];
+    for (const b of flBk()) if (b.id !== skipId && b.date && b.date < t && ['played', 'paid', 'confirmed'].includes(flKind(b.status))) out.push([b.id, b.date, bookingName(b)]);
+    try { for (const p of S.pastShows || []) if (p.date) out.push(['p:' + p.id, p.date, [p.title, p.venue].filter(Boolean).join(' · ') || 'Past show']); } catch (_) {}
+    return out.sort((a, b) => b[1].localeCompare(a[1])).slice(0, 150);
+  }
+  const foundShowName = id => { if (!id) return ''; if (id.startsWith('p:')) { const p = (S.pastShows || []).find(x => 'p:' + x.id === id); return p ? [p.title, p.venue].filter(Boolean).join(' · ') : ''; } const b = flBk().find(x => x.id === id); return b ? bookingName(b) : ''; };
+  function flFoundEl(root) {
+    if (!root.querySelector('#b-title') || !root.querySelector('#b-venue') || root.querySelector('#b-found')) return;
+    const b = FL.formB || {}, sh = foundShows(b.id), ppl = (S.contacts || []).map(c => [c.id, cName(c)]).filter(x => x[1]).sort((a, c) => a[1].localeCompare(c[1]));
+    const opt = (v, l, cur) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(l)}</option>`;
+    const w = document.createElement('div'); w.className = 'f ssx-found';
+    w.innerHTML = `<label for="b-found">How they found you</label><select id="b-found" data-k="foundVia">${opt('', 'Not sure', b.foundVia || '')}${FOUND().map(([k, l]) => opt(k, l, b.foundVia || '')).join('')}</select>
+      <select id="b-found-show" data-k="foundShowId" aria-label="Which show"${b.foundVia === 'saw' ? '' : ' hidden'}>${opt('', 'Which show? (optional)', b.foundShowId || '')}${sh.map(([id, d, n]) => opt(id, `${niceDate(d)} · ${n}`, b.foundShowId || '')).join('')}</select>
+      <select id="b-found-by" data-k="foundById" aria-label="Who referred them"${b.foundVia === 'referral' ? '' : ' hidden'}>${opt('', 'Who? (optional)', b.foundById || '')}${ppl.map(([id, n]) => opt(id, n, b.foundById || '')).join('')}</select>
+      <input id="b-found-txt" data-k="foundText" maxlength="120" placeholder="Details (optional)" value="${esc(b.foundText || '')}"${['other', 'social', 'saw', 'referral'].includes(b.foundVia) ? '' : ' hidden'}>`;
+    const sel = w.querySelector('#b-found'), sync = () => { const v = sel.value; w.querySelector('#b-found-show').hidden = v !== 'saw'; w.querySelector('#b-found-by').hidden = v !== 'referral'; w.querySelector('#b-found-txt').hidden = !['other', 'social', 'saw', 'referral'].includes(v); };
+    sel.addEventListener('change', sync);
+    const notes = root.querySelector('#b-notes'), nf = notes && notes.closest('.f'); nf ? nf.before(w) : root.querySelector('.actions').before(w);
+  }
+  const _flBookForm = flBookForm;
+  flBookForm = function (root) { try { flFoundEl(root); } catch (e) { console.error(e); } return _flBookForm.apply(this, arguments); };
+  // fill in "Worked together before" on its own, and read the request page's answer
+  const FL_FD = { at: 0, done: new Set() };
+  function flFoundSweep() {
+    if (Date.now() - FL_FD.at < 20000 || !window.patch) return; FL_FD.at = Date.now();
+    const all = flBk().filter(b => flKind(b.status) !== 'lost'); let n = 0;
+    for (const b of all) {
+      if (b.foundVia || FL_FD.done.has(b.id) || !b.date || n >= 10) continue;
+      const before = all.find(o => o.id !== b.id && o.date && o.date < b.date && ((b.venueId && o.venueId === b.venueId) || (b.promoterId && o.promoterId === b.promoterId)));
+      if (before) { FL_FD.done.add(b.id); n++; window.patch('bookings', b.id, { foundVia: 'repeat', foundAuto: true, foundShowId: before.id }); }
+    }
+  }
+  function flFoundFromRequest(d, b) {
+    const upd = {}, ok = FOUND().map(x => x[0]); if (!d || !ok.includes(d.fv)) return upd;
+    upd.foundVia = d.fv; const tx = String(d.fx || '').trim().slice(0, 120), low = tx.toLowerCase();
+    if (tx && d.fv === 'saw') { const hit = foundShows(b.id).find(([, , n]) => String(n || '').toLowerCase().split(' · ').some(part => part.length >= 4 && (low.includes(part) || part.includes(low)))); if (hit) upd.foundShowId = hit[0]; }
+    if (tx && d.fv === 'referral') { const c = (S.contacts || []).find(x => { const n = String(cName(x) || '').toLowerCase(); return n && (n === low || low.includes(n)); }); if (c) upd.foundById = c.id; }
+    if (tx) upd.foundText = tx;
+    return upd;
+  }
+  // the report: what brings in your work (this year so far plus everything booked ahead)
+  function flFoundCard() {
+    const sec = document.querySelector('section[data-view="bookings"]'); if (!sec) return;
+    const t = todayStr(), from = addDays(t, -365), list = flBk().filter(b => b.date && b.date >= from && ['confirmed', 'played', 'paid'].includes(flKind(b.status)));
+    const sig = list.map(b => b.id + (b.foundVia || '') + (b.foundShowId || '') + (b.foundById || '') + (b.fee || '')).join('|');
+    let card = document.getElementById('ssx-found'); if (card && card.__sig === sig) return;
+    if (!card) { card = document.createElement('details'); card.id = 'ssx-found'; card.className = 'card ssx ssx-foundcard'; sec.appendChild(card); }
+    card.__sig = sig;
+    const by = {}, shows = {}, ppl = {}, add = (o, k, b) => { const x = o[k] = o[k] || { n: 0, $: 0 }; x.n++; x.$ += +b.fee || 0; };
+    for (const b of list) { add(by, b.foundVia || '', b); if (b.foundVia === 'saw' && b.foundShowId) add(shows, b.foundShowId, b); if (b.foundVia === 'referral' && b.foundById) add(ppl, b.foundById, b); }
+    const $ = v => '$' + Math.round(v).toLocaleString('en-US'), rows = (o, name) => Object.entries(o).sort((a, b) => b[1].n - a[1].n || b[1].$ - a[1].$).slice(0, 5).map(([k, v]) => `<li><b>${esc(name(k))}</b><span>${v.n} booking${v.n === 1 ? '' : 's'}${v.$ ? ' · ' + $(v.$) : ''}</span></li>`).join('');
+    const known = list.filter(b => b.foundVia), top = Object.entries(by).filter(([k]) => k).sort((a, b) => b[1].n - a[1].n)[0];
+    card.innerHTML = `<summary><h3>Where your bookings come from</h3><span class="note">${known.length ? `Last 12 months and ahead: ${top ? `most from <b>${esc(foundName(top[0]))}</b> (${top[1].n})` : ''}` : 'Add "How they found you" to your shows to see what brings in your work.'}</span></summary>
+      ${known.length ? `<ul class="ssx-foundlist">${rows(Object.fromEntries(Object.entries(by).filter(([k]) => k)), foundName)}</ul>` : ''}
+      ${Object.keys(shows).length ? `<span class="eyebrow">Shows that led to more work</span><ul class="ssx-foundlist">${rows(shows, foundShowName)}</ul>` : ''}
+      ${Object.keys(ppl).length ? `<span class="eyebrow">Who sends you work</span><ul class="ssx-foundlist">${rows(ppl, id => { const c = (S.contacts || []).find(x => x.id === id); return c ? cName(c) : 'Someone'; })}</ul>` : ''}
+      ${list.length - known.length ? `<p class="note">${list.length - known.length} show${list.length - known.length === 1 ? '' : 's'} without an answer yet. Open a show → Edit → More details → How they found you.</p>` : ''}`;
+  }  
   function flScan() {
-    try { flMediaAuto(); } catch (e) { console.error(e); }
+    try { flMediaAuto(); flFoundSweep(); flFoundCard(); } catch (e) { console.error(e); }
     FL.raf = 0;
     for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, flRoTasksWrap, nmLockWatch, bizCard, flGtCleanHook, navWrap, navGroups, nmRender]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
@@ -6811,7 +6879,19 @@ function bkxPlace(input, kind) {
   input.addEventListener('blur', () => setTimeout(close, 150));
   input.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
 }
-function bkxPlaces() { const f = document.querySelector('#ss-book #bk-form'); if (!f) return; bkxPlace(f.querySelector('#bk-venue'), 'venue'); bkxPlace(f.querySelector('#bk-org'), 'org'); bkxPlace(f.querySelector('#bk-address'), 'addr'); }
+function bkxFound(f) {
+  if (f.querySelector('#bk-x-fv')) return; const msg = f.querySelector('#bk-msg'), host = msg && msg.closest('label'); if (!host) return;
+  const V = (document.getElementById('ss-book') || {}).__vals || {}, sv = ((window.__ssxBookForm || {}).group) === 'service';
+  const opts = [['', 'Choose…'], ['saw', sv ? 'I saw their work' : 'I saw them play'], ['referral', 'Someone referred me'], ['repeat', "We've worked together before"], ['instagram', 'Instagram'], ['social', 'Other social media'], ['google', 'Google or their website'], ['other', 'Other']];
+  const w = document.createElement('div'); w.className = 'bk-two';
+  w.innerHTML = `<label class="bk-f">How did you hear about ${sv ? 'us' : 'me'}? <i>(optional)</i><select id="bk-x-fv">${opts.map(([k, l]) => `<option value="${k}"${V['bk-x-fv'] === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+    <label class="bk-f" ${['saw', 'referral', 'other', 'social'].includes(V['bk-x-fv']) ? '' : 'hidden'}><span id="bk-x-fxl">Tell us more</span><input id="bk-x-fx" maxlength="120" value="${esc(V['bk-x-fx'] || '')}"></label>`;
+  host.before(w);
+  const sel = w.querySelector('#bk-x-fv'), more = w.querySelector('#bk-x-fx').closest('label'), lab = w.querySelector('#bk-x-fxl');
+  const sync = () => { const v = sel.value; more.hidden = !['saw', 'referral', 'other', 'social'].includes(v); lab.textContent = v === 'saw' ? 'Which show or event?' : v === 'referral' ? 'Who referred you?' : v === 'social' ? 'Which one?' : 'Tell us more'; };
+  sel.addEventListener('change', sync); sync();
+}
+function bkxPlaces() { const f = document.querySelector('#ss-book #bk-form'); if (!f) return; bkxFound(f); bkxPlace(f.querySelector('#bk-venue'), 'venue'); bkxPlace(f.querySelector('#bk-org'), 'org'); bkxPlace(f.querySelector('#bk-address'), 'addr'); }
 const BKX_KINDS = [
   ['booker', 'I book talent for a venue'], ['venue', 'I run or own a venue'], ['collective', 'I lead a collective or crew'],
   ['promoter', "I'm an independent promoter"], ['private', "I'm planning a private event"], ['other', 'Something else']];
@@ -6917,6 +6997,7 @@ function bkxSubmit(e) {
   for (const q of (F && F.ask) || []) if (q.req && !v('bk-q-' + q.id)) { const el = $('#bk-q-' + q.id); if (el) el.focus(); return stop(`Please answer "${q.label}".`); }
   const d = { k }; [['t', 'bk-x-title'], ['ig', 'bk-x-ig'], ['site', 'bk-x-site'], ['vsite', 'bk-x-vsite'], ['cap', 'bk-x-cap'], ['ages', 'bk-x-ages'], ['lineup', 'bk-x-lineup'], ['et', 'bk-x-etype'], ['g', 'bk-x-guests'], ['rf', 'bk-x-rep'], ['rn', 'bk-x-repn']].forEach(([a, id]) => { const x = v(id); if (x) d[a] = x.slice(0, 200); });
   const msg = $('#bk-msg'); if (!msg) return;
+  [['fv', 'bk-x-fv'], ['fx', 'bk-x-fx']].forEach(([a, id]) => { const x = v(id); if (x) d[a] = x.slice(0, 120); });
   for (const q of (F && F.ask) || []) { const x = v('bk-q-' + q.id); if (x) (d.q = d.q || {})[q.id] = x.slice(0, 200); }
   const own = msg.value.replace(/\n*\[details\]\{[\s\S]*$/, ''), full = (own.trim() ? own.trim() + '\n\n' : '') + '[details]' + JSON.stringify(d);
   if (full.length > 2000) { msg.focus(); return stop(`Your message is ${full.length - 2000} characters too long. Shorten "Anything else?" and send again.`); }
