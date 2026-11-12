@@ -305,7 +305,7 @@ function appExtras() {
           <div class="f"><label for="ssx-late">Latest start</label><select id="ssx-late">${tOpts(L.latest)}</select></div>
         </div>
         <div class="f"><label>Set lengths you offer</label><div class="ssx-chips" id="ssx-lens">${[30, 45, 60, 90, 120, 180, 240].map(n => `<button type="button" class="ssx-chip" data-ssx-len="${n}" aria-pressed="${L.lengths.includes(n)}">${n < 60 ? n + ' min' : n / 60 + ' hr'}</button>`).join('')}</div></div>
-        <div class="f"><label>Dates you're not available</label>${blockCal(L)}          <span class="note">This is the same list as <b>Calendar → Block dates</b>. Shows, holds and Google Calendar plans close dates here on their own (shaded), using your Calendar → Availability settings. The days above match Availability too.</span></div>
+        <div class="f"><label>Dates you're not available</label>${blockCal(L)}          <span class="note">This is the same list as <b>Calendar → Block dates</b>. Shows, holds and Google Calendar plans close dates here on their own (shaded), using your Calendar → Availability settings. The days above match Availability too.</span>${closedList(L)}</div>
       </div>
     </div>`;
     const cut = html.indexOf('<div class="card ssx" id="ssx-link">');
@@ -355,7 +355,7 @@ function appExtras() {
     let cells = ''; for (let i = 0; i < first; i++) cells += '<span></span>';
     for (let d = 1; d <= dim; d++) {
       const ds = `${y}-${pad(mo + 1)}-${pad(d)}`, past = ds < t0, on = blocked.has(ds), busy = !on && auto.has(ds), from = BC.range && BC.from === ds;
-      cells += `<button type="button" class="ssx-bd${on ? ' on' : ''}${busy ? ' auto' : ''}${from ? ' from' : ''}" data-ssx-bd="${ds}" ${past || busy ? 'disabled' : ''} aria-pressed="${on}" aria-label="${niceDate(ds)}${on ? ', blocked' : busy ? ', closed by a show or calendar event' : ''}" ${busy ? 'title="Closed by a show, hold or calendar event"' : ''}>${d}</button>`;
+      cells += `<button type="button" class="ssx-bd${on ? ' on' : ''}${busy ? ' auto' : ''}${from ? ' from' : ''}" data-ssx-bd="${ds}" ${past || busy ? 'disabled' : ''} aria-pressed="${on}" aria-label="${niceDate(ds)}${on ? ', blocked' : busy ? ', closed by a show or calendar event' : ''}" ${busy ? `title="${esc(closedWhy(ds) || 'Closed by a show, hold or calendar event')}"` : ''}>${d}</button>`;
     }
     // group consecutive blocked days into ranges for the summary
     const list = [...blocked].sort(), ranges = [];
@@ -389,7 +389,14 @@ function appExtras() {
   /* ---------- One availability everywhere: Calendar → Availability and your booking link share the same
      days of the week and the same closed dates, so you only ever update one place. */
   const SY = { days: null, t: 0, migrating: false, blocksRef: null, t0: Date.now(), sig: '' };
-  try { if (!AV_RANGES.some(r => r[0] === '12m')) AV_RANGES.splice(AV_RANGES.length - 1, 0, ['12m', 'Next 12 months']); const _ar = window.availRange; if (typeof _ar === 'function' && !_ar.__ssx12) { window.availRange = function (a) { if (a && a.range === '12m') { const t = todayStr(); return [t, addDays(t, 364)]; } return _ar.apply(this, arguments); }; window.availRange.__ssx12 = true; } } catch (_) {}
+  // Calendar and the booking link share these rules (installed once app.js is ready)
+  function availWraps() {
+    try { if (!AV_RANGES.some(r => r[0] === '12m')) AV_RANGES.splice(AV_RANGES.length - 1, 0, ['12m', 'Next 12 months']); const _ar = window.availRange; if (typeof _ar === 'function' && !_ar.__ssx12) { window.availRange = function (a) { if (a && a.range === '12m') { const t = todayStr(); return [t, addDays(t, 364)]; } return _ar.apply(this, arguments); }; window.availRange.__ssx12 = true; } } catch (_) {}
+    // Calendar's open dates leave out the days inside your minimum notice, the same as the booking link
+    try { const _on = window.openNights; if (typeof _on === 'function' && !_on.__ssxN) { window.openNights = function () { const out = _on.apply(this, arguments); try { const n = Number((st.link || {}).notice) || 0; if (!n || !(st.link || {}).on) return out; const from = addDays(todayStr(), n); return out.filter(d => d >= from); } catch (_) { return out; } }; window.openNights.__ssxN = true; } } catch (_) {}
+    // Calendar's open dates use the same Google check as the booking link (all months, not just the ones you've opened)
+    try { const _ab = window.availBusy; if (typeof _ab === 'function' && !_ab.__ssxG) { window.availBusy = function (ds, a) { const A = a || AV(); if (_ab.call(this, ds, { ...A, google: 'ignore' })) return true; if (A.google === 'ignore') return false; const ev = agOn(ds); return A.google === 'any' ? ev.length > 0 : ev.some(e => e.allDay || e.endH >= 17 || e.startH >= 17); }; window.availBusy.__ssxG = true; } } catch (_) {}
+  }
   // Settings → Booking link saves into the same availability as Calendar
   const putAvail = patch => { try { const next = { ...AV(), ...patch }; S.avail = next; st.db.doc('settings/availability').set(next).catch(() => note('link', "Couldn't save your availability. " + OFFLINE, true)); try { renderCalendar(); } catch (_) {} setTimeout(() => { try { render(); syncAvail(true); } catch (_) {} }, 60); } catch (_) {} };
   function availHTML() {
@@ -456,7 +463,21 @@ function appExtras() {
     }
     return out.slice(0, 400);
   }
+  // why a date is closed on your booking link, in words
+  function closedWhy(d) {
+    const { a, from } = linkWindow(), why = []; if (!a) return '';
+    if (d < from) why.push('before your "How far ahead" range');
+    try { const on = typeof onDay === 'function' ? onDay(d) : (S.bookings || []).filter(b => b.date === d); for (const b of on) { const k = K(b.status); if (a.busy[k] ?? (k === 'paid' ? a.busy.played : false)) why.push(`${kindName(k)}: ${bookingName(b)}`); } } catch (_) {}
+    if (a.busy.blocked && blockedDays(d).has(d)) why.push('blocked date');
+    if (a.google !== 'ignore') for (const e of agOn(d)) if (a.google === 'any' || e.allDay || e.endH >= 17 || e.startH >= 17) why.push(`Google Calendar: ${e.title}${e.cal ? ' (' + e.cal + ')' : ''}${e.allDay ? ', all day' : ''}`);
+    return why.join(' · ');
+  }
+  function closedList(L) {
+    const t0 = todayStr(), list = (L.blocked || []).filter(d => d >= t0).slice(0, 40); if (!list.length) return '';
+    return `<details class="ssx-why"><summary>Why dates are closed on your booking link (${list.length})</summary><ul>${list.map(d => `<li><b>${esc(niceDate(d))}</b>: ${esc(closedWhy(d) || 'closed')}</li>`).join('')}</ul><span class="note">To open one: unblock it, move or change the show, or set Google Calendar plans to Ignore (or remove the plan in Google).</span></details>`;
+  }
   function syncAvail(force) {
+    availWraps();
     if (!st.db || !st.link || Date.now() - SY.t0 < 4000) return;
     const L = { ...defLink(), ...st.link }; let av = null; try { av = S.avail; } catch (_) {}
     let blocksNow = null; try { blocksNow = S.blocks; } catch (_) {}
