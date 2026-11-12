@@ -299,6 +299,7 @@ function appExtras() {
         <div class="f"><label for="ssx-name">Performer name on the page</label><input id="ssx-name" maxlength="80" value="${esc(L.name)}"></div>
         <div class="f"><label for="ssx-hl">A short note for people booking you</label><textarea id="ssx-hl" maxlength="400" rows="3" placeholder="Latin indie dance and baile funk. Tell me about your night!">${esc(L.headline)}</textarea></div>
         ${availHTML()}
+        ${modeHTML()}
         <div class="ssx-grid2">
           <div class="f"><label for="ssx-notice">Minimum notice</label><select id="ssx-notice">${[1, 3, 7, 14, 21, 30, 60].map(n => `<option value="${n}">${n} day${n > 1 ? 's' : ''}</option>`).join('')}</select></div>
           <div class="f"><label for="ssx-early">Earliest start</label><select id="ssx-early">${tOpts(L.earliest)}</select></div>
@@ -336,6 +337,10 @@ function appExtras() {
     for (const k of ['from', 'to']) { const i = $('#ssx-av' + k); if (i) i.onchange = () => { if (i.value) putAvail({ [k]: i.value }); }; }
     box.querySelectorAll('[data-ssx-avbusy]').forEach(c => c.onchange = () => putAvail({ busy: { ...AV().busy, [c.dataset.ssxAvbusy]: c.checked } }));
     box.querySelectorAll('[data-ssx-avg]').forEach(b => b.onclick = e => { e.stopPropagation(); putAvail({ google: b.dataset.ssxAvg }); });
+    const bm = $('#ssx-bmode'); if (bm) bm.onchange = () => saveLink({ mode: bm.value }, true);
+    const bst = $('#ssx-bstep'); if (bst) bst.onchange = () => saveLink({ step: Number(bst.value) }, true);
+    const bgp = $('#ssx-bgap'); if (bgp) bgp.onchange = () => saveLink({ gap: Number(bgp.value) }, true);
+    box.querySelectorAll('[data-ssx-open]').forEach(b => b.onclick = e => { e.stopPropagation(); const d = b.dataset.ssxOpen, o = new Set((st.link || {}).open || []); o.has(d) ? o.delete(d) : o.add(d); saveLink({ open: [...o].filter(x => x >= todayStr()).sort() }, true); setTimeout(() => { try { syncAvail(true); render(); } catch (_) {} }, 60); });
     $('#ssx-early').onchange = e => saveLink({ earliest: e.target.value }, true);
     $('#ssx-late').onchange = e => saveLink({ latest: e.target.value }, true);
     box.querySelectorAll('[data-ssx-avday]').forEach(b => b.onclick = e => { e.stopPropagation(); const d = Number(b.dataset.ssxAvday), s = new Set(AV().days); s.has(d) ? s.delete(d) : s.add(d); if (!s.size) return note('link', 'Pick at least one day.', true); putAvail({ days: [...s].sort() }); });
@@ -389,13 +394,32 @@ function appExtras() {
   /* ---------- One availability everywhere: Calendar → Availability and your booking link share the same
      days of the week and the same closed dates, so you only ever update one place. */
   const SY = { days: null, t: 0, migrating: false, blocksRef: null, t0: Date.now(), sig: '' };
+  // How people book you: one booking a day, or by the time (several a day, to the minute). Services default to by the time.
+  const linkMode = L => L && (L.mode === 'time' || L.mode === 'day') ? L.mode : (() => { try { return flArtist().group === 'service' ? 'time' : 'day'; } catch (_) { return 'day'; } })();
+  // a day where people pick a start time around your other bookings (every day in "by the time", or a date you opened for another booking)
+  const linkTimed = ds => { const L = st.link || {}; return linkMode(L) === 'time' || (Array.isArray(L.open) && L.open.includes(ds)); };
+  function modeHTML() {
+    const L = { ...defLink(), ...(st.link || {}) }, m = linkMode(L);
+    return `<div class="f"><label for="ssx-bmode">How people book you</label><select id="ssx-bmode"><option value="day"${m === 'day' ? ' selected' : ''}>One booking a day</option><option value="time"${m === 'time' ? ' selected' : ''}>By the time (several a day)</option></select>
+        ${m === 'time' ? `<div class="ssx-grid2"><div class="f"><label for="ssx-bstep">Start times every</label><select id="ssx-bstep">${[5, 10, 15, 30, 60].map(n => `<option value="${n}"${Number(L.step || 30) === n ? ' selected' : ''}>${n} min</option>`).join('')}</select></div><div class="f"><label for="ssx-bgap">Gap between bookings</label><select id="ssx-bgap">${[0, 10, 15, 30, 60].map(n => `<option value="${n}"${Number(L.gap || 0) === n ? ' selected' : ''}>${n ? n + ' min' : 'None'}</option>`).join('')}</select></div></div>` : ''}
+        <span class="note">${m === 'time' ? 'A day stays open until it is full. People only see start times that fit around your other bookings, holds you count as busy, and Google Calendar plans.' : 'A day with a show closes. To take another booking that day, use "Open for another booking" in the list below.'}</span></div>`;
+  }
+  // busy times the booking page needs for timed days (holds and leads you count as busy, and Google plans); shows are added by the server
+  function linkBusy(to) {
+    const t0 = addDays(todayStr(), -1), out = {}, a = AV(), push = (d, x, y) => { if (d < t0 || d > to || !(y > x)) return; (out[d] = out[d] || []).push([Math.max(0, Math.round(x)), Math.min(2880, Math.round(y))]); };
+    const mm = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; };
+    for (const b of S.bookings || []) { const k = K(b.status); if (!['pitched', 'lead'].includes(k) || !a.busy[k] || !b.date) continue; const s0 = mm(b.setStart); if (s0 == null) { push(b.date, 0, 1440); continue; } let e = mm(b.setEnd); e = e == null ? s0 + 120 : e <= s0 ? e + 1440 : e; push(b.date, s0, e); }
+    if (a.google !== 'ignore') for (let d = t0, i = 0; d <= to && i < 740; d = addDays(d, 1), i++) for (const e of agOn(d)) { if (e.allDay || !e.start) continue; const sd = new Date(e.start), ed = new Date(e.end || e.start), md = x => x.getHours() * 60 + x.getMinutes(); push(d, ymd(sd) === d ? md(sd) : 0, ymd(ed) === d ? (md(ed) || 1440) : 1440); }
+    for (const d in out) out[d].sort((x, y) => x[0] - y[0]);
+    return out;
+  }
   // Calendar and the booking link share these rules (installed once app.js is ready)
   function availWraps() {
     try { if (!AV_RANGES.some(r => r[0] === '12m')) AV_RANGES.splice(AV_RANGES.length - 1, 0, ['12m', 'Next 12 months']); const _ar = window.availRange; if (typeof _ar === 'function' && !_ar.__ssx12) { window.availRange = function (a) { if (a && a.range === '12m') { const t = todayStr(); return [t, addDays(t, 364)]; } return _ar.apply(this, arguments); }; window.availRange.__ssx12 = true; } } catch (_) {}
     // Calendar's open dates leave out the days inside your minimum notice, the same as the booking link
     try { const _on = window.openNights; if (typeof _on === 'function' && !_on.__ssxN) { window.openNights = function () { const out = _on.apply(this, arguments); try { const n = Number((st.link || {}).notice) || 0; if (!n || !(st.link || {}).on) return out; const from = addDays(todayStr(), n); return out.filter(d => d >= from); } catch (_) { return out; } }; window.openNights.__ssxN = true; } } catch (_) {}
     // Calendar's open dates use the same Google check as the booking link (all months, not just the ones you've opened)
-    try { const _ab = window.availBusy; if (typeof _ab === 'function' && !_ab.__ssxG) { window.availBusy = function (ds, a) { const A = a || AV(); if (_ab.call(this, ds, { ...A, google: 'ignore' })) return true; if (A.google === 'ignore') return false; const ev = agOn(ds); return A.google === 'any' ? ev.length > 0 : ev.some(e => e.allDay || e.endH >= 17 || e.startH >= 17); }; window.availBusy.__ssxG = true; } } catch (_) {}
+    try { const _ab = window.availBusy; if (typeof _ab === 'function' && !_ab.__ssxG) { window.availBusy = function (ds, a) { const A = a || AV(); if (linkTimed(ds)) return !!(A.busy.blocked && blockedDays(ds).has(ds)) || (A.google !== 'ignore' && agOn(ds).some(e => e.allDay)); if (_ab.call(this, ds, { ...A, google: 'ignore' })) return true; if (A.google === 'ignore') return false; const ev = agOn(ds); return A.google === 'any' ? ev.length > 0 : ev.some(e => e.allDay || e.endH >= 17 || e.startH >= 17); }; window.availBusy.__ssxG = true; } } catch (_) {}
   }
   // Settings → Booking link saves into the same availability as Calendar
   const putAvail = patch => { try { const next = { ...AV(), ...patch }; S.avail = next; st.db.doc('settings/availability').set(next).catch(() => note('link', "Couldn't save your availability. " + OFFLINE, true)); try { renderCalendar(); } catch (_) {} setTimeout(() => { try { render(); syncAvail(true); } catch (_) {} }, 60); } catch (_) {} };
@@ -457,8 +481,8 @@ function appExtras() {
     const noG = { ...a, google: 'ignore' };
     for (let d = t0, i = 0; d <= to && i < 740; d = addDays(d, 1), i++) {
       if (!a.days.includes(new Date(d + 'T12:00:00').getDay())) continue; // closed anyway: not a day you take bookings
-      let busy = d < from; try { busy = busy || availBusy(d, noG); } catch (_) {}
-      if (!busy && a.google !== 'ignore') { const ev = agOn(d); busy = a.google === 'any' ? ev.length > 0 : ev.some(e => e.allDay || e.endH >= 17 || e.startH >= 17); }
+      const timed = linkTimed(d); let busy = d < from; try { busy = busy || availBusy(d, noG); } catch (_) {}
+      if (!busy && !timed && a.google !== 'ignore') { const ev = agOn(d); busy = a.google === 'any' ? ev.length > 0 : ev.some(e => e.allDay || e.endH >= 17 || e.startH >= 17); }
       if (busy) out.push(d);
     }
     return out.slice(0, 400);
@@ -473,8 +497,12 @@ function appExtras() {
     return why.join(' · ');
   }
   function closedList(L) {
-    const t0 = todayStr(), list = (L.blocked || []).filter(d => d >= t0).slice(0, 40); if (!list.length) return '';
-    return `<details class="ssx-why"><summary>Why dates are closed on your booking link (${list.length})</summary><ul>${list.map(d => `<li><b>${esc(niceDate(d))}</b>: ${esc(closedWhy(d) || 'closed')}</li>`).join('')}</ul><span class="note">To open one: unblock it, move or change the show, or set Google Calendar plans to Ignore (or remove the plan in Google).</span></details>`;
+    const t0 = todayStr(), list = (L.blocked || []).filter(d => d >= t0).slice(0, 40), opened = (L.open || []).filter(d => d >= t0), day = linkMode(L) === 'day';
+    if (!list.length && !opened.length) return '';
+    const hasShow = d => { try { const a = AV(); return (typeof onDay === 'function' ? onDay(d) : (S.bookings || []).filter(b => b.date === d)).some(b => { const k = K(b.status); return ['confirmed', 'played', 'paid'].includes(k) || a.busy[k]; }); } catch (_) { return false; } };
+    return `<details class="ssx-why"${opened.length ? ' open' : ''}><summary>Why dates are closed on your booking link (${list.length})</summary><ul>${list.map(d => `<li><b>${esc(niceDate(d))}</b>: ${esc(closedWhy(d) || 'closed')}${day && hasShow(d) ? ` <button type="button" class="btn small" data-ssx-open="${d}">Open for another booking</button>` : ''}</li>`).join('')}</ul>
+      ${opened.length ? `<span class="eyebrow">Open for another booking</span><ul>${opened.map(d => `<li><b>${esc(niceDate(d))}</b>: people can pick a start time that doesn't overlap your show <button type="button" class="btn small" data-ssx-open="${d}">Close again</button></li>`).join('')}</ul><span class="note">Add each show's set times so the link knows when you're free that day.</span>` : ''}
+      <span class="note">To open a date: unblock it, open it for another booking, or set Google Calendar plans to Ignore (or remove the plan in Google).</span></details>`;
   }
   function syncAvail(force) {
     availWraps();
@@ -493,6 +521,8 @@ function appExtras() {
       const { to } = linkWindow(), ahead = Math.max(1, daysBetween(todayStr(), to));
       if ((L.days || []).join() !== a2.days.join() || Number(L.ahead) !== ahead) saveLink({ days: [...a2.days], ahead }, true);
       availGoogle(to);
+      if (L.mode !== 'time' && L.mode !== 'day') saveLink({ mode: linkMode(L) }, true);
+      const bz = linkBusy(to); if (JSON.stringify(bz) !== JSON.stringify(L.busy || {})) saveLink({ busy: bz }, true);
       const sig = JSON.stringify(a2) + '|' + AG.at; if (sig !== SY.sig) { const first = !SY.sig; SY.sig = sig; force = true; if (!first) { try { render(); } catch (_) {} } }
     }
     // closed dates on the public page
@@ -6464,8 +6494,15 @@ async function bookingPage(rawSlug) {
   }
   document.title = `Book ${P.name || 'a performer'} · Set & Settled`;
   const openFrom = addDays(P.today, P.notice), openTo = addDays(P.today, P.ahead), taken = new Set(P.taken || []);
-  const isOpen = d => d >= openFrom && d <= openTo && P.days.includes(new Date(d + 'T12:00:00').getDay()) && !taken.has(d);
-  const times = (() => { const out = [], [eh, em] = P.earliest.split(':').map(Number), [lh, lm] = P.latest.split(':').map(Number); let a = eh * 60 + em, b = lh * 60 + lm; if (b < a) b += 1440; for (let t = a; t <= b && out.length < 48; t += 30) { const x = t % 1440; out.push(`${pad(Math.floor(x / 60))}:${pad(x % 60)}`); } return out; })();
+  // "By the time" days (or a date opened for another booking): only start times that fit around other bookings
+  const mins = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; };
+  const E0 = mins(P.earliest) ?? 1080, L0 = mins(P.latest) ?? 1410, LAST = L0 < E0 ? L0 + 1440 : L0, step = Math.max(5, Number(P.step) || 30), gap = Math.max(0, Number(P.gap) || 0), BUSY = P.busy || {}, OPEN = new Set(P.open || []);
+  const timed = d => P.mode === 'time' || OPEN.has(d);
+  const busyOn = d => { const iv = [...(BUSY[d] || [])]; for (const [a, b] of BUSY[addDays(d, -1)] || []) if (b > 1440) iv.push([a - 1440, b - 1440]); for (const [a, b] of BUSY[addDays(d, 1)] || []) iv.push([a + 1440, b + 1440]); return iv; };
+  const slotsFor = (d, len) => { const out = [], iv = timed(d) ? busyOn(d) : []; if (!len) return out; for (let t = E0; t <= LAST && out.length < 300; t += step) if (!iv.some(([a, b]) => t < b + gap && t + len + gap > a)) out.push(t); return out; };
+  const isOpen = d => d >= openFrom && d <= openTo && P.days.includes(new Date(d + 'T12:00:00').getDay()) && !taken.has(d) && (!timed(d) || P.lengths.some(n => slotsFor(d, n).length));
+  const hhmm = t => { const x = ((t % 1440) + 1440) % 1440; return `${pad(Math.floor(x / 60))}:${pad(x % 60)}`; };
+  const startTimes = () => slotsFor(S2.date, S2.length || Math.min(...P.lengths)).map(hhmm);
   const S2 = { month: (() => { const d = new Date(openFrom + 'T12:00:00'); return new Date(d.getFullYear(), d.getMonth(), 1); })(), date: '', start: '', length: P.lengths.length === 1 ? P.lengths[0] : 0, sent: false, t: Date.now() };
   const lenLabel = n => n < 60 ? `${n} min` : `${n / 60} hr${n > 60 ? 's' : ''}`;
 
@@ -6489,7 +6526,7 @@ async function bookingPage(rawSlug) {
       <form class="bk-card" id="bk-form" novalidate>
         <section class="bk-step"><h2><span>1</span>Pick a date</h2>${cal()}<p class="bk-muted bk-small">${S2.date ? `Selected: <b>${esc(niceDate(S2.date))}</b>` : 'Open dates are the ones you can tap.'}</p></section>
         <section class="bk-step"><h2><span>2</span>Set time</h2>
-          <div class="bk-two"><label class="bk-f">Start time<select id="bk-start" required><option value="">Choose…</option>${times.map(t => `<option value="${t}"${t === S2.start ? ' selected' : ''}>${time12(t)}</option>`).join('')}</select></label>
+          <div class="bk-two"><label class="bk-f">Start time<select id="bk-start" required><option value="">Choose…</option>${startTimes().map(t => `<option value="${t}"${t === S2.start ? ' selected' : ''}>${time12(t)}</option>`).join('')}</select></label>
           <div class="bk-f"><span>Set length</span><div class="bk-chips">${P.lengths.map(n => `<button type="button" class="bk-chip" data-bk-len="${n}" aria-pressed="${S2.length === n}">${lenLabel(n)}</button>`).join('')}</div></div></div></section>
         <section class="bk-step"><h2><span>3</span>About your event</h2>
           <div class="bk-two">
@@ -6532,6 +6569,7 @@ async function bookingPage(rawSlug) {
     const { error } = await sb.functions.invoke('book', { body });
     if (!error) { S2.sent = true; draw(); window.scrollTo(0, 0); return; }
     const code = await fnErr(error);
+    if (code === 'time_unavailable') { S2.start = ''; remember(); draw(); root.querySelector('#bk-err').textContent = 'Sorry, that time was just taken. Please pick another start time.'; return; }
     if (code === 'date_unavailable') { taken.add(S2.date); S2.date = ''; remember(); draw(); root.querySelector('#bk-err').textContent = 'Sorry, that date was just taken. Please pick another.'; return; }
     err.textContent = code === 'rate_limited' ? 'Too many requests from your network. Please try again in an hour.' : code === 'bad_email' ? 'Please check your email address.' : code === 'bad_phone' ? 'Please check your phone number.' : code === 'bad_fee' ? 'Write the offer as a number, like 500.' : code === 'not_found' ? "This booking link isn't active anymore." : "Couldn't send your request. Please try again.";
     btn.disabled = false; btn.textContent = 'Send request';
