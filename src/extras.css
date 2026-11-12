@@ -1161,3 +1161,10 @@ html body .ssx-why { margin-top: 10px; } html body .ssx-why summary { cursor: po
 html body #availPanel.ssx-avp > *:not(.ssx-keep) { display: none !important; }
 html body #availSummary { display: none; }
 html body .ssx-avshared { display: flex; flex-direction: column; gap: 14px; } html body .ssx-avrule { margin: 0; }
+/* Booking request page: venue and address suggestions */
+html body .bk-placewrap { position: relative; }
+html body .bk-place { position: absolute; left: 0; right: 0; top: 100%; z-index: 30; margin-top: 4px; background: var(--surface, #fff); color: var(--ink, #111); border: 1px solid var(--line, #ccc); border-radius: 12px; box-shadow: 0 16px 40px -14px rgba(0,0,0,.45); overflow: hidden; }
+html body .bk-place button { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--line, #ddd); background: none; color: inherit; font: inherit; cursor: pointer; }
+html body .bk-place button:last-child { border-bottom: 0; } html body .bk-place button:hover, html body .bk-place button:focus-visible { background: color-mix(in srgb, var(--accent, #b08d57) 14%, transparent); } html body .bk-place button span { font-size: 13px; opacity: .7; font-weight: 400; }
+/* Requests: how each one fits */
+html body .ssx-reqfit { margin: 8px 0; padding: 10px 12px 10px 14px; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 14px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 8%, transparent); }
