@@ -358,7 +358,7 @@ const inR=(d,R)=>!!d&&d>=R.from&&d<=R.to;
 function finTx(R){const tx=[];
   S.bookings.forEach(b=>{if(!(+b.fee))return;
     if(K(b.status)==="paid"&&inR(recvDate(b),R))tx.push({kind:"income",received:true,date:recvDate(b),amount:+b.fee,title:bookingName(b),cat:catOf(ICATS,bookingIncType(b))[1],line:catOf(ICATS,bookingIncType(b))[2]||"Line 1 Gross receipts",payer:payerName(b),ref:{booking:b.id},pm:b.payMethod||"",pref:b.payRef||"",note:b.date&&b.paidDate&&b.paidDate!==b.date?"Show on "+fmtD(b.date):""});
-    else if(["confirmed","played"].includes(K(b.status))&&inR(b.date,R))tx.push({kind:"income",received:false,date:b.date,amount:+b.fee,title:bookingName(b),cat:catOf(ICATS,bookingIncType(b))[1],line:catOf(ICATS,bookingIncType(b))[2]||"Line 1 Gross receipts",payer:payerName(b),ref:{booking:b.id},note:"Not paid yet"})});
+    else if(["confirmed","played"].includes(K(b.status))&&inR(b.date,R))tx.push({kind:"income",received:false,upcoming:b.date>today(),date:b.date,amount:+b.fee,title:bookingName(b),cat:catOf(ICATS,bookingIncType(b))[1],line:catOf(ICATS,bookingIncType(b))[2]||"Line 1 Gross receipts",payer:payerName(b),ref:{booking:b.id},note:b.date>today()?"Upcoming show":"Played, not paid yet"})});
   S.income.forEach(i=>{if(inR(i.date,R))tx.push({kind:"income",received:true,date:i.date,amount:+i.amount||0,title:i.desc||incCatLabel(i),cat:incCatLabel(i),payer:cName(contact(i.sourceId))||i.source||"",line:catOf(ICATS,i.category)[2]||"Line 1 Gross receipts",ref:{income:i.id},pm:i.payMethod||"",pref:i.payRef||"",note:i.notes||""})});
   S.expenses.forEach(e=>{if(inR(e.date,R)){const bk=e.bookingId&&S.bookings.find(b=>b.id===e.bookingId);
     tx.push({kind:"expense",date:e.date,amount:+e.amount||0,title:e.desc||expCatLabel(e),cat:expCatLabel(e),catKey:e.category||"Other",line:catOf(ECATS,e.category)[2],purpose:e.purpose||"",show:bk?bookingName(bk):"",pm:e.payMethod||"",pref:e.payRef||"",ref:{expense:e.id}})}});
@@ -389,10 +389,10 @@ function renderMoney(){
   const fp=$("#finPeriod"),active=document.activeElement&&fp.contains(document.activeElement)?document.activeElement.id:null;
   fp.innerHTML=periodHtml("fp");wirePeriod(fp,"fp",renderMoney);if(active){const el=$("#"+active);el&&el.focus()}
   const recv=tx.filter(t=>t.kind==="income"&&t.received).reduce((s,t)=>s+t.amount,0);
-  const owed=tx.filter(t=>t.kind==="income"&&!t.received).reduce((s,t)=>s+t.amount,0);
+  const owed=tx.filter(t=>t.kind==="income"&&!t.received&&!t.upcoming).reduce((s,t)=>s+t.amount,0),up=tx.filter(t=>t.kind==="income"&&!t.received&&t.upcoming).reduce((s,t)=>s+t.amount,0);
   const exp=tx.filter(t=>t.kind==="expense").reduce((s,t)=>s+t.amount,0);
-  const cnt=k=>tx.filter(t=>k==="received"?t.kind==="income"&&t.received:k==="owed"?t.kind==="income"&&!t.received:k==="expense"?t.kind==="expense":true).length;
-  $("#moneyStats").innerHTML=[["received","Income received",recv,"var(--ok)"],["owed","Still owed",owed,"var(--warn)"],["expense","Expenses",exp,"var(--hot)"],["all","Net",recv-exp,"var(--ink)"]].map(([k,l,v,c])=>
+  const cnt=k=>tx.filter(t=>k==="received"?t.kind==="income"&&t.received:k==="owed"?t.kind==="income"&&!t.received&&!t.upcoming:k==="upcoming"?t.kind==="income"&&!t.received&&t.upcoming:k==="expense"?t.kind==="expense":true).length;
+  $("#moneyStats").innerHTML=[["received","Income received",recv,"var(--ok)"],["owed","Still owed",owed,"var(--warn)"],["upcoming","Upcoming",up,"var(--muted)"],["expense","Expenses",exp,"var(--hot)"],["all","Net",recv-exp,"var(--ink)"]].map(([k,l,v,c])=>
     `<button class="card stat stat-tile" data-tx="${k}" aria-pressed="${txFilter===k}"><span class="eyebrow">${l} · ${esc(R.label)}</span><b class="num" style="color:${c}">${money(v)}</b><span class="hint">${cnt(k)} ${k==="all"?(cnt(k)===1?"transaction":"transactions"):(cnt(k)===1?"item":"items")} · ${txFilter===k?"showing below":"tap to view"}</span></button>`).join("");
   // monthly chart across the range (up to 24 months)
   const months=[];{const a=parseD(R.from),z=parseD(R.to);let d=new Date(a.getFullYear(),a.getMonth(),1);while(d<=z&&months.length<36){months.push(d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"));d=new Date(d.getFullYear(),d.getMonth()+1,1)}}
@@ -402,15 +402,15 @@ function renderMoney(){
   $("#chart").innerHTML=ms.map(m=>`<div class="m" title="${esc(parseD(m+"-01").toLocaleDateString("en-US",{month:"short",year:"numeric"}))}: ${money(mi[m])} received, ${money(mo[m])} spent"><span class="in" style="height:${mi[m]/mx*100}%"></span><span class="out" style="height:${mo[m]/mx*100}%"></span></div>`).join("");
   $("#months").innerHTML=ms.map(m=>`<span>${"JFMAMJJASOND"[+m.slice(5)-1]}</span>`).join("");
   document.querySelectorAll("#txFilter button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.tx===txFilter));
-  const titles={all:"Transactions",received:"Income received",owed:"Still owed",expense:"Expenses"};
-  const L=tx.filter(t=>txFilter==="all"||(txFilter==="received"&&t.kind==="income"&&t.received)||(txFilter==="owed"&&t.kind==="income"&&!t.received)||(txFilter==="expense"&&t.kind==="expense"));
+  const titles={all:"Transactions",received:"Income received",owed:"Still owed",upcoming:"Upcoming",expense:"Expenses"};
+  const L=tx.filter(t=>txFilter==="all"||(txFilter==="received"&&t.kind==="income"&&t.received)||(txFilter==="owed"&&t.kind==="income"&&!t.received&&!t.upcoming)||(txFilter==="upcoming"&&t.kind==="income"&&!t.received&&t.upcoming)||(txFilter==="expense"&&t.kind==="expense"));
   const tot=L.reduce((s,t)=>s+(t.kind==="expense"?-t.amount:t.amount),0);
   $("#txTitle").innerHTML=`${titles[txFilter]} <span class="note num" style="font-family:var(--mono);font-weight:400">${L.length?(txFilter==="all"?"net ":"")+(tot<0?"−":"")+money(Math.abs(tot)):""}</span>`;
   $("#txList").innerHTML=L.length?L.map(t=>{const open=t.ref.booking?`data-open-booking="${t.ref.booking}"`:t.ref.income?`data-open-income="${t.ref.income}"`:`data-open-expense="${t.ref.expense}"`;
     const sub=t.kind==="expense"?[t.cat,fmtD(t.date),t.show].filter(Boolean):[t.cat,t.payer,fmtD(t.date)].filter(Boolean);
-    const pill=t.kind==="expense"?`<span class="pill" style="color:var(--hot)">Expense</span>`:t.received?`<span class="pill s-paid">Received</span>`:`<span class="pill s-pitched">Owed</span>`;
+    const pill=t.kind==="expense"?`<span class="pill" style="color:var(--hot)">Expense</span>`:t.received?`<span class="pill s-paid">Received</span>`:t.upcoming?`<span class="pill s-confirmed">Upcoming</span>`:`<span class="pill s-pitched">Owed</span>`;
     return `<button class="row" ${open}><span class="main"><span class="t" style="display:block">${esc(t.title)}</span><span class="sub" style="display:block">${esc(sub.join(" · "))}${t.pm||t.pref?" ":""}${pmTag(t.pm,t.pref)}</span></span>${pill}<span class="num" style="width:84px;text-align:right;color:${t.kind==="expense"?"var(--hot)":"inherit"}">${t.kind==="expense"?"−":""}${money(t.amount)}</span></button>`}).join("")
-    :`<div class="empty">${{all:"Nothing in "+R.label+". Booked show fees land here automatically; log expenses and other income with the buttons above.",received:"No income received in "+R.label+". Mark a booking Paid, or log tips, merch or other income.",owed:"Nothing owed for shows in "+R.label+". Confirmed and played shows that aren't marked Paid show up here.",expense:"No expenses logged in "+R.label+"."}[txFilter]}</div>`;
+    :`<div class="empty">${{all:"Nothing in "+R.label+". Booked show fees land here automatically; log expenses and other income with the buttons above.",received:"No income received in "+R.label+". Mark a booking Paid, or log tips, merch or other income.",owed:"Nothing owed for shows in "+R.label+". Shows you've played that aren't marked Paid show up here.",upcoming:"No upcoming shows with a fee in "+R.label+". Confirmed shows that haven't happened yet show up here.",expense:"No expenses logged in "+R.label+"."}[txFilter]}</div>`;
 }
 function taxData(R){const y=R.label,tx=finTx(R),inc=tx.filter(t=>t.kind==="income"&&t.received),owed=tx.filter(t=>t.kind==="income"&&!t.received),ex=tx.filter(t=>t.kind==="expense");
   const byPayer={};inc.forEach(t=>{const k=t.payer||"Unlisted";byPayer[k]=byPayer[k]||{n:0,amt:0};byPayer[k].n++;byPayer[k].amt+=t.amount});
@@ -445,7 +445,7 @@ function taxSheet(){const R=finRange(),d=taxData(R),slug=R.year?String(R.year):`
   })}
 function csvCell(v){v=String(v??"");return /[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v}
 function taxCsv(d){const rows=[["Date","Type","Status","Description","Category","Schedule C line","Payer / show","Paid via","Reference","Business purpose / notes","Amount"]];
-  [...d.tx].sort((a,b)=>(a.date||"").localeCompare(b.date||"")).forEach(t=>rows.push([t.date,t.kind==="income"?"Income":"Expense",t.kind==="income"?(t.received?"Received":"Owed"):"Paid",t.title,t.cat,t.line||"Line 1 Gross receipts",t.kind==="income"?t.payer:t.show,pmName(t.pm),t.pref||"",t.kind==="income"?t.note:t.purpose,(t.kind==="expense"?-t.amount:t.amount).toFixed(2)]));
+  [...d.tx].sort((a,b)=>(a.date||"").localeCompare(b.date||"")).forEach(t=>rows.push([t.date,t.kind==="income"?"Income":"Expense",t.kind==="income"?(t.received?"Received":t.upcoming?"Upcoming":"Owed"):"Paid",t.title,t.cat,t.line||"Line 1 Gross receipts",t.kind==="income"?t.payer:t.show,pmName(t.pm),t.pref||"",t.kind==="income"?t.note:t.purpose,(t.kind==="expense"?-t.amount:t.amount).toFixed(2)]));
   return rows.map(r=>r.map(csvCell).join(",")).join("\r\n")}
 function taxHtml(d){return `<!doctype html><html><head><meta charset="utf-8"><title>Tax summary ${esc(d.R.label)}</title><style>
   body{font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#1A2A1E;background:#fff;max-width:760px;margin:32px auto;padding:0 20px;line-height:1.45}
