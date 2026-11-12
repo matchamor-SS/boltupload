@@ -398,6 +398,17 @@ function appExtras() {
      you're bookable on your days and hours unless something is already on your calendar (a show or hold in the app,
      or a Google Calendar plan) or you blocked the date. These replace the older versions further down. */
   const avOn = () => { try { return AV().google !== 'ignore'; } catch (_) { return true; } };
+  // Only one open copy of the app keeps the booking link's closed dates up to date at a time, so two tabs or devices
+  // (or one still running an older version) can't keep overwriting each other.
+  const AVW = { id: Math.random().toString(36).slice(2, 10), n: [], off: 0, open: false };
+  function avMayWrite(L, force) {
+    const now = Date.now(); if (now < AVW.off) return false;
+    if (!force && L.calcBy && L.calcBy !== AVW.id && now - (Number(L.calcAt) || 0) < 45000) return false;
+    AVW.n = AVW.n.filter(t => now - t < 60000); AVW.n.push(now);
+    if (AVW.n.length > 6) { AVW.off = now + 120000; AVW.n = []; return false; } // something else keeps changing it back: step aside for 2 minutes
+    return true;
+  }
+  document.addEventListener('toggle', e => { try { if (e.target.classList.contains('ssx-why')) AVW.open = e.target.open; } catch (_) {} }, true);
   const avMins = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; };
   // counted on your calendar: confirmed, played and paid shows, holds, and a new request for its first 3 days
   const avHeld = b => b.source === 'booking-link' && !b.requestStatus && K(b.status) === 'lead' && b.createdAt && addDays(String(b.createdAt).slice(0, 10), 3) >= todayStr();
@@ -447,7 +458,7 @@ function appExtras() {
   closedList = function (L) {
     const t0 = todayStr(), list = (L.blocked || []).filter(d => d >= t0).slice(0, 40), opened = (L.open || []).filter(d => d >= t0), day = linkMode(L) === 'day';
     if (!list.length && !opened.length) return '';
-    return `<details class="ssx-why"${opened.length ? ' open' : ''}><summary>Closed dates and why (${list.length})</summary><ul>${list.map(d => `<li><b>${esc(niceDate(d))}</b>: ${esc(closedWhy(d) || 'closed')}${day && avShows(d).length && !blockedDays(d).has(d) ? ` <button type="button" class="btn small" data-ssx-open="${d}">Open for another booking</button>` : ''}</li>`).join('')}</ul>
+    return `<details class="ssx-why"${AVW.open || opened.length ? ' open' : ''}><summary>Closed dates and why (${list.length})</summary>${Date.now() < AVW.off ? '<p class="note">Another open copy of Set &amp; Settled (another tab, or the app on another device) is also updating this list. Close or reload it so the two stop overwriting each other.</p>' : ''}<ul>${list.map(d => `<li><b>${esc(niceDate(d))}</b>: ${esc(closedWhy(d) || 'closed')}${day && avShows(d).length && !blockedDays(d).has(d) ? ` <button type="button" class="btn small" data-ssx-open="${d}">Open for another booking</button>` : ''}</li>`).join('')}</ul>
       ${opened.length ? `<span class="eyebrow">Open for another booking</span><ul>${opened.map(d => `<li><b>${esc(niceDate(d))}</b>: open at times that don't overlap what's already there <button type="button" class="btn small" data-ssx-open="${d}">Close again</button></li>`).join('')}</ul>` : ''}
       <span class="note">Add start and end times to your shows so only those hours are taken.</span></details>`;
   };
@@ -623,7 +634,7 @@ function appExtras() {
       if (AG.key === key && Date.now() - AG.at < 10 * 60000) return;
       AG.busy = true; const map = {}; let ok = 0;
       for (const id of ids) { try { gIngest(await gFetchCal(id, todayStr(), to), (G.calNames || {})[id] || id, map); ok++; } catch (_) {} }
-      AG.at = Date.now(); if (ok) { AG.map = map; AG.key = key; syncAvail(true); } // a failed check keeps the last good list
+      AG.at = Date.now(); if (ok === ids.length || (ok && !AG.map)) { AG.map = map; AG.key = key; syncAvail(true); } // a check that misses a calendar keeps the last full list
     } catch (_) {} finally { AG.busy = false; }
   }
   const agOn = ds => { const own = new Set((S.bookings || []).map(b => b.gcal && b.gcal.eventId).filter(Boolean)), seen = new Set(), out = [];
@@ -690,12 +701,11 @@ function appExtras() {
       if ((L.days || []).join() !== a2.days.join() || Number(L.ahead) !== ahead) saveLink({ days: [...a2.days], ahead }, true);
       availGoogle(to);
       if (L.mode !== 'time' && L.mode !== 'day') saveLink({ mode: linkMode(L) }, true);
-      const bz = linkBusy(to); if (JSON.stringify(bz) !== JSON.stringify(L.busy || {})) saveLink({ busy: bz }, true);
       const sig = JSON.stringify(a2) + '|' + AG.at; if (sig !== SY.sig) { const first = !SY.sig; SY.sig = sig; force = true; if (!first) { try { render(); } catch (_) {} } }
     }
     // closed dates on the public page
-    const closed = linkClosed({ ...defLink(), ...st.link });
-    if (closed.join() !== (st.link.blocked || []).join() && (force || Date.now() - SY.t > 3000)) { SY.t = Date.now(); saveLink({ blocked: closed }, true); }
+    const closed = linkClosed({ ...defLink(), ...st.link }), bz = linkBusy(linkWindow().to);
+    if ((closed.join() !== (st.link.blocked || []).join() || JSON.stringify(bz) !== JSON.stringify(st.link.busy || {})) && (force || Date.now() - SY.t > 3000) && avMayWrite(st.link, force)) { SY.t = Date.now(); saveLink({ blocked: closed, busy: bz, calcBy: AVW.id, calcAt: Date.now() }, true); }
     // a reminder under Calendar → Availability
     const sum = document.getElementById('availSummary');
     if (sum && !document.getElementById('ssx-avnote')) { const n = document.createElement('p'); n.id = 'ssx-avnote'; n.className = 'note'; n.style.margin = '0 0 8px'; n.innerHTML = 'Your <b>booking link</b> uses these same days and closed dates automatically.'; sum.after(n); }
