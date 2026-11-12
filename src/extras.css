@@ -1151,3 +1151,5 @@ html body section[data-view]:not([hidden]) { animation: ssxFade .18s ease; }
 @media (prefers-reduced-motion: reduce) { html body section[data-view]:not([hidden]) { animation: none; } }
 /* Light mode: buttons at the top of each page get dark text (they had cream text meant for the dark header) */
 html[data-mode="light"] body section[data-view] > .head .btn:not(.primary):not(.save) { color: var(--ink) !important; border-color: var(--line) !important; }
+/* Financials on phones: five tiles, so Net takes the full last row */
+@media (max-width: 600px) { html body #moneyStats > .stat-tile:last-child { grid-column: 1 / -1; } }
