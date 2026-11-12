@@ -1155,3 +1155,5 @@ html[data-mode="light"] body section[data-view] > .head .btn:not(.primary):not(.
 @media (max-width: 600px) { html body #moneyStats > .stat-tile:last-child { grid-column: 1 / -1; } }
 /* Settings → Booking link: the availability checkboxes */
 html body .ssx-avbusy { display: flex; flex-direction: column; gap: 8px; } html body .ssx-avbusy .ssx-check { display: flex; align-items: center; gap: 8px; font-weight: 400; text-transform: none; letter-spacing: normal; font-size: 15px; }
+/* Settings → Booking link: why each date is closed */
+html body .ssx-why { margin-top: 10px; } html body .ssx-why summary { cursor: pointer; font-weight: 600; } html body .ssx-why ul { margin: 8px 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
