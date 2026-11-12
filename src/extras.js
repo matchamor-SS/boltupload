@@ -305,7 +305,7 @@ function appExtras() {
           <div class="f"><label for="ssx-early">Earliest start</label><select id="ssx-early">${tOpts(L.earliest)}</select></div>
           <div class="f"><label for="ssx-late">Latest start</label><select id="ssx-late">${tOpts(L.latest)}</select></div>
         </div>
-        <div class="f"><label>Set lengths you offer</label><div class="ssx-chips" id="ssx-lens">${[30, 45, 60, 90, 120, 180, 240].map(n => `<button type="button" class="ssx-chip" data-ssx-len="${n}" aria-pressed="${L.lengths.includes(n)}">${n < 60 ? n + ' min' : n / 60 + ' hr'}</button>`).join('')}</div></div>
+        <div class="f"><label>Booking length</label><span class="note">People pick a start and end time. Tap the shortest and longest you'll take (and any in between).</span><div class="ssx-chips" id="ssx-lens">${[30, 45, 60, 90, 120, 180, 240].map(n => `<button type="button" class="ssx-chip" data-ssx-len="${n}" aria-pressed="${L.lengths.includes(n)}">${n < 60 ? n + ' min' : n / 60 + ' hr'}</button>`).join('')}</div></div>
         <div class="f"><label>Dates you're not available</label>${blockCal(L)}          <span class="note">This is the same list as <b>Calendar → Block dates</b>. Shows, holds and Google Calendar plans close dates here on their own (shaded), using your Calendar → Availability settings. The days above match Availability too.</span>${closedList(L)}</div>
       </div>
     </div>`;
@@ -504,8 +504,22 @@ function appExtras() {
       ${opened.length ? `<span class="eyebrow">Open for another booking</span><ul>${opened.map(d => `<li><b>${esc(niceDate(d))}</b>: people can pick a start time that doesn't overlap your show <button type="button" class="btn small" data-ssx-open="${d}">Close again</button></li>`).join('')}</ul><span class="note">Add each show's set times so the link knows when you're free that day.</span>` : ''}
       <span class="note">To open a date: unblock it, open it for another booking, or set Google Calendar plans to Ignore (or remove the plan in Google).</span></details>`;
   }
+  // Calendar → Availability: share your booking link instead of a long list of dates
+  function availCard() {
+    const btn = document.getElementById('copyAvail'), list = document.getElementById('openDates'); if (!btn) return;
+    if (list && !list.hidden) list.hidden = true;
+    const L = st.link || {}, url = L.on && L.slug ? `${location.origin}/?book=${encodeURIComponent(L.slug)}` : '', label = url ? 'Send my booking link' : 'Turn on my booking link';
+    if (btn.textContent !== label) btn.textContent = label;
+    if (btn.onclick && btn.onclick.__ssx) return;
+    const go = () => { const L2 = st.link || {}, u = L2.on && L2.slug ? `${location.origin}/?book=${encodeURIComponent(L2.slug)}` : '';
+      if (!u) { try { curGroup = 'bookings'; localStorage.setItem('ss-setgroup', 'bookings'); } catch (_) {} window.setTab('settings'); return; }
+      const msg = `Here's my booking link. It shows my open dates and times, and you can send a request right from it: ${u}`;
+      if (navigator.share && matchMedia('(pointer: coarse)').matches) { navigator.share({ text: msg }).catch(() => {}); return; }
+      (navigator.clipboard ? navigator.clipboard.writeText(msg) : Promise.reject()).then(() => toast('Booking link copied. Paste it into your message.'), () => toast(u)); };
+    go.__ssx = true; btn.onclick = go;
+  }
   function syncAvail(force) {
-    availWraps();
+    availWraps(); try { availCard(); } catch (_) {}
     if (!st.db || !st.link || Date.now() - SY.t0 < 4000) return;
     const L = { ...defLink(), ...st.link }; let av = null; try { av = S.avail; } catch (_) {}
     let blocksNow = null; try { blocksNow = S.blocks; } catch (_) {}
@@ -6502,7 +6516,12 @@ async function bookingPage(rawSlug) {
   const slotsFor = (d, len) => { const out = [], iv = timed(d) ? busyOn(d) : []; if (!len) return out; for (let t = E0; t <= LAST && out.length < 300; t += step) if (!iv.some(([a, b]) => t < b + gap && t + len + gap > a)) out.push(t); return out; };
   const isOpen = d => d >= openFrom && d <= openTo && P.days.includes(new Date(d + 'T12:00:00').getDay()) && !taken.has(d) && (!timed(d) || P.lengths.some(n => slotsFor(d, n).length));
   const hhmm = t => { const x = ((t % 1440) + 1440) % 1440; return `${pad(Math.floor(x / 60))}:${pad(x % 60)}`; };
-  const startTimes = () => slotsFor(S2.date, S2.length || Math.min(...P.lengths)).map(hhmm);
+  // people pick a start and an end time; the length must fall between your shortest and longest choice
+  const minLen = Math.min(...P.lengths), maxLen = Math.max(...P.lengths);
+  const startTimes = () => slotsFor(S2.date, minLen).map(hhmm);
+  const endOpts = () => { const out = [], s0 = mins(S2.start); if (!S2.date || s0 == null) return out; const st0 = s0 < E0 && L0 < E0 ? s0 + 1440 : s0, iv = timed(S2.date) ? busyOn(S2.date) : [];
+    for (let m = minLen; m <= maxLen && out.length < 200; m += step) { if (iv.some(([a, b]) => st0 < b + gap && st0 + m + gap > a)) break; out.push(m); } return out; };
+  const endLabel = m => { const s0 = mins(S2.start) || 0; return `${time12(hhmm(s0 + m))} (${lenLabel(m)})`; };
   const S2 = { month: (() => { const d = new Date(openFrom + 'T12:00:00'); return new Date(d.getFullYear(), d.getMonth(), 1); })(), date: '', start: '', length: P.lengths.length === 1 ? P.lengths[0] : 0, sent: false, t: Date.now() };
   const lenLabel = n => n < 60 ? `${n} min` : `${n / 60} hr${n > 60 ? 's' : ''}`;
 
@@ -6527,7 +6546,7 @@ async function bookingPage(rawSlug) {
         <section class="bk-step"><h2><span>1</span>Pick a date</h2>${cal()}<p class="bk-muted bk-small">${S2.date ? `Selected: <b>${esc(niceDate(S2.date))}</b>` : 'Open dates are the ones you can tap.'}</p></section>
         <section class="bk-step"><h2><span>2</span>Set time</h2>
           <div class="bk-two"><label class="bk-f">Start time<select id="bk-start" required><option value="">Choose…</option>${startTimes().map(t => `<option value="${t}"${t === S2.start ? ' selected' : ''}>${time12(t)}</option>`).join('')}</select></label>
-          <div class="bk-f"><span>Set length</span><div class="bk-chips">${P.lengths.map(n => `<button type="button" class="bk-chip" data-bk-len="${n}" aria-pressed="${S2.length === n}">${lenLabel(n)}</button>`).join('')}</div></div></div></section>
+          <label class="bk-f">End time<select id="bk-end" required><option value="">${S2.start ? 'Choose…' : 'Pick a start time first'}</option>${endOpts().map(m => `<option value="${m}"${m === S2.length ? ' selected' : ''}>${endLabel(m)}</option>`).join('')}</select></label></div></section>
         <section class="bk-step"><h2><span>3</span>About your event</h2>
           <div class="bk-two">
             <label class="bk-f">Your name<input id="bk-name" autocomplete="name" maxlength="80" required></label>
@@ -6550,9 +6569,9 @@ async function bookingPage(rawSlug) {
       </form>${foot()}</div>`;
     const keepVals = root.__vals || {}; for (const [k, v] of Object.entries(keepVals)) { const el = root.querySelector('#' + k); if (el) el.value = v; }
     root.querySelectorAll('.bk-nav').forEach(b => b.onclick = () => { remember(); S2.month = new Date(S2.month.getFullYear(), S2.month.getMonth() + Number(b.dataset.bkM), 1); draw(); });
-    root.querySelectorAll('.bk-day').forEach(b => b.onclick = () => { remember(); S2.date = b.dataset.bkDate; draw(); root.querySelector('#bk-start').focus(); });
-    root.querySelectorAll('.bk-chip').forEach(b => b.onclick = () => { remember(); S2.length = Number(b.dataset.bkLen); draw(); });
-    root.querySelector('#bk-start').onchange = e => { S2.start = e.target.value; };
+    root.querySelectorAll('.bk-day').forEach(b => b.onclick = () => { remember(); S2.date = b.dataset.bkDate; if (!startTimes().includes(S2.start)) { S2.start = ''; S2.length = 0; } else if (!endOpts().includes(S2.length)) S2.length = 0; draw(); root.querySelector('#bk-start').focus(); });
+    root.querySelector('#bk-start').onchange = e => { S2.start = e.target.value; if (!endOpts().includes(S2.length)) S2.length = 0; remember(); draw(); const en = root.querySelector('#bk-end'); if (en) en.focus(); };
+    root.querySelector('#bk-end').onchange = e => { S2.length = Number(e.target.value) || 0; };
     root.querySelector('#bk-form').onsubmit = submit;
   }
   function brand() { return `<a class="bk-brand" href="${location.origin}/" target="_blank" rel="noopener" aria-label="Set &amp; Settled website"><img src="/favicon.svg" alt="" width="30" height="30"><span>Set &amp; Settled</span></a>`; }
@@ -6562,7 +6581,7 @@ async function bookingPage(rawSlug) {
     e.preventDefault();
     const v = id => (root.querySelector('#' + id).value || '').trim(), err = root.querySelector('#bk-err'), btn = root.querySelector('#bk-send');
     S2.start = v('bk-start');
-    const miss = !S2.date ? 'Pick a date.' : !S2.start ? 'Pick a start time.' : !S2.length ? 'Pick a set length.' : !v('bk-name') ? 'Add your name.' : !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(v('bk-email')) ? 'Add a valid email.' : !v('bk-event') ? 'Add the event name.' : !v('bk-city') ? 'Add the city.' : v('bk-fee') && !/^\$?\d[\d,]*(\.\d{1,2})?$/.test(v('bk-fee')) ? 'Write the offer as a number, like 500.' : '';
+    const miss = !S2.date ? 'Pick a date.' : !S2.start ? 'Pick a start time.' : !S2.length ? 'Pick an end time.' : !v('bk-name') ? 'Add your name.' : !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(v('bk-email')) ? 'Add a valid email.' : !v('bk-event') ? 'Add the event name.' : !v('bk-city') ? 'Add the city.' : v('bk-fee') && !/^\$?\d[\d,]*(\.\d{1,2})?$/.test(v('bk-fee')) ? 'Write the offer as a number, like 500.' : '';
     if (miss) { err.textContent = miss; return; }
     err.textContent = ''; btn.disabled = true; btn.textContent = 'Sending…';
     const body = { slug, t: S2.t, website: v('bk-website'), date: S2.date, start: S2.start, length: S2.length, name: v('bk-name'), email: v('bk-email'), phone: v('bk-phone'), org: v('bk-org'), role: v('bk-role'), event: v('bk-event'), venue: v('bk-venue'), city: v('bk-city'), address: v('bk-address'), fee: v('bk-fee'), message: v('bk-msg') };
