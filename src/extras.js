@@ -298,10 +298,9 @@ function appExtras() {
         ${link ? `<div class="f"><label>Share this link</label>${linkBox(link, 'ssx-linkurl')}<div class="ssx-row ssx-share">${navigator.share ? '<button type="button" class="btn small" data-ssx-share>Share…</button>' : ''}<a class="btn small" href="${esc(link)}" target="_blank" rel="noopener">Preview</a></div><span class="note">It's also in your <b>Kit</b>, ready to copy.</span></div>` : ''}
         <div class="f"><label for="ssx-name">Performer name on the page</label><input id="ssx-name" maxlength="80" value="${esc(L.name)}"></div>
         <div class="f"><label for="ssx-hl">A short note for people booking you</label><textarea id="ssx-hl" maxlength="400" rows="3" placeholder="Latin indie dance and baile funk. Tell me about your night!">${esc(L.headline)}</textarea></div>
-        <div class="f"><label>Days you take bookings</label><div class="ssx-chips" id="ssx-days">${D.map((d, i) => `<button type="button" class="ssx-chip" data-ssx-day="${i}" aria-pressed="${L.days.includes(i)}">${d}</button>`).join('')}</div></div>
+        ${availHTML()}
         <div class="ssx-grid2">
           <div class="f"><label for="ssx-notice">Minimum notice</label><select id="ssx-notice">${[1, 3, 7, 14, 21, 30, 60].map(n => `<option value="${n}">${n} day${n > 1 ? 's' : ''}</option>`).join('')}</select></div>
-          <div class="f"><label for="ssx-ahead">Book up to</label><select id="ssx-ahead">${[[30, '1 month'], [90, '3 months'], [180, '6 months'], [365, '1 year']].map(([n, t]) => `<option value="${n}">${t} ahead</option>`).join('')}</select></div>
           <div class="f"><label for="ssx-early">Earliest start</label><select id="ssx-early">${tOpts(L.earliest)}</select></div>
           <div class="f"><label for="ssx-late">Latest start</label><select id="ssx-late">${tOpts(L.latest)}</select></div>
         </div>
@@ -333,10 +332,13 @@ function appExtras() {
     $('#ssx-name').oninput = e => saveLink({ name: e.target.value.slice(0, 80) });
     $('#ssx-hl').oninput = e => saveLink({ headline: e.target.value.slice(0, 400) });
     $('#ssx-notice').onchange = e => saveLink({ notice: Number(e.target.value) }, true);
-    $('#ssx-ahead').onchange = e => saveLink({ ahead: Number(e.target.value) }, true);
+    const avr = $('#ssx-avrange'); if (avr) avr.onchange = () => { const r = avr.value, p2 = { range: r }; if (r === 'custom' && !AV().from) { const [x, y] = availRange(AV()); p2.from = x; p2.to = y; } putAvail(p2); };
+    for (const k of ['from', 'to']) { const i = $('#ssx-av' + k); if (i) i.onchange = () => { if (i.value) putAvail({ [k]: i.value }); }; }
+    box.querySelectorAll('[data-ssx-avbusy]').forEach(c => c.onchange = () => putAvail({ busy: { ...AV().busy, [c.dataset.ssxAvbusy]: c.checked } }));
+    box.querySelectorAll('[data-ssx-avg]').forEach(b => b.onclick = e => { e.stopPropagation(); putAvail({ google: b.dataset.ssxAvg }); });
     $('#ssx-early').onchange = e => saveLink({ earliest: e.target.value }, true);
     $('#ssx-late').onchange = e => saveLink({ latest: e.target.value }, true);
-    box.querySelectorAll('[data-ssx-day]').forEach(b => b.onclick = e => { e.stopPropagation(); const d = Number(b.dataset.ssxDay), s = new Set(L.days); s.has(d) ? s.delete(d) : s.add(d); if (!s.size) return note('link', 'Pick at least one day.', true); saveLink({ days: [...s].sort() }, true); });
+    box.querySelectorAll('[data-ssx-avday]').forEach(b => b.onclick = e => { e.stopPropagation(); const d = Number(b.dataset.ssxAvday), s = new Set(AV().days); s.has(d) ? s.delete(d) : s.add(d); if (!s.size) return note('link', 'Pick at least one day.', true); putAvail({ days: [...s].sort() }); });
     box.querySelectorAll('[data-ssx-len]').forEach(b => b.onclick = e => { e.stopPropagation(); const n = Number(b.dataset.ssxLen), s = new Set(L.lengths); s.has(n) ? s.delete(n) : s.add(n); if (!s.size) return note('link', 'Pick at least one set length.', true); saveLink({ lengths: [...s].sort((a, b) => a - b) }, true); });
     wireBlockCal(box, L);
     box.querySelectorAll('[data-ssx-unblock]').forEach(b => b.onclick = e => { e.stopPropagation(); saveLink({ blocked: (L.blocked || []).filter(d => d !== b.dataset.ssxUnblock) }, true); });
@@ -386,7 +388,22 @@ function appExtras() {
 
   /* ---------- One availability everywhere: Calendar → Availability and your booking link share the same
      days of the week and the same closed dates, so you only ever update one place. */
-  const SY = { days: null, t: 0, migrating: false, blocksRef: null, t0: Date.now() };
+  const SY = { days: null, t: 0, migrating: false, blocksRef: null, t0: Date.now(), sig: '' };
+  try { if (!AV_RANGES.some(r => r[0] === '12m')) AV_RANGES.splice(AV_RANGES.length - 1, 0, ['12m', 'Next 12 months']); const _ar = window.availRange; if (typeof _ar === 'function' && !_ar.__ssx12) { window.availRange = function (a) { if (a && a.range === '12m') { const t = todayStr(); return [t, addDays(t, 364)]; } return _ar.apply(this, arguments); }; window.availRange.__ssx12 = true; } } catch (_) {}
+  // Settings → Booking link saves into the same availability as Calendar
+  const putAvail = patch => { try { const next = { ...AV(), ...patch }; S.avail = next; st.db.doc('settings/availability').set(next).catch(() => note('link', "Couldn't save your availability. " + OFFLINE, true)); try { renderCalendar(); } catch (_) {} setTimeout(() => { try { render(); syncAvail(true); } catch (_) {} }, 60); } catch (_) {} };
+  function availHTML() {
+    let a; try { a = AV(); } catch (_) { return ''; }
+    let f = todayStr(), e = f; try { [f, e] = availRange(a); } catch (_) {}
+    const kn = k => { try { return kindName(k); } catch (_) { return k; } };
+    const busyL = [['confirmed', `A ${kn('confirmed')} show`], ['pitched', `A ${kn('pitched')} show (on hold)`], ['lead', `A ${kn('lead')}`], ['played', `A show already ${kn('played')} or ${kn('paid')}`], ['blocked', 'Blocked dates']];
+    return `<div class="f"><label>Days you take bookings</label><div class="ssx-chips" id="ssx-days">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => `<button type="button" class="ssx-chip" data-ssx-avday="${i}" aria-pressed="${a.days.includes(i)}">${d}</button>`).join('')}</div></div>
+        <div class="f"><label for="ssx-avrange">How far ahead</label><select id="ssx-avrange">${AV_RANGES.map(([k, l]) => `<option value="${k}"${a.range === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
+          ${a.range === 'custom' ? `<div class="ssx-row"><input type="date" id="ssx-avfrom" value="${f}" min="${todayStr()}" aria-label="From"><span class="note">to</span><input type="date" id="ssx-avto" value="${e}" min="${todayStr()}" aria-label="To"></div>` : ''}</div>
+        <div class="f"><label>Not available if the day has</label><div class="ssx-avbusy">${busyL.map(([k, l]) => `<label class="ssx-check"><input type="checkbox" data-ssx-avbusy="${k}"${a.busy[k] ? ' checked' : ''}> ${esc(l)}</label>`).join('')}</div></div>
+        <div class="f"><label>Google Calendar plans</label><div class="ssx-chips">${[['evening', 'Evening & all-day'], ['any', 'Any event'], ['ignore', 'Ignore']].map(([k, l]) => `<button type="button" class="ssx-chip" data-ssx-avg="${k}" aria-pressed="${a.google === k}">${l}</button>`).join('')}</div>
+          <span class="note">These are the same settings as <b>Calendar → Edit availability</b>. Change them in either place and your booking link updates within a few seconds.</span></div>`;
+  }
   const calBlocks = () => { try { return S.blocks || []; } catch (_) { return []; } };
   function blockedDays(from) {
     const out = new Set();
@@ -409,11 +426,35 @@ function appExtras() {
     const runs = []; for (const d of add) { const l = runs[runs.length - 1]; if (l && addDays(l[1], 1) === d) l[1] = d; else runs.push([d, d]); }
     for (const [a, b] of runs) await st.db.collection('blocks').add({ label: 'Not available', date: a, endDate: b === a ? '' : b, createdAt: new Date().toISOString() }).catch(() => {});
   }
-  // every date the public booking page should show as taken
+  // the booking window comes from Calendar → Edit availability ("How far ahead"), so both always match
+  function linkWindow() { const t0 = todayStr(); let a = null, from = t0, to = addDays(t0, 180); try { a = AV(); [from, to] = availRange(a); } catch (_) {} return { a, from: from < t0 ? t0 : from, to }; }
+  // Google Calendar plans for the whole window (the Calendar page only loads the months you look at)
+  const AG = { map: null, at: 0, key: '', busy: false };
+  async function availGoogle(to) {
+    if (AG.busy) return;
+    try {
+      if (typeof G === 'undefined' || !G.mcp) return;
+      const ids = G.calIds && G.calIds.length ? G.calIds : ['primary'], key = ids.join() + '|' + to;
+      if (AG.key === key && Date.now() - AG.at < 10 * 60000) return;
+      AG.busy = true; const map = {}; let ok = 0;
+      for (const id of ids) { try { gIngest(await gFetchCal(id, todayStr(), to), (G.calNames || {})[id] || id, map); ok++; } catch (_) {} }
+      AG.at = Date.now(); if (ok) { AG.map = map; AG.key = key; syncAvail(true); } // a failed check keeps the last good list
+    } catch (_) {} finally { AG.busy = false; }
+  }
+  const agOn = ds => { const own = new Set((S.bookings || []).map(b => b.gcal && b.gcal.eventId).filter(Boolean)), seen = new Set(), out = [];
+    for (const e of [...((typeof G !== 'undefined' && G.byDate && G.byDate[ds]) || []), ...((AG.map && AG.map[ds]) || [])]) { if (seen.has(e.id) || own.has(e.id) || own.has(String(e.id).split('_')[0])) continue; seen.add(e.id); out.push(e); } return out; };
+  // every date the public booking page should show as taken: the same rules as Calendar's open dates
   function linkClosed(L) {
-    const t0 = todayStr(), end = addDays(t0, Math.min(730, Number(L.ahead) || 180)), out = blockedDays(t0); let a = null; try { a = AV(); } catch (_) {}
-    if (a && typeof availBusy === 'function') for (let d = t0, i = 0; d <= end && i < 740; d = addDays(d, 1), i++) { try { if (availBusy(d, a)) out.add(d); } catch (_) {} }
-    return [...out].filter(d => d >= t0 && d <= end).sort().slice(0, 400);
+    const t0 = todayStr(), { a, from, to } = linkWindow(), out = [];
+    if (!a) return [...blockedDays(t0)].filter(d => d <= to).sort().slice(0, 400);
+    const noG = { ...a, google: 'ignore' };
+    for (let d = t0, i = 0; d <= to && i < 740; d = addDays(d, 1), i++) {
+      if (!a.days.includes(new Date(d + 'T12:00:00').getDay())) continue; // closed anyway: not a day you take bookings
+      let busy = d < from; try { busy = busy || availBusy(d, noG); } catch (_) {}
+      if (!busy && a.google !== 'ignore') { const ev = agOn(d); busy = a.google === 'any' ? ev.length > 0 : ev.some(e => e.allDay || e.endH >= 17 || e.startH >= 17); }
+      if (busy) out.push(d);
+    }
+    return out.slice(0, 400);
   }
   function syncAvail(force) {
     if (!st.db || !st.link || Date.now() - SY.t0 < 4000) return;
@@ -423,14 +464,16 @@ function appExtras() {
     // once: move the booking link's own blocked dates into Calendar → Block dates
     if (!L.calSync) { if (SY.migrating) return; SY.migrating = true; const t0 = todayStr(), mine = (L.blocked || []).filter(d => d >= t0);
       setBlocked(new Set([...blockedDays(t0), ...mine])).then(() => saveLink({ calSync: true }, true)).finally(() => { SY.migrating = false; }); return; }
-    // days of the week: one list; whichever side you changed last wins
-    const ad = av && Array.isArray(av.days) ? av.days.join() : null, ld = (L.days || []).join();
-    if (ad !== ld) {
-      const calChanged = SY.days && ad !== SY.days.a, linkChanged = SY.days && ld !== SY.days.l;
-      if (ad !== null && av.days.length && (calChanged || !linkChanged)) saveLink({ days: [...av.days] }, true);
-      else if (L.days && L.days.length) { try { S.avail = { ...AV(), days: [...L.days] }; st.db.doc('settings/availability').set(S.avail).catch(() => {}); if (typeof renderCalendar === 'function') renderCalendar(); } catch (_) {} }
+    // one availability: Calendar → Edit availability is the saved list, and Settings edits that same list.
+    // Once per account, an account that never picked a range in Calendar keeps its booking link's "Book up to".
+    if (!L.availV2) { try { if (!av || !av.range) { const r = { 30: '30d', 90: '3m', 180: '6m', 365: '12m' }[Number(L.ahead)] || '6m'; S.avail = { ...AV(), range: r, ...(av && av.days && av.days.length ? {} : { days: [...(L.days && L.days.length ? L.days : AV().days)] }) }; st.db.doc('settings/availability').set(S.avail).catch(() => {}); } } catch (_) {} saveLink({ availV2: true }, true); return; }
+    let a2 = null; try { a2 = AV(); } catch (_) {}
+    if (a2) {
+      const { to } = linkWindow(), ahead = Math.max(1, daysBetween(todayStr(), to));
+      if ((L.days || []).join() !== a2.days.join() || Number(L.ahead) !== ahead) saveLink({ days: [...a2.days], ahead }, true);
+      availGoogle(to);
+      const sig = JSON.stringify(a2) + '|' + AG.at; if (sig !== SY.sig) { const first = !SY.sig; SY.sig = sig; force = true; if (!first) { try { render(); } catch (_) {} } }
     }
-    try { SY.days = { a: S.avail && Array.isArray(S.avail.days) ? S.avail.days.join() : null, l: (st.link.days || []).join() }; } catch (_) {}
     // closed dates on the public page
     const closed = linkClosed({ ...defLink(), ...st.link });
     if (closed.join() !== (st.link.blocked || []).join() && (force || Date.now() - SY.t > 3000)) { SY.t = Date.now(); saveLink({ blocked: closed }, true); }
