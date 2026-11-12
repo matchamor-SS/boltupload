@@ -394,6 +394,115 @@ function appExtras() {
   /* ---------- One availability everywhere: Calendar → Availability and your booking link share the same
      days of the week and the same closed dates, so you only ever update one place. */
   const SY = { days: null, t: 0, migrating: false, blocksRef: null, t0: Date.now(), sig: '' };
+/* -- Availability, simplified. One rule everywhere (booking link, Calendar, Settings, and later the venue side):
+     you're bookable on your days and hours unless something is already on your calendar (a show or hold in the app,
+     or a Google Calendar plan) or you blocked the date. These replace the older versions further down. */
+  const avOn = () => { try { return AV().google !== 'ignore'; } catch (_) { return true; } };
+  const avMins = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; };
+  const avShows = d => (S.bookings || []).filter(b => b.date === d && ['confirmed', 'pitched', 'played', 'paid'].includes(K(b.status)));
+  const avSpan = b => { const s0 = avMins(b.setStart); if (s0 == null) return [0, 1440]; let e = avMins(b.setEnd); e = e == null ? s0 + 120 : e <= s0 ? e + 1440 : e; return [s0, e]; };
+  const avGSpan = (e, day) => { if (e.allDay || !e.start) return [0, 1440]; const sd = new Date(e.start), ed = new Date(e.end || e.start), md = x => x.getHours() * 60 + x.getMinutes(); return [ymd(sd) === day ? md(sd) : 0, ymd(ed) === day ? (md(ed) || 1440) : 1440]; };
+  // everything on your calendar around a date, as [start, end, name] in minutes from that date's midnight
+  function avBusyOn(d) {
+    const iv = [], g = avOn();
+    for (const [off, day] of [[-1440, addDays(d, -1)], [0, d], [1440, addDays(d, 1)]]) {
+      for (const b of avShows(day)) { const [x, y] = avSpan(b); iv.push([off + x, off + y, bookingName(b)]); }
+      if (g) for (const e of agOn(day)) { const [x, y] = avGSpan(e, day); iv.push([off + x, off + y, e.title || 'Google Calendar plan']); }
+    }
+    return iv;
+  }
+  // why a date is closed on the booking link (an empty list means it's open)
+  function avWhy(d, bl) {
+    const L = { ...defLink(), ...(st.link || {}) }, why = [], { from } = linkWindow();
+    if (d < from) why.push('before your booking window starts');
+    if ((bl || blockedDays(d)).has(d)) why.push('you blocked this date');
+    if (avOn()) for (const e of agOn(d)) if (e.allDay) why.push(`Google Calendar: ${e.title || 'plan'} (all day)`);
+    if (linkMode(L) === 'day' && !(L.open || []).includes(d)) for (const b of avShows(d)) why.push(`${kindName(K(b.status))}: ${bookingName(b)}`);
+    if (why.length) return why;
+    const E0 = avMins(L.earliest) ?? 1080, L0 = avMins(L.latest) ?? 1410, last = L0 < E0 ? L0 + 1440 : L0, step = Math.max(5, Number(L.step) || 30), gap = Math.max(0, Number(L.gap) || 0), len = Math.min(...(L.lengths && L.lengths.length ? L.lengths : [60])), iv = avBusyOn(d);
+    if (!iv.length) return why;
+    for (let t = E0; t <= last; t += step) if (!iv.some(([a, b]) => t < b + gap && t + len + gap > a)) return why;
+    return ['no start time fits around ' + [...new Set(iv.filter(([a, b]) => b > E0 && a < last + len).map(x => x[2]))].slice(0, 3).join(', ')];
+  }
+  linkClosed = function () {
+    const t0 = todayStr(), { a, to } = linkWindow(), bl = blockedDays(t0), out = [];
+    if (!a) return [...bl].filter(d => d <= to).sort().slice(0, 400);
+    for (let d = t0, i = 0; d <= to && i < 740; d = addDays(d, 1), i++) { if (!a.days.includes(new Date(d + 'T12:00:00').getDay())) continue; try { if (avWhy(d, bl).length) out.push(d); } catch (_) {} }
+    return out.slice(0, 400);
+  };
+  // times the booking page works around: holds and Google plans (the server adds your confirmed shows itself)
+  linkBusy = function (to) {
+    const t0 = addDays(todayStr(), -1), out = {}, g = avOn(); let n = 0;
+    for (let d = t0, i = 0; d <= to && i < 740 && n < 600; d = addDays(d, 1), i++) {
+      const iv = [];
+      for (const b of avShows(d)) if (K(b.status) === 'pitched') iv.push(avSpan(b));
+      if (g) for (const e of agOn(d)) if (!e.allDay && e.start) iv.push(avGSpan(e, d));
+      if (iv.length) { out[d] = iv.filter(([x, y]) => y > x).sort((x, y) => x[0] - y[0]); n += iv.length; }
+    }
+    return out;
+  };
+  closedWhy = d => { try { return avWhy(d).join(' · '); } catch (_) { return ''; } };
+  closedList = function (L) {
+    const t0 = todayStr(), list = (L.blocked || []).filter(d => d >= t0).slice(0, 40), opened = (L.open || []).filter(d => d >= t0), day = linkMode(L) === 'day';
+    if (!list.length && !opened.length) return '';
+    return `<details class="ssx-why"${opened.length ? ' open' : ''}><summary>Closed dates and why (${list.length})</summary><ul>${list.map(d => `<li><b>${esc(niceDate(d))}</b>: ${esc(closedWhy(d) || 'closed')}${day && avShows(d).length && !blockedDays(d).has(d) ? ` <button type="button" class="btn small" data-ssx-open="${d}">Open for another booking</button>` : ''}</li>`).join('')}</ul>
+      ${opened.length ? `<span class="eyebrow">Open for another booking</span><ul>${opened.map(d => `<li><b>${esc(niceDate(d))}</b>: open at times that don't overlap what's already there <button type="button" class="btn small" data-ssx-open="${d}">Close again</button></li>`).join('')}</ul>` : ''}
+      <span class="note">Add start and end times to your shows so only those hours are taken.</span></details>`;
+  };
+  function avGoogleNote() {
+    try {
+      if (typeof G === 'undefined' || !G.mcp) return "Google Calendar isn't connected yet. Connect it in Settings → Google and your plans will close those times on their own.";
+      const ids = G.calIds && G.calIds.length ? G.calIds : ['primary'], names = ids.map(i => (G.calNames || {})[i] || (i === 'primary' ? 'your main calendar' : i)).join(', ');
+      if (!AG.map) return `Checking ${names}…`;
+      const n = new Set(Object.values(AG.map).flat().map(e => e.id)).size;
+      return `Checking ${names}: ${n} plan${n === 1 ? '' : 's'} found through ${niceDate(linkWindow().to)}. Choose which calendars count in Settings → Google.`;
+    } catch (_) { return ''; }
+  }
+  availHTML = function (sfx = '') {
+    let a; try { a = AV(); } catch (_) { return ''; }
+    let f = todayStr(), e = f; try { [f, e] = availRange(a); } catch (_) {}
+    const L = { ...defLink(), ...(st.link || {}) }, m = linkMode(L), on = a.google !== 'ignore';
+    return `<p class="note ssx-avrule">You're bookable on the days and hours you pick, unless you already have a show, a hold or a Google Calendar plan at that time, or you block the date.</p>
+        <div class="f"><label>Days you take bookings</label><div class="ssx-chips">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => `<button type="button" class="ssx-chip" data-ssx-avday="${i}" aria-pressed="${a.days.includes(i)}">${d}</button>`).join('')}</div></div>
+        <div class="f"><label for="ssx-avrange${sfx}">How far ahead</label><select id="ssx-avrange${sfx}">${AV_RANGES.map(([k, l]) => `<option value="${k}"${a.range === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
+          ${a.range === 'custom' ? `<div class="ssx-row"><input type="date" id="ssx-avfrom${sfx}" value="${f}" min="${todayStr()}" aria-label="From"><span class="note">to</span><input type="date" id="ssx-avto${sfx}" value="${e}" min="${todayStr()}" aria-label="To"></div>` : ''}</div>
+        <div class="f"><label>Check my Google Calendar</label><div class="ssx-chips"><button type="button" class="ssx-chip" data-ssx-avg="any" aria-pressed="${on}">On</button><button type="button" class="ssx-chip" data-ssx-avg="ignore" aria-pressed="${!on}">Off</button></div>
+          <span class="note">${on ? esc(avGoogleNote()) : 'Off: only your shows, holds and blocked dates count.'}</span></div>
+        <div class="f"><label for="ssx-bmode${sfx}">If I already have a booking that day</label><select id="ssx-bmode${sfx}"><option value="day"${m === 'day' ? ' selected' : ''}>Close the whole day</option><option value="time"${m === 'time' ? ' selected' : ''}>Keep the rest of the day open</option></select>
+          <span class="note">${m === 'time' ? 'People can still book times that don\'t overlap what you already have.' : 'You can still open a single date for another booking in the list of closed dates.'}</span></div>
+        <div class="ssx-grid2"><div class="f"><label for="ssx-bstep${sfx}">Start times every</label><select id="ssx-bstep${sfx}">${[5, 10, 15, 30, 60].map(n => `<option value="${n}"${Number(L.step || 30) === n ? ' selected' : ''}>${n} min</option>`).join('')}</select></div><div class="f"><label for="ssx-bgap${sfx}">Gap between bookings</label><select id="ssx-bgap${sfx}">${[0, 10, 15, 30, 60].map(n => `<option value="${n}"${Number(L.gap || 0) === n ? ' selected' : ''}>${n ? n + ' min' : 'None'}</option>`).join('')}</select></div></div>`;
+  };
+  modeHTML = () => '';
+  // Calendar → Edit availability shows these same controls
+  const _ntAvailPanel = ntAvailPanel;
+  ntAvailPanel = function () {
+    _ntAvailPanel.apply(this, arguments);
+    try {
+      const p = document.getElementById('availPanel'); if (!p || p.hidden || p.querySelector(':scope > .ssx-avshared')) return;
+      p.classList.add('ssx-avp'); p.querySelectorAll(':scope > .grp').forEach(g => { if (g.querySelector('[data-nt-bd]')) g.classList.add('ssx-keep'); });
+      const box = document.createElement('div'); box.className = 'ssx-avshared ssx-keep ssx'; box.innerHTML = availHTML('-c'); p.prepend(box);
+      const q = s => box.querySelector(s), later = () => setTimeout(() => { try { renderCalendar(); syncAvail(true); } catch (_) {} }, 80);
+      box.querySelectorAll('[data-ssx-avday]').forEach(b => b.onclick = () => { const d = Number(b.dataset.ssxAvday), s = new Set(AV().days); s.has(d) ? s.delete(d) : s.add(d); if (s.size) putAvail({ days: [...s].sort() }); });
+      const r = q('#ssx-avrange-c'); if (r) r.onchange = () => { const p2 = { range: r.value }; if (r.value === 'custom' && !AV().from) { const [x, y] = availRange(AV()); p2.from = x; p2.to = y; } putAvail(p2); };
+      for (const k of ['from', 'to']) { const i = q('#ssx-av' + k + '-c'); if (i) i.onchange = () => { if (i.value) putAvail({ [k]: i.value }); }; }
+      box.querySelectorAll('[data-ssx-avg]').forEach(b => b.onclick = () => putAvail({ google: b.dataset.ssxAvg }));
+      const bm = q('#ssx-bmode-c'); if (bm) bm.onchange = () => { saveLink({ mode: bm.value }, true); later(); };
+      const bs = q('#ssx-bstep-c'); if (bs) bs.onchange = () => { saveLink({ step: Number(bs.value) }, true); later(); };
+      const bg = q('#ssx-bgap-c'); if (bg) bg.onchange = () => { saveLink({ gap: Number(bg.value) }, true); later(); };
+    } catch (e) { console.error(e); }
+  };
+  const _availCard = availCard;
+  availCard = function () {
+    _availCard.apply(this, arguments);
+    try {
+      if (typeof window.availBusy === 'function' && !window.availBusy.__ssxV3) { const f = ds => { try { return avWhy(ds).length > 0; } catch (_) { return false; } }; f.__ssxV3 = f.__ssxG = true; window.availBusy = f; }
+      const sum = document.getElementById('availSummary'); if (!sum) return;
+      let n = document.getElementById('ssx-avnote'); if (!n) { n = document.createElement('p'); n.id = 'ssx-avnote'; n.className = 'note'; n.style.margin = '0 0 8px'; sum.after(n); }
+      const a = AV(), L = { ...defLink(), ...(st.link || {}) }, D = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], days = a.days.length === 7 ? 'Every day' : a.days.map(i => D[i]).join(', ') || 'No days picked';
+      const txt = `${days} · starts ${time12(L.earliest)} to ${time12(L.latest)} · through ${niceDate(linkWindow().to)}. Open unless you have a show, a hold${a.google !== 'ignore' ? ', a Google Calendar plan' : ''} or a blocked date.`;
+      if (n.textContent !== txt) n.textContent = txt;
+    } catch (_) {}
+  };
   // How people book you: one booking a day, or by the time (several a day, to the minute). Services default to by the time.
   const linkMode = L => L && (L.mode === 'time' || L.mode === 'day') ? L.mode : (() => { try { return flArtist().group === 'service' ? 'time' : 'day'; } catch (_) { return 'day'; } })();
   // a day where people pick a start time around your other bookings (every day in "by the time", or a date you opened for another booking)
@@ -6513,13 +6622,13 @@ async function bookingPage(rawSlug) {
   const E0 = mins(P.earliest) ?? 1080, L0 = mins(P.latest) ?? 1410, LAST = L0 < E0 ? L0 + 1440 : L0, step = Math.max(5, Number(P.step) || 30), gap = Math.max(0, Number(P.gap) || 0), BUSY = P.busy || {}, OPEN = new Set(P.open || []);
   const timed = d => P.mode === 'time' || OPEN.has(d);
   const busyOn = d => { const iv = [...(BUSY[d] || [])]; for (const [a, b] of BUSY[addDays(d, -1)] || []) if (b > 1440) iv.push([a - 1440, b - 1440]); for (const [a, b] of BUSY[addDays(d, 1)] || []) iv.push([a + 1440, b + 1440]); return iv; };
-  const slotsFor = (d, len) => { const out = [], iv = timed(d) ? busyOn(d) : []; if (!len) return out; for (let t = E0; t <= LAST && out.length < 300; t += step) if (!iv.some(([a, b]) => t < b + gap && t + len + gap > a)) out.push(t); return out; };
-  const isOpen = d => d >= openFrom && d <= openTo && P.days.includes(new Date(d + 'T12:00:00').getDay()) && !taken.has(d) && (!timed(d) || P.lengths.some(n => slotsFor(d, n).length));
+  const slotsFor = (d, len) => { const out = [], iv = busyOn(d); if (!len) return out; for (let t = E0; t <= LAST && out.length < 300; t += step) if (!iv.some(([a, b]) => t < b + gap && t + len + gap > a)) out.push(t); return out; };
+  const isOpen = d => d >= openFrom && d <= openTo && P.days.includes(new Date(d + 'T12:00:00').getDay()) && !taken.has(d) && slotsFor(d, Math.min(...P.lengths)).length > 0;
   const hhmm = t => { const x = ((t % 1440) + 1440) % 1440; return `${pad(Math.floor(x / 60))}:${pad(x % 60)}`; };
   // people pick a start and an end time; the length must fall between your shortest and longest choice
   const minLen = Math.min(...P.lengths), maxLen = Math.max(...P.lengths);
   const startTimes = () => slotsFor(S2.date, minLen).map(hhmm);
-  const endOpts = () => { const out = [], s0 = mins(S2.start); if (!S2.date || s0 == null) return out; const st0 = s0 < E0 && L0 < E0 ? s0 + 1440 : s0, iv = timed(S2.date) ? busyOn(S2.date) : [];
+  const endOpts = () => { const out = [], s0 = mins(S2.start); if (!S2.date || s0 == null) return out; const st0 = s0 < E0 && L0 < E0 ? s0 + 1440 : s0, iv = busyOn(S2.date);
     for (let m = minLen; m <= maxLen && out.length < 200; m += step) { if (iv.some(([a, b]) => st0 < b + gap && st0 + m + gap > a)) break; out.push(m); } return out; };
   const endLabel = m => { const s0 = mins(S2.start) || 0; return `${time12(hhmm(s0 + m))} (${lenLabel(m)})`; };
   const S2 = { month: (() => { const d = new Date(openFrom + 'T12:00:00'); return new Date(d.getFullYear(), d.getMonth(), 1); })(), date: '', start: '', length: P.lengths.length === 1 ? P.lengths[0] : 0, sent: false, t: Date.now() };
