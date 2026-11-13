@@ -6347,8 +6347,89 @@ function appExtras() {
       <div class="ssx-bz-sum"><div class="ssx-bz-l"><span class="eyebrow">Main line</span><span>${esc(invTplFill(s0.lineTpl, ex))}</span></div><div class="ssx-bz-l"><span class="eyebrow">Due</span><span>${Number(k.terms) ? k.terms + ' days after it\'s sent' : 'When it\'s sent'}</span></div><div class="ssx-bz-l"><span class="eyebrow">Next number</span><span>${esc((() => { try { return invNum(k); } catch (_) { return ''; } })())}</span></div>${k.note ? `<div class="ssx-bz-l"><span class="eyebrow">Note</span><span>${esc(k.note)}</span></div>` : ''}</div>`;
     card.querySelector('[data-it-open]').onclick = () => invTplSheet();
   }  
+/* -- My page: a public page at setnsettled.com/<your booking link name> with your upcoming confirmed shows (straight from
+     your bookings), links, bio, photo and a Book me button, in your EPK colors. Nothing is public until you turn it on, and
+     any show can be kept off it. Saved in settings/page; the website reads it through artist_page_public. */
+  const PGE = { doc: null, loaded: false, at: 0, busy: false, epk: null };
+  async function pgLoad() {
+    if (PGE.loaded || !st.db) return; PGE.loaded = true;
+    try { const s = await st.db.doc('settings/page').get(); PGE.doc = s.exists ? s.data() : {}; } catch (_) { PGE.doc = {}; }
+    try { const e = await st.db.doc('settings/epk').get(); PGE.epk = e.exists ? e.data() : {}; } catch (_) { PGE.epk = {}; }
+  }
+  const pgSave = async patch => { const next = { ...(PGE.doc || {}), ...patch }; PGE.doc = next; try { await st.db.doc('settings/page').set(next); return true; } catch (_) { toast("Couldn't save your page. " + OFFLINE); return false; } };
+  const pgSlug = () => (st.link || {}).slug || '';
+  const pgUrl = () => pgSlug() ? `${location.origin}/${pgSlug()}` : '';
+  const pgShows = () => flBk().filter(b => flKind(b.status) === 'confirmed' && b.date && b.date >= todayStr()).sort((a, b) => a.date.localeCompare(b.date));
+  const pgLinkKey = l => String(l.id || l.url);
+  function pgAllLinks() { let L = []; try { L = typeof sortedLinks === 'function' ? sortedLinks() : (S.links || []); } catch (_) {} return L.filter(l => l && /^https?:\/\//i.test(String(l.url || ''))); }
+  async function pgPhoto() {
+    let id = ''; try { id = flEpkAsset() || flAvatar(); } catch (_) {}
+    const d = PGE.doc || {}; if (!id) return d.photo ? { key: '', data: '' } : null; if (d.photoKey === id && d.photo) return null;
+    const src = flSrc(id); if (!src) return null;
+    const img = new Image(); await new Promise((y, n) => { img.onload = y; img.onerror = n; img.src = src; });
+    const N = 480, c = document.createElement('canvas'), s = Math.min(img.naturalWidth, img.naturalHeight); c.width = c.height = N;
+    c.getContext('2d').drawImage(img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, N, N);
+    let data = c.toDataURL('image/jpeg', .82); if (data.length > 380000) data = c.toDataURL('image/jpeg', .6);
+    return { key: id, data };
+  }
+  // keeps the page's name, colors, links, photo (and bio and tagline, unless you wrote your own) in step with the app
+  async function pgSync(force) {
+    if (PGE.busy || (!force && Date.now() - PGE.at < 30000)) return; await pgLoad(); const d = PGE.doc || {}; if (!d.on) return;
+    PGE.at = Date.now(); PGE.busy = true;
+    try {
+      const p = S.profile || {}, k = S.kit || {}; let A = {}; try { A = flArtist(); } catch (_) {}
+      let theme = d.theme || {}; try { const c = PGE.epk || {}, T = epkTheme(c.palette || 'champagne', c.mode || 'dark'); theme = { bg: T.bg, glow: T.glow, ink: T.ink, muted: T.muted, line: T.line, panel: T.panel, solid: T.solid, metal: T.metal }; } catch (_) {}
+      const off = new Set(d.linkOff || []), links = pgAllLinks().filter(l => !off.has(pgLinkKey(l))).map(l => ({ label: String(l.label || l.url).slice(0, 60), url: String(l.url).slice(0, 500) })).slice(0, 24);
+      const auto = { name: p.djName || p.myName || '', kind: A.kind || '', theme, links };
+      if (!d.bioSet) auto.bio = k.bioShort || k.bioLong || ''; if (!d.tagSet) auto.tagline = k.genres || '';
+      let ph = null; try { ph = await pgPhoto(); } catch (_) {} if (ph) { auto.photo = ph.data; auto.photoKey = ph.key; }
+      if (Object.keys(auto).some(x => JSON.stringify(auto[x] ?? '') !== JSON.stringify(d[x] ?? ''))) await pgSave(auto);
+    } catch (e) { console.error(e); } finally { PGE.busy = false; }
+  }
+  function pgSheet() {
+    const d = PGE.doc || {}, k = S.kit || {}, hide = new Set(d.hide || []), off = new Set(d.linkOff || []), shows = pgShows().slice(0, 40), links = pgAllLinks();
+    try { navSheet('page', () => pgSheet()); } catch (_) {}
+    sheet(`<h3>My page</h3><p class="note" style="margin:0 0 6px">Your public page at <b>${esc(pgUrl().replace(/^https?:\/\//, ''))}</b>: upcoming shows, links, bio and a Book me button, in your EPK colors. Share it anywhere, like your Instagram bio.</p>
+      <label class="ssx-check"><input type="checkbox" id="pg-on"${d.on ? ' checked' : ''}> <b>My page is public</b></label>
+      <div class="f"><label for="pg-tag">One line about you</label><input id="pg-tag" maxlength="160" value="${esc(d.tagSet ? d.tagline || '' : (d.tagline || k.genres || ''))}" placeholder="e.g. Latin indie dance & baile funk"></div>
+      <div class="f"><label for="pg-city">Based in <i class="note">(optional)</i></label><input id="pg-city" maxlength="80" value="${esc(d.city || '')}" placeholder="e.g. San Diego"></div>
+      <div class="f"><label for="pg-bio">About</label><textarea id="pg-bio" maxlength="3000" style="min-height:110px">${esc(d.bioSet ? d.bio || '' : (d.bio || k.bioShort || k.bioLong || ''))}</textarea><span class="note">Starts from your Kit's short bio. Your picture is the one your EPK uses.</span></div>
+      <div class="f"><label>Upcoming shows on your page</label>${shows.length ? `<div class="ssx-pglist">${shows.map(b => `<label class="ssx-check"><input type="checkbox" data-pg-show="${esc(b.id)}"${hide.has(b.id) ? '' : ' checked'}> ${esc(niceDate(b.date))} · ${esc(bookingName(b))}${b.ticketUrl ? ' · <span class="note">tickets</span>' : ''}</label>`).join('')}</div><span class="note">Every confirmed show appears on its own. Untick private ones, like weddings. Add a ticket link to a show and a Tickets button appears.</span>` : '<span class="note">No confirmed shows coming up. They appear here on their own.</span>'}</div>
+      <div class="f"><label>Links</label>${links.length ? `<div class="ssx-pglist">${links.map(l => `<label class="ssx-check"><input type="checkbox" data-pg-link="${esc(pgLinkKey(l))}"${off.has(pgLinkKey(l)) ? '' : ' checked'}> ${esc(l.label || l.url)}</label>`).join('')}</div>` : '<span class="note">Add links (Instagram, SoundCloud, Spotify, your website) in Kit and they show up here.</span>'}</div>
+      <div class="actions"><button type="button" class="btn" data-pg-cancel>Cancel</button>${d.on ? '<button type="button" class="btn" data-pg-open>Open my page</button>' : ''}<button type="button" class="btn primary" data-pg-save>Save</button></div>`, root => {
+      const q = s => root.querySelector(s);
+      q('[data-pg-cancel]').onclick = () => close();
+      const op = q('[data-pg-open]'); if (op) op.onclick = () => window.open(pgUrl(), '_blank', 'noopener');
+      q('[data-pg-save]').onclick = async e => {
+        const btn = e.currentTarget; btn.disabled = true;
+        const on = q('#pg-on').checked, tag = q('#pg-tag').value.trim(), bio = q('#pg-bio').value.trim();
+        const ok = await pgSave({ on, tagline: tag, tagSet: tag !== (k.genres || ''), city: q('#pg-city').value.trim(), bio, bioSet: bio !== (k.bioShort || k.bioLong || ''),
+          hide: [...root.querySelectorAll('[data-pg-show]')].filter(c => !c.checked).map(c => c.dataset.pgShow), linkOff: [...root.querySelectorAll('[data-pg-link]')].filter(c => !c.checked).map(c => c.dataset.pgLink), updatedAt: new Date().toISOString() });
+        btn.disabled = false; if (!ok) return;
+        close(); toast(on ? 'Saved. Your page is live.' : 'Saved. Your page is off.'); if (on) pgSync(true);
+      };
+    });
+  }
+  // Kit: the My page card
+  function pgCard() {
+    const sec = document.querySelector('section[data-view="kit"]'); if (!sec || !st.db) return;
+    if (!PGE.loaded) { pgLoad(); return; }
+    const d = PGE.doc || {}, slug = pgSlug(), n = pgShows().filter(b => !(d.hide || []).includes(b.id)).length, addr = pgUrl().replace(/^https?:\/\//, '');
+    const sig = JSON.stringify([!!d.on, slug, n, !!d.photo, (d.links || []).length]); let card = document.getElementById('ssx-page');
+    if (card && card.dataset.sig === sig) return;
+    if (!card) { card = document.createElement('div'); card.id = 'ssx-page'; card.className = 'card ssx'; const hd = sec.querySelector(':scope > .head'); hd ? hd.after(card) : sec.prepend(card); }
+    card.dataset.sig = sig;
+    card.innerHTML = !slug ? `<div class="ssx-head"><div><h3>My page</h3><p class="note">Your own public page with upcoming shows, links and a Book me button. It uses your booking link's name, so set that up first.</p></div><button type="button" class="btn small" data-pg-link-setup>Set up booking link</button></div>`
+      : d.on ? `<div class="ssx-head"><div><h3>My page <span class="ssx-pill-on">Live</span></h3><p class="note"><b>${esc(addr)}</b> · ${n} upcoming show${n === 1 ? '' : 's'}</p></div><div class="ssx-row"><button type="button" class="btn small" data-pg-copy>Copy link</button><button type="button" class="btn small" data-pg-openc>Open</button><button type="button" class="btn small" data-pg-edit>Edit</button></div></div>`
+      : `<div class="ssx-head"><div><h3>My page</h3><p class="note">Your own page at <b>${esc(addr)}</b>: ${n} upcoming show${n === 1 ? '' : 's'}, your links, bio and a Book me button. A website and link-in-bio in one. Nothing is public until you turn it on.</p></div><button type="button" class="btn small primary" data-pg-edit>Set it up</button></div>`;
+    const b = s => card.querySelector(s);
+    if (b('[data-pg-edit]')) b('[data-pg-edit]').onclick = () => pgSheet();
+    if (b('[data-pg-openc]')) b('[data-pg-openc]').onclick = () => window.open(pgUrl(), '_blank', 'noopener');
+    if (b('[data-pg-copy]')) b('[data-pg-copy]').onclick = () => (navigator.clipboard ? navigator.clipboard.writeText(pgUrl()) : Promise.reject()).then(() => toast('Page link copied'), () => toast(pgUrl()));
+    if (b('[data-pg-link-setup]')) b('[data-pg-link-setup]').onclick = () => { try { curGroup = 'bookings'; localStorage.setItem('ss-setgroup', 'bookings'); } catch (_) {} window.setTab('settings'); };
+  }  
   function flScan() {
-    try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); } catch (e) { console.error(e); }
+    try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
     for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, flRoTasksWrap, nmLockWatch, bizCard, flGtCleanHook, navWrap, navGroups, nmRender]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
