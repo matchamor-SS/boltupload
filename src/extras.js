@@ -7441,7 +7441,112 @@ function appExtras() {
     const tg = el.querySelector('[data-sc-tog]'); if (tg) tg.onclick = () => { SC.open = !SC.open; try { localStorage.setItem('ss-sc-open', SC.open ? '1' : '0'); } catch (_) {} el.dataset.sig = ''; scCard(); const t2 = el.querySelector('[data-sc-tog]'); if (t2) t2.focus(); };
   }
   const _pgCardSC = pgCard;
-  pgCard = function () { const r = _pgCardSC.apply(this, arguments); try { scCard(); } catch (e) { console.error(e); } return r; };  
+  pgCard = function () { const r = _pgCardSC.apply(this, arguments); try { scCard(); } catch (e) { console.error(e); } return r; }; 
+/* -- Settings search: type what you're after ("venmo", "time zone", "dark", "iphone") and jump straight to it.
+     It reads the headings and labels actually on the Settings page, so anything added later is searchable too. */
+  const SS_SYN = {
+    venmo: 'payment', zelle: 'payment', paypal: 'payment', cashapp: 'payment', 'cash app': 'payment', bank: 'payment', paid: 'payment', w9: 'invoice', 'w-9': 'invoice', tax: 'invoice', terms: 'invoice', prefix: 'invoice',
+    busy: 'availab', hours: 'availab', days: 'availab', schedule: 'availab', notice: 'availab', block: 'availab', closed: 'availab',
+    notification: 'remind', notifications: 'remind', alert: 'remind', alerts: 'remind', digest: 'remind', push: 'remind',
+    iphone: 'apple calendar', ical: 'apple calendar', mac: 'apple calendar', outlook: 'apple calendar', subscribe: 'apple calendar',
+    dark: 'light or dark', light: 'light or dark', theme: 'light or dark', mode: 'light or dark', colors: 'look', colour: 'look', color: 'look', palette: 'look', motion: 'motion', animation: 'motion',
+    gmail: 'google', drive: 'google', calendar: 'calendar', calendars: 'calendar', sync: 'google',
+    headshot: 'photo', avatar: 'photo', picture: 'photo', logo: 'photo', name: 'profile', bio: 'profile', genre: 'profile',
+    slug: 'booking link', url: 'booking link', link: 'link', requests: 'booking link', form: 'booking',
+    password: 'account', logout: 'account', 'log out': 'account', 'sign out': 'account', delete: 'account', privacy: 'privacy', tour: 'tour', help: 'tour',
+    timezone: 'time zone', tz: 'time zone', email: 'email', signature: 'signature', template: 'template'
+  };
+  const ssNorm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  function ssIndex() {
+    const sec = document.querySelector('section[data-view="settings"]'); if (!sec) return [];
+    const out = [], seen = new Set(), navName = k => { const b = sec.querySelector(`[data-ssg-go="${k}"]`); return b ? b.textContent.trim() : k; };
+    sec.querySelectorAll(':scope > .ssg').forEach(g => {
+      const gk = g.dataset.ssg, gName = navName(gk);
+      g.querySelectorAll(':scope > .card, :scope > .ssx-host, :scope > .ssx-host > .card, :scope > .ssx-host > div').forEach(card => {
+        const h = card.querySelector('h3, h4, .head h3'), title = h ? h.textContent.replace(/\s+/g, ' ').trim().replace(/\s*(On|Off)$/, '') : '';
+        if (title && !seen.has(card)) { seen.add(card); out.push({ g: gk, gName, card: title, text: title, el: card, w: 3 }); }
+        card.querySelectorAll('label, legend, .ssx-epk-k, dt, h4').forEach(l => {
+          const t = l.textContent.replace(/\s+/g, ' ').trim(); if (!t || t.length > 90 || t === title) return;
+          out.push({ g: gk, gName, card: title, text: t, el: l, w: 2 });
+        });
+        card.querySelectorAll('button, a.btn').forEach(bt => { const t = bt.textContent.replace(/\s+/g, ' ').trim(); if (t.length < 4 || t.length > 40 || /^(save|edit|close|cancel|done|ok|on|off)$/i.test(t)) return; out.push({ g: gk, gName, card: title, text: t, el: bt, w: 1.5 }); });
+        const body = (card.querySelector('.note') || {}).textContent || '';
+        if (title && body) out.push({ g: gk, gName, card: title, text: title, extra: body.slice(0, 240), el: card, w: 1 });
+      });
+    });
+    return out;
+  }
+  function ssFind(q) {
+    q = ssNorm(q); if (q.length < 2) return [];
+    const terms = new Set([q]); Object.entries(SS_SYN).forEach(([k, v]) => { if (k.startsWith(q) || q.includes(k)) terms.add(v); });
+    const best = new Map();
+    for (const it of ssIndex()) {
+      const hay = ssNorm(it.text), more = ssNorm(it.extra || ''), cardT = ssNorm(it.card), grp = ssNorm(it.gName);
+      let s = 0;
+      for (const t of terms) {
+        const syn = t !== q ? 0.6 : 1;
+        if (hay.startsWith(t)) s = Math.max(s, (it.w + 2) * syn); else if (hay.includes(t)) s = Math.max(s, (it.w + 1) * syn);
+        else if (cardT.includes(t)) s = Math.max(s, it.w * syn); else if (more.includes(t)) s = Math.max(s, 0.8 * syn); else if (grp.includes(t)) s = Math.max(s, 0.5 * syn);
+      }
+      if (!s) continue;
+      const key = it.g + '|' + it.card + '|' + it.text; if (!best.has(key) || best.get(key).s < s) best.set(key, { ...it, s });
+    }
+    // one result per card unless a specific setting inside it matches
+    const list = [...best.values()].sort((a, b) => b.s - a.s), outL = [], perCard = new Map();
+    for (const r of list) { const k = r.g + '|' + r.card, n = perCard.get(k) || 0; if (n >= 2) continue; perCard.set(k, n + 1); outL.push(r); if (outL.length >= 8) break; }
+    return outL;
+  }
+  function ssJump(r) {
+    try { window.ssShowSettings(r.g); } catch (_) {}
+    setTimeout(() => {
+      let el = r.el; if (!el || !document.contains(el)) return;
+      const det = el.closest('details'); if (det && !det.open) det.open = true;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const card = el.closest('.card') || el; card.classList.add('ssx-ss-hit'); setTimeout(() => card.classList.remove('ssx-ss-hit'), 2200);
+      let ctl = el.tagName === 'LABEL' ? (el.control || el.querySelector('input, select, textarea, button')) : null;
+      if (!ctl) ctl = card.querySelector('input:not([type=hidden]), select, textarea, button');
+      if (ctl) setTimeout(() => { try { ctl.focus({ preventScroll: true }); } catch (_) {} }, 350);
+    }, 120);
+  }
+  function ssBox() {
+    const sec = document.querySelector('section[data-view="settings"]'); if (!sec || sec.querySelector(':scope > .ssx-ss')) return;
+    const nav = sec.querySelector(':scope > .ssg-nav'); if (!nav) return;
+    const box = document.createElement('div'); box.className = 'ssx-ss';
+    box.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input type="search" id="ssx-ss-in" placeholder="Search settings" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ssx-ss-list" aria-label="Search settings">
+      <ul id="ssx-ss-list" role="listbox" hidden></ul>`;
+    nav.before(box);
+    const inp = box.querySelector('input'), ul = box.querySelector('ul'); let res = [], cur = -1;
+    const draw = () => {
+      res = ssFind(inp.value); cur = res.length ? 0 : -1;
+      const q = ssNorm(inp.value), show = q.length >= 2; ul.hidden = !show; inp.setAttribute('aria-expanded', String(show));
+      ul.innerHTML = res.length ? res.map((r, i) => `<li role="option" id="ssx-ss-o${i}" aria-selected="${i === cur}" data-i="${i}"><b>${esc(r.text === r.card ? r.card : r.text)}</b><small>${esc(r.gName)}${r.text !== r.card && r.card ? ' → ' + esc(r.card) : ''}</small></li>`).join('')
+        : (show ? `<li class="none" role="presentation">No settings match "${esc(inp.value.trim())}". Try a different word.</li>` : '');
+      inp.setAttribute('aria-activedescendant', cur >= 0 ? 'ssx-ss-o' + cur : '');
+      ul.querySelectorAll('[data-i]').forEach(li => { li.onmousedown = e => e.preventDefault(); li.onclick = () => go(+li.dataset.i); });
+    };
+    const mark = () => { ul.querySelectorAll('[data-i]').forEach(li => li.setAttribute('aria-selected', String(+li.dataset.i === cur))); inp.setAttribute('aria-activedescendant', cur >= 0 ? 'ssx-ss-o' + cur : ''); const a = ul.querySelector(`[data-i="${cur}"]`); if (a) a.scrollIntoView({ block: 'nearest' }); };
+    const close = () => { ul.hidden = true; inp.setAttribute('aria-expanded', 'false'); };
+    const go = i => { const r = res[i]; if (!r) return; close(); ssJump(r); };
+    inp.addEventListener('input', draw);
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown' && res.length) { e.preventDefault(); cur = (cur + 1) % res.length; mark(); }
+      else if (e.key === 'ArrowUp' && res.length) { e.preventDefault(); cur = (cur - 1 + res.length) % res.length; mark(); }
+      else if (e.key === 'Enter') { e.preventDefault(); go(cur); }
+      else if (e.key === 'Escape') { if (!ul.hidden) { e.stopPropagation(); close(); } else { inp.value = ''; } }
+    });
+    inp.addEventListener('focus', () => { if (ssNorm(inp.value).length >= 2) draw(); });
+    inp.addEventListener('blur', () => setTimeout(close, 150));
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+    const a = document.activeElement; if (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) return;
+    const sec = document.querySelector('section[data-view="settings"]'), inp = document.getElementById('ssx-ss-in');
+    if (!sec || sec.hidden || !inp || document.querySelector('#sheetRoot .sheet')) return;
+    e.preventDefault(); inp.focus(); inp.select();
+  });
+  const _pgCardSS = pgCard;
+  pgCard = function () { const r = _pgCardSS.apply(this, arguments); try { ssBox(); } catch (e) { console.error(e); } return r; };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
