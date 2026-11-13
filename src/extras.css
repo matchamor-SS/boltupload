@@ -1176,3 +1176,15 @@ html body .ssx-foundlist li { display: flex; justify-content: space-between; gap
 /* Invoice template: preview box */
 html body .ssx-itprev { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 12px; }
 html body .ssx-itprev .ssx-itnote { margin-top: 6px; font-style: italic; opacity: .85; }
+/* Menu accordion: pages that open underneath their section */
+html body #tabs.tabs button.ssx-subtab.ssx-accoff, html[class] body #tabs.tabs button.ssx-subtab.ssx-accoff { display: none !important; }
+html[class] body #tabs.tabs button.ssx-subtab:not(.ssx-accoff) { display: flex !important; }
+html body #tabs.tabs button.ssx-subtab { min-height: 38px; font-size: 13px; margin-left: 18px; width: calc(100% - 18px); border-left: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 0 12px 12px 0; }
+html body #tabs.tabs button.ssx-subtab svg { width: 20px; height: 20px; }
+html body #tabs.tabs .ssx-chev { margin-left: auto; padding: 0 4px 0 6px; font-size: 18px; line-height: 1; opacity: .5; transition: transform .2s; }
+html body #tabs.tabs button.ssx-navparent[aria-expanded="true"] .ssx-chev { transform: rotate(90deg); }
+html body #tabs.tabs button.ssx-navparent.ssx-ingroup { color: var(--ink); font-weight: 600; }
+html.ssx-rail-min body #tabs.tabs .ssx-chev { display: none; }
+html.ssx-rail-min body #tabs.tabs button.ssx-subtab { margin-left: 6px; width: calc(100% - 6px); }
+@media (prefers-reduced-motion: reduce) { html body #tabs.tabs .ssx-chev { transition: none; } }
+@media (max-width: 1023px) { html body #tabs.tabs .ssx-chev { display: none; } html body #tabs.tabs button.ssx-subtab { margin-left: 0; width: 100%; border-left: 0; border-radius: 12px; font-size: 11px; background: color-mix(in srgb, var(--accent) 10%, transparent); } }
