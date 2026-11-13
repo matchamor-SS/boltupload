@@ -1307,3 +1307,21 @@ html body .ssx-pn-ph img { width: 56px; height: 32px; object-fit: cover; border-
 html body .ssx-pn-pick { display: grid; gap: 8px; }
 html body dd.ssx-pgrow .ssx-check { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
 html body .ssx-pn input, html body .ssx-pn textarea { box-sizing: border-box; font: inherit; }
+/* One + for everything */
+html body .pop.ssx-qa-pop { padding: 6px; max-height: min(70vh, 560px); overflow-y: auto; }
+html body .ssx-qa-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 8px 12px; border: 0; border-radius: 10px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+html body .ssx-qa-item svg { flex: none; color: var(--accent); }
+html body .ssx-qa-item span { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+html body .ssx-qa-item small { color: var(--muted); font-size: 12px; }
+html body .ssx-qa-item:hover, html body .ssx-qa-item:focus-visible { background: var(--soft, rgba(127,127,127,.12)); outline: none; }
+html body .ssx-qa-item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+html body .ssx-qa-sep { height: 1px; margin: 4px 8px; background: var(--line); }
+html body #ssx-qa-fab { position: fixed; right: 16px; bottom: calc(84px + env(safe-area-inset-bottom)); z-index: 60; width: 56px; height: 56px; border-radius: 50%; border: 0; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink, #141711); box-shadow: 0 12px 28px -10px rgba(0,0,0,.55); cursor: pointer; }
+html body #ssx-qa-fab[hidden] { display: none; }
+html body #ssx-qa-fab:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+html body .ssx-qa-list { display: grid; gap: 6px; }
+html body .ssx-qa-row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 54px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+html body .ssx-qa-row .d { flex: none; width: 56px; font-size: 13px; font-weight: 600; color: var(--accent); }
+html body .ssx-qa-row span:last-child { display: flex; flex-direction: column; min-width: 0; }
+html body .ssx-qa-row small { color: var(--muted); }
+html body .ssx-qa-row:hover, html body .ssx-qa-row:focus-visible { border-color: var(--accent); }
