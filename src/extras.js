@@ -6731,6 +6731,192 @@ function appExtras() {
       if (!typing && el.dataset.sig !== pdSig()) pdDraw(el);
     } catch (e) { console.error(e); }
     return r;
+  };
+/* -- My page designer window: like the EPK creator. Controls on one side, your page on the other, and every change shows
+     instantly. Nothing goes live until you tap Publish; close the window and your unpublished changes wait for you. */
+  const PW = { el: null, draft: null, dirty: false, dev: 'phone', open: new Set(['look']), ic: '', t: 0, opener: null, armed: false };
+  const PW_KEYS = ['look', 'titles', 'icons', 'order', 'secOff', 'gallery', 'embeds'];
+  const pwClone = o => JSON.parse(JSON.stringify(o || {}));
+  const pwFromDoc = () => { const d = PGE.doc || {}, o = {}; PW_KEYS.forEach(k => { if (d[k] !== undefined) o[k] = pwClone(d[k]); }); return o; };
+  const pwLook = () => ({ layout: 'center', size: 'm', shape: 'circle', font: 'italiana', name: 'm', bg: 'glow', cards: 'soft', heads: 'caps', icons: true, gallery: 'grid', align: 'center', palette: '', mode: '', ...((PW.draft || {}).look || {}) });
+  function pwOrder() {
+    const o = [...new Set(((PW.draft || {}).order || []).filter(k => PD_ORDER.includes(k)))];
+    PD_ORDER.forEach((k, i) => { if (o.includes(k)) return; const prev = PD_ORDER.slice(0, i).reverse().find(x => o.includes(x)); o.splice(prev ? o.indexOf(prev) + 1 : 0, 0, k); });
+    return o;
+  }
+  // the shared page design (public/page-render.js): the live page uses the very same file
+  const pwRenderer = () => window.SSPage ? Promise.resolve(window.SSPage) : (PW.rp = PW.rp || new Promise((y, n) => { const s = document.createElement('script'); s.src = '/page-render.js?v=1'; s.charset = 'utf-8'; s.onload = () => y(window.SSPage); s.onerror = () => { PW.rp = null; n(new Error('page design file missing')); }; document.head.appendChild(s); }));
+  const pwTime = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? m[1].padStart(2, '0') + ':' + m[2] : ''; };
+  const pwMins = t => { if (!t) return 3000; const [h, m] = t.split(':').map(Number); return h * 60 + m + (h < 6 ? 1440 : 0); };
+  // what the page shows, built the same way the server builds it, with the draft design on top
+  function pwData() {
+    const d = PGE.doc || {}, L = pwLook(), c = PGE.epk || {}, p = S.profile || {}, k = S.kit || {};
+    let theme = d.theme || {}; try { const T = epkTheme(L.palette || c.palette || 'champagne', L.mode || c.mode || 'dark'); theme = { bg: T.bg, glow: T.glow, ink: T.ink, muted: T.muted, line: T.line, panel: T.panel, solid: T.solid, metal: T.metal }; } catch (_) {}
+    const offL = new Set(d.linkOff || []), links = pgAllLinks().filter(l => !offL.has(pgLinkKey(l))).map(l => ({ label: String(l.label || l.url).slice(0, 60), url: String(l.url) })).slice(0, 24);
+    let photo = ''; try { const id = flEpkAsset() || flAvatar(); if (id) photo = flSrc(id) || pdUrl(id); } catch (_) {}
+    const hide = new Set(d.hide || []), contacts = (() => { try { return S.contacts || []; } catch (_) { return []; } })();
+    const shows = pgShows().filter(b => !hide.has(b.id)).map(b => { const v = contacts.find(x => x.id === b.venueId) || {}; return { date: b.date, time: pwTime(b.setStart) || undefined, title: b.title || '', venue: v.org || v.name || '', city: b.city || v.city || '', address: v.address || '', tickets: /^https?:\/\//i.test(b.ticketUrl || '') ? b.ticketUrl : undefined }; })
+      .sort((a, b) => a.date.localeCompare(b.date) || pwMins(a.time) - pwMins(b.time)).slice(0, 60);
+    let A = {}; try { A = flArtist(); } catch (_) {}
+    return { slug: pgSlug(), name: d.name || p.djName || p.myName || 'Your name', kind: d.kind || A.kind || '', tagline: d.tagSet ? d.tagline || '' : (d.tagline || k.genres || ''), city: d.city || '',
+      bio: d.bioSet ? d.bio || '' : (d.bio || k.bioShort || k.bioLong || ''), photo: /^https:\/\//.test(photo) ? photo : '', theme, links, booking: !!(st.link || {}).on, shows,
+      look: L, titles: PW.draft.titles || {}, icons: PW.draft.icons || {}, order: pwOrder(), off: PW.draft.secOff || [], gallery: PW.draft.gallery || [], embeds: PW.draft.embeds || [] };
+  }
+  // two frames take turns so the preview swaps without a flash, and keeps your scroll spot
+  function pwPreview() {
+    clearTimeout(PW.t); PW.t = setTimeout(async () => {
+      if (!PW.el) return; let R; try { R = await pwRenderer(); } catch (_) { PW.el.querySelector('.ssx-pw-stage').innerHTML = '<p class="note" style="padding:24px">The preview needs the latest update. Deploy, then reopen the designer.</p>'; return; }
+      const fs = [...PW.el.querySelectorAll('.ssx-pw-frame iframe')], front = fs.find(f => !f.hidden) || fs[0], back = fs.find(f => f !== front);
+      let y = 0; try { y = front.contentWindow.scrollY || 0; } catch (_) {}
+      back.onload = () => { try { back.contentWindow.scrollTo(0, y); } catch (_) {} back.hidden = false; front.hidden = true; };
+      back.srcdoc = R.page(pwData(), location.origin, { preview: true });
+    }, 60);
+  }
+  function pwSet(patch, focus) {
+    Object.assign(PW.draft, patch); PW.dirty = true; pwControls(focus); pwPreview();
+  }
+  function pwControls(focus) {
+    const box = PW.el && PW.el.querySelector('.ssx-pw-opts'); if (!box) return;
+    const D = PW.draft, L = pwLook(), titles = D.titles || {}, icons = D.icons || {}, off = new Set(D.secOff || []), o = pwOrder();
+    const gal = (D.gallery || []).filter(g => g && g.url), emb = (D.embeds || []).filter(e => e && e.url), photos = pdPhotos();
+    const chips = (k, list) => list.map(([v, n]) => `<button type="button" class="ssx-chip" data-pd-k="${k}" data-pd-v="${v}" aria-pressed="${String(L[k]) === String(v)}">${esc(n)}</button>`).join('');
+    const row = (label, k, list) => `<div class="ssx-epk-row"><span class="ssx-epk-k">${label}</span>${chips(k, list)}</div>`;
+    let themes = []; try { themes = flThemeList(); } catch (_) {}
+    const dark = (L.mode || (PGE.epk || {}).mode || 'dark') !== 'light', sw = t => { const [bg, , , solid] = dark ? t[2] : t[3]; return `linear-gradient(90deg,${bg} 0 46%,${solid} 46% 76%,${t[4][1]} 76%)`; };
+    const pal = `<div class="ssx-epk-row ssx-fl-themes"><span class="ssx-epk-k">Colors</span><button type="button" class="ssx-chip" data-pd-k="palette" data-pd-v="" aria-pressed="${!L.palette}">Match my EPK</button>${themes.map(t => `<button type="button" class="ssx-chip" data-pd-k="palette" data-pd-v="${esc(t[0])}" aria-pressed="${L.palette === t[0]}"><span class="ssx-epk-sw" style="background:${sw(t)}"></span>${esc(t[1])}</button>`).join('')}</div>`;
+    const name = k => PD_TITLE[k] || k, ic = k => icons[k] === 'none' ? '' : (PD_ICONS[icons[k]] ? icons[k] : PD_ICON0[k]);
+    const empty = { photos: !gal.length ? 'Pick photos below' : '', watch: !emb.length ? 'Pick players below' : '' };
+    const secs = o.map((k, i) => `<li data-k="${k}"${off.has(k) ? ' class="off"' : ''}>
+        <button type="button" class="ssx-pd-ic" data-pd-icbtn aria-expanded="${PW.ic === k}" aria-label="Icon for ${esc(name(k))}" title="Change icon">${L.icons ? pdSvg(ic(k)) : pdSvg('')}</button>
+        <input type="text" maxlength="40" data-pd-title value="${esc(titles[k] || '')}" placeholder="${esc(name(k))}" aria-label="Title for ${esc(name(k))}">
+        <label class="ssx-check"><input type="checkbox" data-pd-on${off.has(k) ? '' : ' checked'}> Show</label>
+        <span class="mv"><button type="button" class="btn small" data-pd-up aria-label="Move ${esc(name(k))} up"${i ? '' : ' disabled'}>↑</button><button type="button" class="btn small" data-pd-dn aria-label="Move ${esc(name(k))} down"${i < o.length - 1 ? '' : ' disabled'}>↓</button></span>
+        ${empty[k] && !off.has(k) ? `<span class="note ssx-pd-hint">${empty[k]}</span>` : ''}
+        ${PW.ic === k ? `<div class="ssx-pd-icons" role="group" aria-label="Icons">${Object.keys(PD_ICONS).map(x => `<button type="button" data-pd-icon="${x}" aria-pressed="${ic(k) === x}" aria-label="${x}" title="${x}">${pdSvg(x)}</button>`).join('')}<button type="button" data-pd-icon="none" aria-pressed="${!ic(k)}">None</button></div>` : ''}</li>`).join('');
+    const pos = new Map(gal.map((g, i) => [g.id || g.url, i + 1]));
+    const links = pgAllLinks().filter(l => PD_PLAYS.test(String(l.url))), on = new Set(emb.map(e => e.url)), extra = emb.filter(e => !links.some(l => l.url === e.url));
+    const det = (k, title, body) => `<details class="ssx-pd" data-pd="${k}"${PW.open.has(k) ? ' open' : ''}><summary>${title}</summary>${body}</details>`;
+    box.innerHTML = det('look', 'Look', `${pal}
+        ${row('Light or dark', 'mode', [['', 'Match my EPK'], ['dark', 'Dark'], ['light', 'Light']])}
+        ${row('Layout', 'layout', [['center', 'Centered'], ['side', 'Side by side'], ['cover', 'Cover photo']])}
+        ${row(L.layout === 'cover' ? 'Cover height' : 'Picture size', 'size', [['s', 'Small'], ['m', 'Medium'], ['l', 'Large'], ['xl', 'Extra large']])}
+        ${L.layout !== 'cover' ? row('Picture shape', 'shape', [['circle', 'Circle'], ['arch', 'Arch'], ['square', 'Square'], ['portrait', 'Rectangle']]) : ''}
+        ${L.layout !== 'side' ? row('Text', 'align', [['center', 'Centered'], ['left', 'Left']]) : ''}
+        ${row('Name font', 'font', PD_FONTS)}
+        ${row('Name size', 'name', [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']])}
+        ${row('Background', 'bg', [['glow', 'Glow'], ['aurora', 'Aurora'], ['grain', 'Film grain'], ['photo', 'My photo'], ['plain', 'Plain']])}
+        ${row('Boxes', 'cards', [['soft', 'Soft'], ['outline', 'Outline'], ['glass', 'Glass'], ['bold', 'Bold']])}
+        ${row('Section titles', 'heads', [['caps', 'Small caps'], ['big', 'Big']])}
+        ${row('Icons', 'icons', [[true, 'On'], [false, 'Off']])}`)
+      + det('sections', 'Sections, titles and icons', `<p class="note">Your picture and name always lead. Rename any section, tap its icon to change it, and use the arrows to reorder.</p><ol class="ssx-pd-secs">${secs}</ol>`)
+      + det('photos', `Photos <span class="note">${gal.length} of 12</span>`, `${photos.length ? `<p class="note">Tap photos to add them, in the order you want. Tap again to remove.</p><div class="ssx-pd-phs">${photos.map(p => { const n = pos.get(p.id) || pos.get(p.url); return `<button type="button" class="ssx-pd-ph" data-pd-ph="${esc(p.id)}" aria-pressed="${!!n}" aria-label="${n ? 'Remove photo ' + n : 'Add photo'}"><img src="${esc(flSrc(p.id) || p.url)}" alt="" loading="lazy">${n ? `<span class="n">${n}</span>` : ''}</button>`; }).join('')}</div>` : '<p class="note">No photos yet. Add some in Media and they show up here.</p>'}
+        ${row('Layout', 'gallery', [['grid', 'Grid'], ['mosaic', 'Mosaic'], ['strip', 'Swipe']])}`)
+      + det('watch', `Watch & listen <span class="note">${emb.length} of 6</span>`, `<p class="note">Players for your music and videos. Works with YouTube, SoundCloud, Spotify, Mixcloud and Vimeo.</p>
+        ${links.length || extra.length ? `<div class="ssx-pglist">${[...links.map(l => ({ url: l.url, label: l.label || '' })), ...extra].map(l => `<label class="ssx-check"><input type="checkbox" data-pd-emb="${esc(l.url)}" data-pd-lbl="${esc(l.label || '')}"${on.has(l.url) ? ' checked' : ''}> ${esc(l.label || pdName(l.url))}</label>`).join('')}</div>` : ''}
+        <div class="ssx-pd-add"><input type="url" inputmode="url" data-pd-new placeholder="Paste a link to a set, track, mix or video" aria-label="Link to add as a player"><button type="button" class="btn small" data-pd-addbtn>Add</button></div>`);
+    const q = s => box.querySelector(s), qa = s => box.querySelectorAll(s);
+    qa('details.ssx-pd').forEach(x => x.ontoggle = () => { x.open ? PW.open.add(x.dataset.pd) : PW.open.delete(x.dataset.pd); });
+    qa('[data-pd-k]').forEach(b => b.onclick = () => { const k = b.dataset.pdK, v = k === 'icons' ? b.dataset.pdV === 'true' : b.dataset.pdV; pwSet({ look: { ...pwLook(), [k]: v } }, `[data-pd-k="${k}"][data-pd-v="${b.dataset.pdV}"]`); });
+    qa('.ssx-pd-secs li').forEach(li => {
+      const k = li.dataset.k, f = s => `li[data-k="${k}"] ${s}`;
+      li.querySelector('[data-pd-on]').onchange = e => { const s = new Set(D.secOff || []); e.target.checked ? s.delete(k) : s.add(k); pwSet({ secOff: [...s] }, f('[data-pd-on]')); };
+      const mv = dir => { const o2 = pwOrder(), i = o2.indexOf(k), j = i + dir; if (j < 0 || j >= o2.length) return; [o2[i], o2[j]] = [o2[j], o2[i]]; pwSet({ order: o2 }, f(dir < 0 ? '[data-pd-up]' : '[data-pd-dn]')); };
+      li.querySelector('[data-pd-up]').onclick = () => mv(-1); li.querySelector('[data-pd-dn]').onclick = () => mv(1);
+      li.querySelector('[data-pd-icbtn]').onclick = () => { PW.ic = PW.ic === k ? '' : k; pwControls(PW.ic ? f('[data-pd-icon][aria-pressed="true"]') : f('[data-pd-icbtn]')); };
+      li.querySelectorAll('[data-pd-icon]').forEach(b => b.onclick = () => { PW.ic = ''; const look = pwLook(); pwSet({ icons: { ...(D.icons || {}), [k]: b.dataset.pdIcon }, ...(look.icons ? {} : { look: { ...look, icons: true } }) }, f('[data-pd-icbtn]')); });
+      // titles update the preview as you type
+      const t = li.querySelector('[data-pd-title]');
+      t.oninput = () => { PW.draft.titles = { ...(D.titles || {}), [k]: t.value.slice(0, 40) }; PW.dirty = true; pwStatus(); pwPreview(); };
+      t.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); t.blur(); } };
+    });
+    qa('[data-pd-ph]').forEach(b => b.onclick = () => {
+      const id = b.dataset.pdPh, g = (D.gallery || []).filter(x => x && x.url), has = g.some(x => x.id === id);
+      if (!has && g.length >= 12) { toast('Your page shows up to 12 photos. Remove one first.'); return; }
+      const p = pdPhotos().find(x => x.id === id); if (!p) return;
+      pwSet({ gallery: has ? g.filter(x => x.id !== id) : [...g, { id, url: p.url }] }, `[data-pd-ph="${id}"]`);
+    });
+    qa('[data-pd-emb]').forEach(c => c.onchange = () => {
+      const e0 = (D.embeds || []).filter(x => x && x.url), u = c.dataset.pdEmb;
+      if (c.checked && e0.length >= 6) { c.checked = false; toast('Your page shows up to 6 players. Untick one first.'); return; }
+      pwSet({ embeds: c.checked ? [...e0.filter(x => x.url !== u), { url: u, label: c.dataset.pdLbl || '' }] : e0.filter(x => x.url !== u) }, `[data-pd-emb="${u.replace(/"/g, '\\"')}"]`);
+    });
+    const nw = q('[data-pd-new]'), add = () => {
+      let u = nw.value.trim(); if (!u) { nw.focus(); return; } if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+      if (!PD_PLAYS.test(u)) { toast('That link can\'t play on your page. Use a YouTube, SoundCloud, Spotify, Mixcloud or Vimeo link.'); nw.focus(); return; }
+      const e0 = (D.embeds || []).filter(x => x && x.url); if (e0.some(x => x.url === u)) { nw.value = ''; return; }
+      if (e0.length >= 6) { toast('Your page shows up to 6 players. Untick one first.'); return; }
+      pwSet({ embeds: [...e0, { url: u.slice(0, 500), label: '' }] }, '[data-pd-new]');
+    };
+    q('[data-pd-addbtn]').onclick = add; nw.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
+    pwStatus();
+    if (focus) { let b = box.querySelector(focus); if (b && b.disabled) b = b.parentNode.querySelector('button:not([disabled])'); if (b) b.focus(); }
+  }
+  function pwStatus() {
+    if (!PW.el) return; const s = PW.el.querySelector('[data-pw-st]'), pub = PW.el.querySelector('[data-pw-pub]'), dis = PW.el.querySelector('[data-pw-discard]');
+    s.textContent = PW.dirty ? 'Unpublished changes' : ((PGE.doc || {}).on ? 'Matches your live page' : 'Your page is not public yet');
+    s.classList.toggle('dirty', PW.dirty); pub.disabled = !PW.dirty; dis.hidden = !PW.dirty;
+  }
+  function pwDevice(dev) {
+    PW.dev = dev; const fr = PW.el.querySelector('.ssx-pw-frame'); fr.dataset.dev = dev;
+    PW.el.querySelectorAll('[data-pw-dev]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.pwDev === dev))); pwFit();
+  }
+  // desktop view: the page is drawn 1280 wide and scaled to fit the stage
+  function pwFit() {
+    if (!PW.el) return; const fr = PW.el.querySelector('.ssx-pw-frame'), st0 = PW.el.querySelector('.ssx-pw-stage');
+    if (PW.dev !== 'desktop') { fr.style.transform = ''; fr.style.width = ''; fr.style.height = ''; return; }
+    const z = Math.min(1, (st0.clientWidth - 32) / 1280); fr.style.width = '1280px'; fr.style.height = Math.round((st0.clientHeight - 32) / z) + 'px'; fr.style.transform = `scale(${z})`;
+  }
+  async function pwPublish() {
+    const b = PW.el.querySelector('[data-pw-pub]'); b.disabled = true; const t0 = b.textContent; b.textContent = 'Publishing…';
+    const patch = {}; PW_KEYS.forEach(k => { if (PW.draft[k] !== undefined) patch[k] = pwClone(PW.draft[k]); });
+    if (patch.titles) Object.keys(patch.titles).forEach(k => { patch.titles[k] = String(patch.titles[k] || '').trim(); });
+    const ok = await pgSave(patch); b.textContent = t0;
+    if (!ok) { b.disabled = false; return; }
+    PW.dirty = false; pwStatus(); try { await pgSync(true); } catch (_) {}
+    toast((PGE.doc || {}).on ? 'Published. Your live page updates within a minute.' : 'Saved. Tick "My page is public" on My page to put it live.');
+    try { const c = document.getElementById('ssx-pgdesign'); if (c) pdDraw(c); } catch (_) {}
+  }
+  function pwClose() {
+    if (!PW.el) return; PW.el.remove(); PW.el = null; document.documentElement.classList.remove('ssx-pw-open'); removeEventListener('resize', pwFit);
+    try { const c = document.getElementById('ssx-pgdesign'); if (c) pdDraw(c); } catch (_) {}
+    if (PW.opener && document.contains(PW.opener)) PW.opener.focus();
+  }
+  async function pwOpen() {
+    if (PW.el) return; await pgLoad(); if (!PW.dirty || !PW.draft) { PW.draft = pwFromDoc(); PW.dirty = false; }
+    PW.opener = document.activeElement;
+    const el = document.createElement('div'); el.id = 'ssx-pw'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', 'Design my page');
+    el.innerHTML = `<div class="ssx-pw-bar">
+        <div class="ssx-pw-head"><div><h2>Design my page</h2><p class="note"><span data-pw-st aria-live="polite"></span></p></div>
+          <div class="ssx-row"><button type="button" class="btn small" data-pw-discard hidden>Discard changes</button><button type="button" class="btn primary" data-pw-pub disabled>Publish</button><button type="button" class="btn small" data-pw-close>Close</button></div></div>
+        <div class="ssx-pw-opts"></div>
+      </div>
+      <div class="ssx-pw-main">
+        <div class="ssx-pw-view" role="group" aria-label="Preview size"><button type="button" class="ssx-chip" data-pw-dev="phone" aria-pressed="true">Phone</button><button type="button" class="ssx-chip" data-pw-dev="desktop" aria-pressed="false">Computer</button></div>
+        <div class="ssx-pw-stage"><div class="ssx-pw-frame" data-dev="phone"><iframe title="Preview of your page" sandbox="allow-same-origin"></iframe><iframe title="Preview of your page" sandbox="allow-same-origin" hidden></iframe></div></div>
+      </div>`;
+    document.body.appendChild(el); PW.el = el; document.documentElement.classList.add('ssx-pw-open');
+    el.querySelector('[data-pw-close]').onclick = pwClose;
+    el.querySelector('[data-pw-pub]').onclick = pwPublish;
+    const dis = el.querySelector('[data-pw-discard]');
+    dis.onclick = () => { if (!PW.armed) { PW.armed = true; dis.textContent = 'Tap again to discard'; setTimeout(() => { PW.armed = false; if (PW.el) dis.textContent = 'Discard changes'; }, 4000); return; }
+      PW.armed = false; dis.textContent = 'Discard changes'; PW.draft = pwFromDoc(); PW.dirty = false; pwControls(); pwPreview(); };
+    el.querySelectorAll('[data-pw-dev]').forEach(b => b.onclick = () => pwDevice(b.dataset.pwDev));
+    el.addEventListener('keydown', e => { if (e.key === 'Escape' && !PW.ic) pwClose(); else if (e.key === 'Escape') { PW.ic = ''; pwControls(); } });
+    addEventListener('resize', pwFit);
+    pwControls(); pwDevice(PW.dev); pwPreview();
+    const first = el.querySelector('.ssx-pw-opts .ssx-chip'); if (first) first.focus();
+  }
+  window.ssOpenPageDesigner = pwOpen;
+  // the Design card on My page: one button into the designer
+  pdDraw = function (el) {
+    const d = PGE.doc || {}, L = { ...(d.look || {}) }, font = (PD_FONTS.find(f => f[0] === (L.font || 'italiana')) || [0, 'Elegant'])[1];
+    const n = ((d.gallery || []).length), m = ((d.embeds || []).length);
+    el.innerHTML = `<div class="ssx-head"><div><h3>Design ${PW.dirty ? '<span class="ssx-pw-pill">Unpublished changes</span>' : ''}</h3>
+        <p class="note">Colors, layout, your picture, fonts, section titles and icons, photos and players. See every change before it goes live.</p>
+        <p class="note">${esc(font)} name · ${n} photo${n === 1 ? '' : 's'} · ${m} player${m === 1 ? '' : 's'}</p></div>
+      <div class="ssx-row"><button type="button" class="btn primary" data-pw-openbtn>${PW.dirty ? 'Continue designing' : 'Open designer'}</button></div></div>`;
+    el.dataset.sig = pdSig();
+    el.querySelector('[data-pw-openbtn]').onclick = pwOpen;
   };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
