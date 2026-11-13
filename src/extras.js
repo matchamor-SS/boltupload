@@ -6929,6 +6929,106 @@ function appExtras() {
     try { return await _perfLN.apply(this, arguments); }
     catch (e) { if (op === 'claim' && e && /slug_taken|23505|duplicate/i.test(String(e.code || ''))) e.code = 'slug_taken'; throw e; }
   };  
+/* -- Media for My page, from both sides. In the designer: upload photos right in the Photos section (or drop them on it),
+     and pick videos and mixes saved in Media as players. In Media: "Add photos", and an "On my page" switch on every photo
+     and every video or mix. Uploads land in Media either way, so both places always show the same photos. */
+  PW.open.add('photos');
+  const pmMediaPlays = () => { try { return flLinks().filter(l => PD_PLAYS.test(String(l.url))).map(l => ({ url: String(l.url), label: l.title || pdName(l.url) })); } catch (_) { return []; } };
+  // Media's switches change the live page right away (and the designer's unpublished copy, so the two never disagree)
+  async function pmLive(key, fn, msg) {
+    await pgLoad(); const cur = ((PGE.doc || {})[key] || []).filter(x => x && x.url), next = fn(cur); if (!next) return false;
+    const ok = await pgSave({ [key]: next }); if (!ok) return false;
+    if (PW.draft) PW.draft[key] = fn(((PW.draft[key]) || []).filter(x => x && x.url)) || PW.draft[key];
+    try { await pgSync(true); } catch (_) {}
+    toast((PGE.doc || {}).on ? msg : msg + '. Tick "My page is public" on My page to show it.'); try { flMediaHub(); } catch (_) {} return true;
+  }
+  const pmInGal = assetId => ((PGE.doc || {}).gallery || []).some(g => g && g.id === assetId);
+  const pmInEmb = url => ((PGE.doc || {}).embeds || []).some(e => e && e.url === url);
+  // each switch sets a definite on or off, on the live page and in the designer's unpublished copy alike
+  function pmToggleGal(assetId) {
+    const u = pdUrl(assetId); if (!u) { toast("That photo can't go on your page"); return; }
+    const want = !pmInGal(assetId);
+    return pmLive('gallery', g => { const has = g.some(x => x.id === assetId); if (!want) return g.filter(x => x.id !== assetId); if (has) return g; if (g.length >= 12) { toast('Your page shows up to 12 photos. Turn one off first.'); return null; } return [...g, { id: assetId, url: u }]; },
+      want ? 'Added to your page' : 'Removed from your page');
+  }
+  function pmToggleEmb(url, label) {
+    const want = !pmInEmb(url);
+    return pmLive('embeds', e => { const has = e.some(x => x.url === url); if (!want) return e.filter(x => x.url !== url); if (has) return e; if (e.length >= 6) { toast('Your page shows up to 6 players. Turn one off first.'); return null; } return [...e, { url, label: label || '' }]; },
+      want ? 'Player added to your page' : 'Player removed from your page');
+  }
+  // upload into Media, then (in the designer) add the new photos to the page's photos
+  function pmUpload(toDraft, files) {
+    const after = ids => {
+      if (!toDraft || !PW.draft) return;
+      const g = (PW.draft.gallery || []).filter(x => x && x.url), room = 12 - g.length, add = ids.filter(id => !g.some(x => x.id === id)).slice(0, Math.max(0, room)).map(id => ({ id, url: pdUrl(id) })).filter(x => x.url);
+      if (add.length) pwSet({ gallery: [...g, ...add] });
+      if (ids.length > add.length) toast('Your page shows up to 12 photos. The rest are saved in Media.');
+      setTimeout(() => { if (PW.el) pwControls(); }, 1500);
+    };
+    files ? flAddFiles(files, '', after) : flAddPhotos('', after);
+  }
+  // designer: upload button and drop zone in Photos; Media's videos and mixes in Watch & listen
+  const _pwControlsM = pwControls;
+  pwControls = function (focus) {
+    const r = _pwControlsM.apply(this, arguments);
+    try {
+      const box = PW.el && PW.el.querySelector('.ssx-pw-opts'); if (!box) return r;
+      const ph = box.querySelector('details[data-pd="photos"]');
+      if (ph) {
+        const up = document.createElement('div'); up.className = 'ssx-pm-drop';
+        up.innerHTML = '<button type="button" class="btn small primary" data-pm-up>Upload photos</button><span class="note">or drop them here. They\'re saved in Media too.</span>';
+        const sum = ph.querySelector('summary'); sum.after(up);
+        up.querySelector('[data-pm-up]').onclick = () => pmUpload(true);
+        const empty = [...ph.querySelectorAll('p.note')].find(p => /No photos yet/.test(p.textContent)); if (empty) empty.remove();
+        ['dragenter', 'dragover'].forEach(t => ph.addEventListener(t, e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); ph.classList.add('ssx-pm-over'); } }));
+        ['dragleave', 'drop'].forEach(t => ph.addEventListener(t, () => ph.classList.remove('ssx-pm-over')));
+        ph.addEventListener('drop', e => { const f = [...((e.dataTransfer || {}).files || [])]; if (!f.length) return; e.preventDefault(); pmUpload(true, f); });
+      }
+      const wt = box.querySelector('details[data-pd="watch"]');
+      if (wt) {
+        const D = PW.draft, have = new Set([...wt.querySelectorAll('[data-pd-emb]')].map(c => c.dataset.pdEmb)), on = new Set((D.embeds || []).map(e => e.url));
+        const extra = pmMediaPlays().filter(l => !have.has(l.url)); if (extra.length) {
+          let list = wt.querySelector('.ssx-pglist'); if (!list) { list = document.createElement('div'); list.className = 'ssx-pglist'; wt.querySelector('.ssx-pd-add').before(list); }
+          extra.forEach(l => { const lb = document.createElement('label'); lb.className = 'ssx-check'; lb.innerHTML = `<input type="checkbox" data-pm-emb="${esc(l.url)}"${on.has(l.url) ? ' checked' : ''}> ${esc(l.label)} <span class="note">from Media</span>`; list.appendChild(lb);
+            lb.querySelector('input').onchange = ev => { const e0 = (D.embeds || []).filter(x => x && x.url);
+              if (ev.target.checked && e0.length >= 6) { ev.target.checked = false; toast('Your page shows up to 6 players. Untick one first.'); return; }
+              pwSet({ embeds: ev.target.checked ? [...e0.filter(x => x.url !== l.url), { url: l.url, label: l.label }] : e0.filter(x => x.url !== l.url) }, `[data-pm-emb="${l.url.replace(/"/g, '\\"')}"]`); }; });
+        }
+        const n = wt.querySelector('summary .note'); if (n) n.textContent = `${(D.embeds || []).length} of 6`;
+      }
+      if (focus && !box.contains(document.activeElement)) { const b = box.querySelector(focus); if (b) b.focus(); }
+    } catch (e) { console.error(e); }
+    return r;
+  };
+  // My page's Design card: a quick way in for photos
+  const _pdDrawM = pdDraw;
+  pdDraw = function (el) {
+    const r = _pdDrawM.apply(this, arguments);
+    try { const row = el.querySelector('.ssx-row'); if (row && !row.querySelector('[data-pm-addph]')) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.dataset.pmAddph = '1'; b.textContent = 'Add photos'; b.onclick = async () => { await pwOpen(); PW.open.add('photos'); pwControls(); const d = PW.el && PW.el.querySelector('details[data-pd="photos"]'); if (d) { d.scrollIntoView({ block: 'start' }); const u = d.querySelector('[data-pm-up]'); if (u) u.focus(); } }; row.prepend(b); } } catch (_) {}
+    return r;
+  };
+  // Media: "Add photos", and an "On my page" switch on photos, videos and mixes
+  const _flMediaHubM = flMediaHub;
+  flMediaHub = function () {
+    const r = _flMediaHubM.apply(this, arguments);
+    try {
+      const hub = document.getElementById('ssx-fl-hub'); if (!hub || !PGE.loaded) { if (!PGE.loaded) pgLoad(); return r; }
+      const row = hub.querySelector(':scope > .ssx-row'); if (row && !row.querySelector('[data-pm-mup]')) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn small'; b.dataset.pmMup = '1'; b.textContent = '+ Add photos'; b.onclick = () => pmUpload(false); row.appendChild(b); }
+      if (!pgSlug()) return r;
+      hub.querySelectorAll('.ssx-fl-thw').forEach(w => {
+        const id = (w.querySelector('[data-fl-ph]') || {}).dataset; const m = id && FL.media.find(x => x.id === id.flPh); if (!m || !m.assetId) return;
+        let b = w.querySelector('[data-pm-gal]'); if (!b) { b = document.createElement('button'); b.type = 'button'; b.className = 'ssx-pm-on'; b.dataset.pmGal = m.assetId; b.onclick = () => pmToggleGal(m.assetId); w.appendChild(b); }
+        const on = pmInGal(m.assetId); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? '✓ On my page' : '+ My page'; b.setAttribute('aria-label', on ? 'Remove from my page' : 'Add to my page');
+      });
+      hub.querySelectorAll('.ssx-fl-lrow').forEach(lr => {
+        const a = lr.querySelector('a[href]'), url = a && a.getAttribute('href'); if (!url || !PD_PLAYS.test(url)) return;
+        const act = lr.querySelector('.ssx-fl-lact'); let b = lr.querySelector('[data-pm-emb]');
+        if (!b && act) { b = document.createElement('button'); b.type = 'button'; b.className = 'btn small'; b.dataset.pmEmb = url; const lbl = (lr.querySelector('.ssx-fl-lt b') || {}).textContent || ''; b.onclick = () => pmToggleEmb(url, lbl); act.prepend(b); }
+        if (b) { const on = pmInEmb(url); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? '✓ On my page' : 'Play on my page'; }
+      });
+    } catch (e) { console.error(e); }
+    return r;
+  };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
