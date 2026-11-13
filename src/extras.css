@@ -1346,3 +1346,20 @@ html body .ssx-tl .what small { color: var(--muted); font-size: 12px; }
 html body .ssx-tl li.future .what, html body .ssx-tl li.future .when { color: var(--accent); font-weight: 600; }
 html body .ssx-tl li.future .dot { background: transparent; border: 2px solid var(--accent); }
 html body .ssx-tl [data-tl-more] { margin-top: 6px; min-height: 40px; }
+/* Get set up checklist */
+html body #ssx-setup .ssx-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+html body .ssx-su-bar { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; margin: 10px 0 8px; }
+html body .ssx-su-bar span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width .4s; }
+html body .ssx-su { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+html body .ssx-su button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 8px 6px; border: 0; border-radius: 12px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; font: inherit; }
+html body .ssx-su button:hover, html body .ssx-su button:focus-visible { background: var(--soft, rgba(127,127,127,.1)); }
+html body .ssx-su .ck { flex: none; width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; }
+html body .ssx-su li.done .ck { background: var(--accent); border-color: var(--accent); color: var(--accent-ink, #141711); }
+html body .ssx-su li.next .ck { border-color: var(--accent); }
+html body .ssx-su .tx { flex: 1; display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+html body .ssx-su .tx small { color: var(--muted); font-size: 12px; }
+html body .ssx-su li.done .tx b { color: var(--muted); font-weight: 500; text-decoration: line-through; text-decoration-color: var(--line); }
+html body .ssx-su li.next .tx b { color: var(--accent); }
+html body .ssx-su .go { color: var(--muted); font-size: 20px; }
+html body .ssx-su-foot { margin: 8px 0 0; }
+html body #ssx-setup [data-su-hide] { white-space: nowrap; flex: none; min-height: 32px; }

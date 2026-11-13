@@ -7331,6 +7331,66 @@ function appExtras() {
     try { const cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key; if (cur && /^r:/.test(cur) && root.querySelector('[data-editc]')) { const c = contact(cur.slice(2)); if (c) tlDraw(root, cur, tlForContact(c), 'Activity'); } } catch (e) { console.error(e); }
     return r;
   };  
+/* -- Get set up: a short checklist at the top of Home for new users. Each step checks itself off when it's really done,
+     one tap goes straight to the right place, and the card goes away for good once everything's done (people who
+     already finished never see it). "Hide for now" tucks it away; the tour is one tap away for the full walkthrough. */
+  const SU = { doc: null, loaded: false };
+  const suApple = () => /iPhone|iPad|Macintosh|Mac OS X/.test(navigator.userAgent);
+  const suGo = (grp, id) => () => { try { window.ssShowSettings(grp, id); } catch (_) { window.goTab('settings'); } };
+  function suSteps() {
+    const p = S.profile || {}, link = st.link || {};
+    let photo = ''; try { photo = flAvatar() || flEpkAsset(); } catch (_) {}
+    const steps = [
+      ['profile', 'Add your name and photo', 'Used on your EPK, invoices and page', !!((p.djName || p.myName) && photo), suGo('profile')],
+      ['google', 'Connect Google', 'Your calendar and email work together', (typeof G !== 'undefined') && (G.state === 'ok' || !!G.mcp), suGo('google')],
+      ['avail', 'Set when you\'re available', 'Your booking link only offers these times', !!(S.avail && Object.keys(S.avail).length), suGo('bookings', 'ssx-host-link')],
+      ['link', 'Turn on your booking link', 'Venues pick a time and send a request', !!(link.on && link.slug), suGo('bookings', 'ssx-host-link')],
+      ['show', 'Add your first show', 'Past or upcoming, either counts', (S.bookings || []).length > 0, () => window.bookingForm()],
+      ['epk', 'Make your EPK', 'Your press kit, ready to send', !!(PGE.epk && Object.keys(PGE.epk).length), () => window.goTab('epk')],
+      ['page', 'Publish My page', 'Your shows and music at one link', !!((PGE.doc || {}).on), () => window.goTab('mypage')]
+    ];
+    if (suApple()) steps.push(['apple', 'Add Apple Calendar', 'Optional: your shows on this device', !!(CF.doc && CF.doc.on), suGo('google', 'ssx-calfeed'), true]);
+    return steps;
+  }
+  async function suLoad() { if (SU.loaded || !st.db) return; SU.loaded = true; try { const s = await st.db.doc('settings/setup').get(); SU.doc = s.exists ? s.data() : {}; } catch (_) { SU.doc = null; SU.loaded = false; } suCard(); }
+  const suSave = patch => { SU.doc = { ...(SU.doc || {}), ...patch }; try { st.db.doc('settings/setup').set(SU.doc).catch(() => {}); } catch (_) {} };
+  function suCard() {
+    const home = document.querySelector('section[data-view="home"]'); if (!home || !st.db) return;
+    if (!SU.loaded) { suLoad(); return; } if (!SU.doc) return;
+    if (!PGE.loaded) { pgLoad(); } if (!CF.loaded) cfLoad();
+    let el = document.getElementById('ssx-setup');
+    // decide only once everything it checks has loaded, so people who are done never see a flash of it
+    const ready = PGE.loaded && PGE.epk && (!suApple() || CF.doc) && !(typeof G !== 'undefined' && G.state === 'loading');
+    if (!ready && !el) return;
+    const steps = suSteps(), need = steps.filter(s => !s[5]), done = need.filter(s => s[3]).length, all = done === need.length;
+    if (all && !SU.doc.doneAt) suSave({ doneAt: new Date().toISOString() });
+    // finished (now or before), or tucked away: no card
+    if (SU.doc.doneAt || SU.doc.hidden) { if (el) el.remove(); return; }
+    if (!el) { el = document.createElement('div'); el.id = 'ssx-setup'; el.className = 'card ssx'; const head = home.querySelector(':scope > .head'); head ? head.after(el) : home.prepend(el); }
+    const sig = JSON.stringify(steps.map(s => [s[0], s[3]])); if (el.dataset.sig === sig) return; el.dataset.sig = sig;
+    const next = steps.find(s => !s[3] && !s[5]);
+    el.innerHTML = `<div class="ssx-head"><div><h3>Get set up</h3><p class="note">${done} of ${need.length} done${next ? `. Next: ${esc(next[1].charAt(0).toLowerCase() + next[1].slice(1))}.` : ''}</p></div>
+        <button type="button" class="linkbtn" data-su-hide>Hide for now</button></div>
+      <div class="ssx-su-bar" role="progressbar" aria-label="Setup progress" aria-valuemin="0" aria-valuemax="${need.length}" aria-valuenow="${done}"><span style="width:${Math.round(done / need.length * 100)}%"></span></div>
+      <ol class="ssx-su">${steps.map(s => `<li class="${s[3] ? 'done' : ''}${next && next[0] === s[0] ? ' next' : ''}"><button type="button" data-su="${s[0]}"${s[3] ? ' aria-label="' + esc(s[1]) + ', done. Open"' : ''}>
+        <span class="ck" aria-hidden="true">${s[3] ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4.5 4.5L19 7"/></svg>' : ''}</span>
+        <span class="tx"><b>${esc(s[1])}</b><small>${esc(s[2])}</small></span><span class="go" aria-hidden="true">›</span></button></li>`).join('')}</ol>
+      <p class="note ssx-su-foot">Want the full walkthrough? <button type="button" class="linkbtn" data-su-tour>Take the tour</button></p>`;
+    el.querySelectorAll('[data-su]').forEach(b => b.onclick = () => { const s = suSteps().find(x => x[0] === b.dataset.su); if (s) s[4](); });
+    el.querySelector('[data-su-hide]').onclick = () => { suSave({ hidden: true }); el.remove(); toast('Setup hidden. Find it again in Settings → Account.'); };
+    el.querySelector('[data-su-tour]').onclick = () => { try { window.ssStartTour(); } catch (_) {} };
+  }
+  // Settings → Account: bring the checklist back
+  function suRestore() {
+    const acct = document.querySelector('section[data-view="settings"] > .ssg[data-ssg="account"]'); if (!acct || !SU.doc) return;
+    let r = document.getElementById('ssx-setup-back');
+    const show = !!(SU.doc.hidden && !SU.doc.doneAt);
+    if (!show) { if (r) r.remove(); return; }
+    if (!r) { r = document.createElement('div'); r.id = 'ssx-setup-back'; r.className = 'card ssx'; r.innerHTML = '<div class="ssx-head"><div><h3>Get set up</h3><p class="note">Your setup checklist is hidden.</p></div><button type="button" class="btn small" data-su-show>Show it on Home</button></div>'; acct.prepend(r);
+      r.querySelector('[data-su-show]').onclick = () => { suSave({ hidden: false }); r.remove(); window.goTab('home'); setTimeout(suCard, 50); }; }
+  }
+  const _pgCardSU = pgCard;
+  pgCard = function () { const r = _pgCardSU.apply(this, arguments); try { suCard(); suRestore(); } catch (e) { console.error(e); } return r; };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
