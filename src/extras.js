@@ -7150,6 +7150,93 @@ function appExtras() {
   }
   const _flContactPhoneN = flContactPhone;
   flContactPhone = function (root) { const r = _flContactPhoneN.apply(this, arguments); try { pgShowRow(root); } catch (e) { console.error(e); } return r; };  
+/* -- One ＋ for everything. The header button (and a floating ＋ on narrow phones) opens a short menu: show, contact,
+     task, invoice, expense, income, email, photos, link, blocked dates. What fits the screen you're on comes first.
+     Each choice opens the same form you already know. Shortcut: press N anywhere you're not typing. */
+  const QA_ICON = {
+    show: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+    contact: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    task: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
+    invoice: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+    expense: '<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>',
+    income: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+    email: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+    photos: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 8"/>',
+    link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+    block: '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>'
+  };
+  const qaCall = (name, ...a) => { const f = window[name]; if (typeof f === 'function') return f(...a); toast('That form isn\'t available right now'); };
+  // [key, label, hint, open, screens where it comes first]
+  const QA_ITEMS = [
+    ['show', 'Show or booking', 'A gig, a hold or a lead', () => qaCall('bookingForm'), ['home', 'bookings', 'calendar']],
+    ['contact', 'Contact', 'Venue, promoter, client, anyone', () => qaCall('contactForm'), ['contacts']],
+    ['task', 'Task', 'A to-do for a show', () => qaCall('newTaskSheet'), ['tasks']],
+    ['invoice', 'Invoice', 'Bill a show', () => qaInvoice(), ['money']],
+    ['expense', 'Expense', 'Gear, travel, subscriptions', () => qaCall('expenseForm'), ['money']],
+    ['income', 'Income', 'Tips, merch, streaming', () => qaCall('incomeForm'), ['money']],
+    ['email', 'Email', 'Write to a contact', () => qaCall('composeSheet'), ['comms']],
+    ['photos', 'Photos', 'Upload to Media', () => flAddPhotos('', ids => toast(ids && ids.length > 1 ? `${ids.length} photos added to Media` : 'Photo added to Media')), ['kit', 'media', 'mypage', 'epk']],
+    ['link', 'Link', 'Music, videos, press, socials', () => qaCall('linkForm'), ['kit', 'media', 'mypage']],
+    ['block', 'Block dates', 'Trips, nights off', () => qaCall('blockForm'), ['calendar']]
+  ];
+  const qaVis = el => !!(el && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
+  const qaView = () => { const s = [...document.querySelectorAll('section[data-view]')].find(x => !x.hidden && qaVis(x)); return s ? s.dataset.view : 'home'; };
+  const qaSvg = k => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${QA_ICON[k]}</svg>`;
+  // invoice: pick the show first (unpaid confirmed or played shows, nearest first)
+  function qaInvoice() {
+    const all = (S.bookings || []).filter(b => ['confirmed', 'played'].includes(flKind(b.status)) && b.status !== 'paid' && b.date);
+    if (!all.length) { toast('Add a confirmed show first, then invoice it'); return; }
+    const t = todayStr(), rank = b => Math.abs(new Date(b.date) - new Date(t));
+    const list = all.sort((a, b) => rank(a) - rank(b)).slice(0, 12);
+    const venue = b => { const v = (S.contacts || []).find(c => c.id === b.venueId); return v ? (v.org || v.name || '') : ''; };
+    const nice = ds => { try { return new Date(ds + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch (_) { return ds; } };
+    sheet(`<h3>Invoice which show?</h3><p class="note" style="margin:0 0 10px">Shows you've confirmed or played and haven't marked paid.</p>
+      <div class="ssx-qa-list">${list.map(b => `<button type="button" class="ssx-qa-row" data-qa-inv="${esc(b.id)}"><span class="d">${esc(nice(b.date))}</span><span><b>${esc(b.title || venue(b) || 'Show')}</b>${venue(b) && b.title ? `<small>${esc(venue(b))}</small>` : ''}</span></button>`).join('')}</div>`,
+      root => { root.querySelectorAll('[data-qa-inv]').forEach(x => x.onclick = () => qaCall('invoiceSheet', x.dataset.qaInv)); const f = root.querySelector('[data-qa-inv]'); if (f) f.focus(); });
+  }
+  function qaMenu(anchor) {
+    if (typeof openPop !== 'function') { qaCall('bookingForm'); return; }
+    if (PK.open && PK.open.anchor === anchor) { closePop(); return; }
+    const v = qaView(), first = QA_ITEMS.filter(i => i[4].includes(v)), rest = QA_ITEMS.filter(i => !i[4].includes(v));
+    const items = first.length ? [...first, ...rest] : QA_ITEMS;
+    openPop(anchor, pop => {
+      pop.classList.add('ssx-qa-pop');
+      pop.innerHTML = `<div role="menu" aria-label="Add">${items.map((i, n) => `${first.length && n === first.length ? '<div class="ssx-qa-sep" role="separator"></div>' : ''}<button type="button" role="menuitem" class="ssx-qa-item" data-qa="${i[0]}">${qaSvg(i[0])}<span><b>${i[1]}</b><small>${i[2]}</small></span></button>`).join('')}</div>`;
+      const btns = [...pop.querySelectorAll('[data-qa]')];
+      btns.forEach(b => b.onclick = () => { const it = QA_ITEMS.find(i => i[0] === b.dataset.qa); PK.refocus = false; closePop(); setTimeout(() => it[3](), 0); });
+      pop.addEventListener('keydown', e => {
+        const i = btns.indexOf(document.activeElement);
+        if (e.key === 'ArrowDown') { e.preventDefault(); btns[(i + 1) % btns.length].focus(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); btns[(i - 1 + btns.length) % btns.length].focus(); }
+        else if (e.key === 'Home') { e.preventDefault(); btns[0].focus(); } else if (e.key === 'End') { e.preventDefault(); btns[btns.length - 1].focus(); }
+      });
+      requestAnimationFrame(() => btns[0] && btns[0].focus());
+    }, 260);
+  }
+  window.ssQuickAdd = qaMenu;
+  function qaWire() {
+    const qa = document.getElementById('quickAdd');
+    if (qa && !qa.dataset.qaWired) {
+      qa.dataset.qaWired = '1'; qa.textContent = '+ Add'; qa.setAttribute('aria-haspopup', 'menu'); qa.title = 'Add anything (N)';
+      qa.onclick = e => { e.preventDefault(); qaMenu(qa); };
+    }
+    // narrow phones hide the header button, so a floating ＋ sits above the tabs instead
+    let fab = document.getElementById('ssx-qa-fab');
+    const app = document.querySelector('#tabs'), signedIn = qaVis(app), open = !!document.querySelector('#sheetRoot .sheet') || document.documentElement.classList.contains('ssx-pw-open');
+    const need = signedIn && !open && !qaVis(qa);
+    if (need && !fab) { fab = document.createElement('button'); fab.type = 'button'; fab.id = 'ssx-qa-fab'; fab.setAttribute('aria-label', 'Add'); fab.setAttribute('aria-haspopup', 'menu'); fab.innerHTML = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>'; fab.onclick = () => qaMenu(fab); document.body.appendChild(fab); }
+    if (fab) fab.hidden = !need;
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'n' && e.key !== 'N') return; if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const a = document.activeElement, typing = a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+    if (typing || document.querySelector('#sheetRoot .sheet') || document.querySelector('.pop') || document.documentElement.classList.contains('ssx-pw-open')) return;
+    if (!qaVis(document.querySelector('#tabs'))) return;
+    e.preventDefault(); const qa = document.getElementById('quickAdd'), fab = document.getElementById('ssx-qa-fab');
+    qaMenu(qaVis(qa) ? qa : (fab && !fab.hidden ? fab : qa));
+  });
+  const _pgCardQA = pgCard;
+  pgCard = function () { const r = _pgCardQA.apply(this, arguments); try { qaWire(); } catch (e) { console.error(e); } return r; };
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
