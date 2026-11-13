@@ -1195,3 +1195,5 @@ html body .ssx-pill-on { display: inline-block; margin-left: 8px; padding: 2px 1
 /* Kit menu: EPK and My page live in the menu, not on the Kit page */
 html body section[data-view="kit"] #ssx-epk-btn { display: none !important; }
 html body #ssx-pgform { display: flex; flex-direction: column; gap: 14px; } html body #ssx-pgform h3 { margin: 0; }
+/* Ticket link row on a show */
+html body .ssx-tix { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; } html body .ssx-tix input { flex: 1; min-width: 200px; }

@@ -6495,6 +6495,43 @@ function appExtras() {
     };
   }
   pgSheet = () => window.goTab('mypage');
+/* -- Ticket links, easy to find: the ticket / event link sits with the main details on the booking form, every show's page
+     has a Tickets row with "+ Add ticket or event link" right there, and My page offers "+ ticket link" next to any show without one. */
+  const _flBfListT = flBfList;
+  flBfList = function () {
+    const l = _flBfListT.apply(this, arguments);
+    try { if (flArtist().group !== 'service') { const i = l.findIndex(x => x.key === 'ticket'); if (i >= 0 && l[i].place === 'more') { const [t] = l.splice(i, 1); t.place = 'main'; const c = l.findIndex(x => x.key === 'city'); l.splice(c >= 0 ? c + 1 : l.length, 0, t); } } } catch (_) {}
+    return l;
+  };
+  const tixFix = v => { v = String(v || '').trim(); if (v && !/^https?:\/\//i.test(v) && /\.[a-z]{2,}/i.test(v)) v = 'https://' + v; return v; };
+  function flTixRow(root) {
+    const id = root.dataset && root.dataset.booking, b = id && flBk().find(x => x.id === id), dl = root.querySelector('dl.kv'); if (!b || !dl || dl.querySelector('.ssx-tix')) return;
+    try { if (flArtist().group === 'service') return; } catch (_) {}
+    let dt = [...dl.querySelectorAll('dt')].find(d => /^tickets$/i.test(d.textContent.trim())), dd = dt && dt.nextElementSibling;
+    if (!dt) { dt = document.createElement('dt'); dt.textContent = 'Tickets'; dd = document.createElement('dd'); const nd = [...dl.querySelectorAll('dt')].find(d => /^notes$/i.test(d.textContent.trim())); if (nd) { nd.before(dt); nd.before(dd); } else dl.append(dt, dd); }
+    dd.innerHTML = ''; const box = document.createElement('div'); box.className = 'ssx-tix'; dd.appendChild(box);
+    const draw = () => {
+      const u = (flBk().find(x => x.id === id) || b).ticketUrl || '';
+      box.innerHTML = u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u.replace(/^https?:\/\/(www\.)?/i, '').slice(0, 48))}</a> <button type="button" class="linkbtn" data-tx-ed>Edit</button>` : '<button type="button" class="linkbtn" data-tx-ed>+ Add ticket or event link</button>';
+      box.querySelector('[data-tx-ed]').onclick = () => {
+        box.innerHTML = `<input type="url" inputmode="url" autocomplete="off" value="${esc(u)}" aria-label="Ticket or event link" placeholder="https://… (Eventbrite, Dice, Posh, RA, the venue's page)"><button type="button" class="btn small primary" data-tx-save>Save</button><button type="button" class="btn small" data-tx-x>Cancel</button>`;
+        const inp = box.querySelector('input'); inp.focus();
+        const saveIt = async () => { const v = tixFix(inp.value); if (v && !/^https?:\/\/[^\s.]+\.[^\s]+$/i.test(v)) { toast('That link doesn\'t look right. Paste the full address.'); inp.focus(); return; }
+          if (await window.patch('bookings', id, { ticketUrl: v })) { try { const x = flBk().find(y => y.id === id); if (x) x.ticketUrl = v; } catch (_) {} toast(v ? ((PGE.doc || {}).on ? 'Ticket link saved. It shows on your page.' : 'Ticket link saved') : 'Ticket link removed'); } draw(); };
+        box.querySelector('[data-tx-save]').onclick = saveIt; box.querySelector('[data-tx-x]').onclick = draw;
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveIt(); } if (e.key === 'Escape') { e.stopPropagation(); draw(); } });
+      };
+    };
+    draw();
+  }
+  const _flContactPhoneT = flContactPhone;
+  flContactPhone = function (root) { const r = _flContactPhoneT.apply(this, arguments); try { flTixRow(root); } catch (e) { console.error(e); } return r; };
+  const _pgFormT = pgForm;
+  pgForm = function (form) {
+    const r = _pgFormT.apply(this, arguments);
+    try { form.querySelectorAll('[data-pg-show]').forEach(c => { const b = flBk().find(x => x.id === c.dataset.pgShow); if (!b || b.ticketUrl) return; const a = document.createElement('button'); a.type = 'button'; a.className = 'linkbtn'; a.textContent = '+ ticket link'; a.onclick = e => { e.preventDefault(); e.stopPropagation(); try { bookingView(b.id); } catch (_) {} }; c.closest('label').append(' ', a); }); } catch (_) {}
+    return r;
+  };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
