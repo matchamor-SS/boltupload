@@ -4214,14 +4214,14 @@ function appExtras() {
     { title: 'Welcome to Set & Settled', body: 'Your home base as an artist: shows, people, money, emails, media and your press kit in one place. This tour takes about 3 minutes. First we set up the few things that fill in everything else, then a quick look around.' },
     { tab: 'settings', group: 'profile', target: '#ssx-fl-art, #ssx-profile', title: 'Start with you', body: 'Pick what kind of artist you are and how you want to be called. Then add your name, contact details and socials. They fill in your EPK, emails, invoices and booking page, so you only type them once.' },
     { tab: 'settings', group: 'google', target: '#ss-google', title: 'Connect Google', body: 'Gmail sends emails and invoices from your own address, Drive keeps your files together, and Calendar shows your other plans next to your shows. Connect only what you want. You can change it anytime.' },
-    { tab: 'calendar', target: '#availEdit', title: 'When are you available?', body: 'Your Calendar is with your shows: tap Calendar in the switch at the top. Set the days you are available and tap any date to block it. Your booking link uses this same list, so you only keep one calendar up to date.', action: ['Open Edit availability', () => { const n = document.getElementById('availEdit'), a = document.getElementById('availPanel'); if (n && (!a || a.hidden)) n.click(); }] },
+    { tab: 'calendar', target: '#availEdit', title: 'When are you available?', body: 'Your Calendar is under your shows in the menu. Set the days you are available and tap any date to block it. Your booking link uses this same list, so you only keep one calendar up to date.', action: ['Open Edit availability', () => { const n = document.getElementById('availEdit'), a = document.getElementById('availPanel'); if (n && (!a || a.hidden)) n.click(); }] },
     { tab: 'bookings', target: '#ssx-bklink', title: 'Let promoters come to you', body: 'Share your booking link. People pick an open date and tell you who they are (a talent buyer, a venue, a collective, a private event). Their request lands here as a Lead with the venue and contacts already filled in.' },
-    { tab: 'bookings', target: '[data-new="booking"]', title: 'Every show in one place', body: 'Switch between List and Calendar at the top. Add a show, even a new venue or promoter, without leaving the form. Move it from Lead to Confirmed, Played and Paid, and each stage brings its own checklist. Add tips, merch or expenses under the fee. A Lost show leaves your calendar but stays saved.' },
+    { tab: 'bookings', target: '[data-new="booking"]', title: 'Every show in one place', body: 'Calendar opens right under this in the menu. Add a show, even a new venue or promoter, without leaving the form. Move it from Lead to Confirmed, Played and Paid, and each stage brings its own checklist. Add tips, merch or expenses under the fee. A Lost show leaves your calendar but stays saved.' },
     { tab: 'home', target: '#ssx-upnext, #nextShow', title: 'Home keeps watch', body: 'Home suggests your next step for every show: an invoice to send, a thank-you, a late payment to chase. Your next show and open tasks are here too.' },
     { tab: 'contacts', target: '[data-new="contact"]', title: 'Your people', body: 'Promoters, venues, collectives and photographers, each with their notes, phone and the shows you have done together. People you add from a booking land here on their own.' },
-    { tab: 'comms', target: '#composeBtn, [data-new="template"]', title: 'Emails in a tap', body: 'Open Messages & templates from the card at the top of People. Tap New email and start from a template. Fill-ins like the venue, date and your booking link fill themselves in from the show. Every email opens for you to check before it goes out from your Gmail.' },
+    { tab: 'comms', target: '#composeBtn, [data-new="template"]', title: 'Emails in a tap', body: 'Messages & templates opens under People in the menu. Tap New email and start from a template. Fill-ins like the venue, date and your booking link fill themselves in from the show. Every email opens for you to check before it goes out from your Gmail.' },
     { tab: 'money', target: '[data-new="expense"]', title: 'Your money, organized', body: 'Fees, extra income and expenses in one list, with invoices, receipts and mileage. When tax time comes, it shows what to set aside and builds your tax packet. It keeps your records organized, and it is not tax advice.' },
-        { tab: 'media', target: '#ssx-fl-mhost, section[data-view="media"] .head', title: 'Media from every show', body: 'Media is with your Kit: tap Media in the switch at the top of Kit. Photo folders, videos and links, sorted by show. Open them, share them in a tap, and ask your photographer for files when a show has none yet.' },
+    { tab: 'media', target: '#ssx-fl-mhost, section[data-view="media"] .head', title: 'Media from every show', body: 'Media opens under Kit in the menu. Photo folders, videos and links, sorted by show. Open them, share them in a tap, and ask your photographer for files when a show has none yet.' },
     { tab: 'kit', target: '#ssx-hist', title: 'Bring your history', body: 'Add the shows you did before Set & Settled: one at a time, from a Google Sheet, or with our template. They build your EPK without touching your bookings or money.', action: ['Add past shows', () => { const b = document.querySelector('#ssx-hist [data-nh-import]'); if (b) b.click(); }] },
     { tab: 'kit', target: '#ssx-epk-btn', title: 'Your EPK', body: 'Your Kit and your shows become a designed press kit. Pick a color theme, choose and reorder the sections, edit any text, then download a PDF for venues.', action: ['Create my EPK', () => { const b = document.getElementById('ssx-epk-btn'); if (b) b.click(); }] },
     { tab: 'settings', group: 'reminders', target: '#ssx-notify', title: 'Reminders', body: 'Choose phone and laptop alerts, a morning email, or both. They come from your checklists and goals, so nothing slips.' },
@@ -6169,6 +6169,42 @@ function appExtras() {
     const w = function () { const r = f.apply(this, arguments); try { navGroups(); } catch (_) {} return r; };
     w.__ssxNav = true; window.setTab = w; navGroups();
   }
+/* -- Menu accordion: grouped pages open underneath their section in the menu instead of a switch inside the page.
+     Shows → Calendar, Home → Goals, People → Messages & templates, Kit → Media. Tapping a section opens it (and goes there);
+     tapping it again while you're on it closes it. This replaces the earlier navGroups. */
+  const NAV_KIDS = { home: [['goals', 'Goals']], bookings: [['calendar', 'Calendar']], contacts: [['comms', 'Messages']], kit: [['media', 'Media']] };
+  const NAV_ACC = { open: new Set(), last: '' };
+  navGroups = function () {
+    const tabs = document.getElementById('tabs'); if (!tabs) return;
+    const btn = t => tabs.querySelector(`:scope > button[data-tab="${t}"]`), bName = navBookName();
+    const setText = (b, txt) => { if (!b || b.__ssxName === txt) return; const tn = [...b.childNodes].reverse().find(n => n.nodeType === 3 && n.textContent.trim()); if (tn) { tn.textContent = txt; b.title = txt; b.__ssxName = txt; } };
+    setText(btn('bookings'), bName);
+    for (const [v, txt] of [['bookings', bName], ['comms', 'Messages & templates']]) { const h2 = document.querySelector(`section[data-view="${v}"] > .head h2`); if (h2 && !h2.children.length && h2.textContent !== txt) h2.textContent = txt; }
+    const secEl = document.querySelector('section[data-view]:not([hidden])'), cur = secEl ? secEl.dataset.view : '', grp = NAV_GROUP[cur] || cur;
+    if (cur && cur !== NAV_ACC.last) { NAV_ACC.last = cur; if (NAV_KIDS[grp]) NAV_ACC.open.add(grp); }
+    for (const [p, kids] of Object.entries(NAV_KIDS)) {
+      const pb = btn(p); if (!pb) continue; const open = NAV_ACC.open.has(p); let after = pb;
+      pb.classList.add('ssx-navparent'); pb.classList.toggle('ssx-ingroup', grp === p && cur !== p); if (!pb.querySelector('.ssx-chev')) pb.insertAdjacentHTML('beforeend', '<span class="ssx-chev" aria-hidden="true">›</span>');
+      if (pb.getAttribute('aria-expanded') !== String(open)) pb.setAttribute('aria-expanded', String(open));
+      for (const [k, label] of kids) {
+        const kb = btn(k); if (!kb) continue;
+        if (after.nextElementSibling !== kb) after.after(kb); after = kb;
+        kb.classList.add('ssx-subtab'); kb.classList.remove('ssx-navhide'); kb.classList.toggle('ssx-accoff', !open); setText(kb, label);
+      }
+    }
+    tabs.querySelectorAll(':scope > button[data-tab]').forEach(b => { const on = String(b.dataset.tab === cur); if (b.getAttribute('aria-current') !== on) b.setAttribute('aria-current', on); });
+    // the old in-page switches and links are no longer needed
+    document.querySelectorAll('section[data-view] > .ssx-subnav, section[data-view] > .ssx-msgcard, section[data-view] > .ssx-backto').forEach(el => el.remove());
+    if (!tabs.__ssxAcc) {
+      tabs.__ssxAcc = true;
+      tabs.addEventListener('click', e => {
+        const b = e.target.closest('button.ssx-navparent'); if (!b || !tabs.contains(b)) return;
+        const p = b.dataset.tab, now = (document.querySelector('section[data-view]:not([hidden])') || {}).dataset || {};
+        if (now.view === p && NAV_ACC.open.has(p)) { NAV_ACC.open.delete(p); e.stopImmediatePropagation(); e.preventDefault(); navGroups(); return; }
+        NAV_ACC.open.add(p);
+      }, true);
+    }
+  };  
   /* -- Media folder fills itself in: a show's Media link always points at the Media folder the app made in Google Drive,
      and when a show is confirmed (with Google Drive set up) its Marketing folders (Media and Flyers) are made on their own. */
   const FL_MA = { tried: new Set(), at: 0 };
