@@ -6312,7 +6312,7 @@ function appExtras() {
     card.querySelector('[data-it-open]').onclick = () => invTplSheet();
   }  
   function flScan() {
-    try { flMediaAuto(); flFoundSweep(); flFoundCard(); } catch (e) { console.error(e); }
+    try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); } catch (e) { console.error(e); }
     FL.raf = 0;
     for (const f of [flMediaTab, flStageToggle, flRemindRow, flMediaHub, flEpkPicRow, flNoUploads, flArtistUI, flComposeTpl, flNoAutofill, flReqSweep, flLostSweep, flLostCard, flTourSetup, flStandalone, flRepeatWrapSave, flTaskCalSweep, flRoWrap, flRoDueCards, flGtHook, flGtSweep, flGtSettings, flBfHook, flBfSettings, flBkpSettings, flW9Card, flWelcome, flFuHook, flFuSweep, flFuTasks2, flRoAutoLog, flRoTasksWrap, nmLockWatch, bizCard, flGtCleanHook, navWrap, navGroups, nmRender]) { try { f(); } catch (e) { console.error(e); } }
     const sr = document.getElementById('sheetRoot'); if (!sr) return;
