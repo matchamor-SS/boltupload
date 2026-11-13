@@ -11,6 +11,7 @@ const safeUrl = u => { try { const x = new URL(String(u)); return /^https?:$/.te
 const color = (v, d) => /^(#[0-9a-f]{3,8}|rgba?\([\d.,\s%]+\)|linear-gradient\([#\w\s,.%()-]+\))$/i.test(String(v || '').trim()) ? String(v).trim() : d;
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const dt = d => new Date(d + 'T12:00:00Z');
+const nextDay = ds => { const D = dt(ds); D.setUTCDate(D.getUTCDate() + 1); return D.toISOString().slice(0, 10); }; // a 12 am set on the 5th really starts on the 6th
 const t12 = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); if (!m) return ''; const h = +m[1], ap = h >= 12 && h < 24 ? 'pm' : 'am', hh = h % 12 || 12; return `${hh}${m[2] === '00' ? '' : ':' + m[2]} ${ap}`; };
 
 async function load(slug) {
@@ -35,14 +36,17 @@ function page(d, origin) {
   const music = ['dj', 'singer', 'rapper', 'band', 'instrumentalist', 'producer', ''].includes(d.kind || '');
   const ld = (Array.isArray(d.off) && d.off.includes('shows') ? [] : shows).map(s => ({
     '@context': 'https://schema.org', '@type': music ? 'MusicEvent' : 'Event', name: s.title || `${name} at ${s.venue || s.city || 'a show'}`,
-    startDate: s.time ? `${s.date}T${s.time}` : s.date, eventStatus: 'https://schema.org/EventScheduled', eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
+    startDate: s.time ? `${s.time < '06:00' ? nextDay(s.date) : s.date}T${s.time}` : s.date, eventStatus: 'https://schema.org/EventScheduled', eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
     location: { '@type': 'Place', name: s.venue || s.city || 'TBA', address: { '@type': 'PostalAddress', ...(s.address ? { streetAddress: s.address } : {}), ...(s.city ? { addressLocality: s.city } : {}) } },
     performer: { '@type': music ? 'MusicGroup' : 'Person', name }, ...(img ? { image: [img] } : {}),
     ...(s.tickets ? { offers: { '@type': 'Offer', url: s.tickets, availability: 'https://schema.org/InStock' } } : {}), url
   }));
   ld.push({ '@context': 'https://schema.org', '@type': music ? 'MusicGroup' : 'Person', name, url, ...(img ? { image: img } : {}), ...(links.length ? { sameAs: links.map(l => l.url) } : {}) });
+  // directions: tap the venue and the visitor's maps app opens with the route (Google Maps link works on iPhone, Android and desktop)
+  const mapLink = (s, label) => { const dest = [s.venue, s.address || s.city].filter(Boolean).join(', '); if (!label) return ''; if (!dest || !(s.address || s.venue)) return esc(label);
+    return `<a class="map" href="https://www.google.com/maps/dir/?api=1&amp;destination=${encodeURIComponent(dest)}" target="_blank" rel="noopener" aria-label="Directions to ${esc(s.venue || dest)}"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>${esc(label)}</a>`; };
   const showHtml = shows.length ? shows.map(s => { const D = dt(s.date); return `<li class="show"><div class="when"><span class="m">${MON[D.getUTCMonth()]}</span><span class="d">${D.getUTCDate()}</span><span class="w">${DAY[D.getUTCDay()]}</span></div>
-      <div class="what"><b>${esc(s.title || s.venue || 'Show')}</b><span>${esc([s.title ? s.venue : '', s.city].filter(Boolean).join(' · '))}${s.time ? ` · ${esc(t12(s.time))}` : ''}</span></div>
+      <div class="what"><b>${esc(s.title || s.venue || 'Show')}</b><span>${mapLink(s, [s.title ? s.venue : '', s.city].filter(Boolean).join(' · '))}${s.time ? ` · ${esc(t12(s.time))}` : ''}</span></div>
       ${s.tickets ? `<a class="btn small" href="${esc(safeUrl(s.tickets))}" rel="noopener" target="_blank">Tickets</a>` : ''}</li>`; }).join('') : `<li class="empty">No public dates right now.${book ? ' Want to book a date? Send a request below.' : ''}</li>`;
   const SEC = {
     shows: () => `<section id="shows" aria-labelledby="h-shows"><h2 id="h-shows">Upcoming</h2><ul>${showHtml}</ul></section>`,
@@ -78,7 +82,7 @@ section{margin-top:40px}h2{font:600 13px/1 Inter,sans-serif;letter-spacing:.18em
 ul{list-style:none;margin:0;padding:0}
 .show{display:flex;align-items:center;gap:14px;padding:14px;border:1px solid ${line};border-radius:18px;background:${panel};margin-bottom:10px}
 .when{flex:none;width:58px;text-align:center;display:flex;flex-direction:column;line-height:1.1}.when .m{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:${solid};font-weight:600}.when .d{font-size:26px;font-weight:600}.when .w{font-size:12px;color:${muted}}
-.what{flex:1;min-width:0;display:flex;flex-direction:column}.what b{font-weight:600}.what span{color:${muted};font-size:14px}
+.what{flex:1;min-width:0;display:flex;flex-direction:column}.what b{font-weight:600}.what span{color:${muted};font-size:14px}.what a.map{color:inherit;text-decoration:underline;text-decoration-color:${line};text-underline-offset:3px}.what a.map:hover,.what a.map:focus-visible{color:${ink};text-decoration-color:currentColor}.what a.map svg{margin-right:4px;vertical-align:-1px;color:${solid}}
 .empty{color:${muted};padding:14px;border:1px dashed ${line};border-radius:18px}
 .links{display:flex;flex-direction:column;gap:10px}.links .btn{width:100%}
 .bio p{margin:0 0 12px;color:${ink}}
