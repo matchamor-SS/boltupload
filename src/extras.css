@@ -1173,3 +1173,6 @@ html body .ssx-found { display: flex; flex-direction: column; gap: 8px; }
 html body .ssx-foundcard summary { cursor: pointer; display: flex; flex-direction: column; gap: 4px; list-style: none; } html body .ssx-foundcard summary h3 { margin: 0; }
 html body .ssx-foundlist { list-style: none; margin: 8px 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 html body .ssx-foundlist li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); } html body .ssx-foundlist li span { opacity: .75; white-space: nowrap; }
+/* Invoice template: preview box */
+html body .ssx-itprev { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 12px; }
+html body .ssx-itprev .ssx-itnote { margin-top: 6px; font-style: italic; opacity: .85; }
