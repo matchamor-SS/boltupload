@@ -6531,6 +6531,36 @@ function appExtras() {
     const r = _pgFormT.apply(this, arguments);
     try { form.querySelectorAll('[data-pg-show]').forEach(c => { const b = flBk().find(x => x.id === c.dataset.pgShow); if (!b || b.ticketUrl) return; const a = document.createElement('button'); a.type = 'button'; a.className = 'linkbtn'; a.textContent = '+ ticket link'; a.onclick = e => { e.preventDefault(); e.stopPropagation(); try { bookingView(b.id); } catch (_) {} }; c.closest('label').append(' ', a); }); } catch (_) {}
     return r;
+  };
+/* -- My page: the picture is your EPK photo's web address (no copy made), and you choose the order of your page's sections. */
+  pgPhoto = async function () {
+    let id = ''; try { id = flEpkAsset() || flAvatar(); } catch (_) {}
+    const d = PGE.doc || {}; if (!id) return d.photo ? { key: '', data: '' } : null;
+    if (d.photoKey === id && d.photo && !/^data:/.test(d.photo)) return null;
+    let u = ''; try { u = flSrc(id) || ''; if (!/^https:\/\//.test(u) && typeof cl === 'function') u = cl(id) || ''; } catch (_) {}
+    return /^https:\/\//.test(u) ? { key: id, data: u.split('?')[0] } : null;
+  };
+  const PG_SECS = [['shows', 'Upcoming shows'], ['links', 'Listen & follow'], ['bio', 'About'], ['book', 'Booking']];
+  const pgOrder = () => { const d = PGE.doc || {}, o = Array.isArray(d.order) ? d.order : []; return [...new Set([...o.filter(k => PG_SECS.some(s => s[0] === k)), ...PG_SECS.map(s => s[0])])]; };
+  function pgSecDraw(box) {
+    const off = new Set((PGE.doc || {}).secOff || []), o = pgOrder(), name = k => (PG_SECS.find(s => s[0] === k) || [k, k])[1];
+    box.innerHTML = `<label>Page sections</label><ol class="ssx-pgsec">${o.map((k, i) => `<li data-k="${k}"${off.has(k) ? ' class="off"' : ''}>
+      <label class="ssx-check"><input type="checkbox" data-sec-on${off.has(k) ? '' : ' checked'} aria-label="Show ${esc(name(k))}"> ${esc(name(k))}</label>
+      <span class="mv"><button type="button" class="btn small" data-sec-up aria-label="Move ${esc(name(k))} up"${i ? '' : ' disabled'}>↑</button><button type="button" class="btn small" data-sec-dn aria-label="Move ${esc(name(k))} down"${i < o.length - 1 ? '' : ' disabled'}>↓</button></span></li>`).join('')}</ol>
+      <span class="note">Your photo and name always lead. Untick a section to hide it. Changes save right away.</span>`;
+    const save = async (patch, msg, focus) => { if (await pgSave({ ...patch, updatedAt: new Date().toISOString() })) toast(msg); pgSecDraw(box); if (focus) { let b = box.querySelector(focus); if (b && b.disabled) b = b.parentNode.querySelector('button:not([disabled])'); if (b) b.focus(); } };
+    box.querySelectorAll('li').forEach(li => {
+      const k = li.dataset.k;
+      li.querySelector('[data-sec-on]').onchange = e => { const s = new Set((PGE.doc || {}).secOff || []); e.target.checked ? s.delete(k) : s.add(k); save({ secOff: [...s] }, e.target.checked ? 'Section shown on your page' : 'Section hidden from your page', `li[data-k="${k}"] [data-sec-on]`); };
+      const mv = dir => { const o2 = pgOrder(), i = o2.indexOf(k), j = i + dir; if (j < 0 || j >= o2.length) return; [o2[i], o2[j]] = [o2[j], o2[i]]; save({ order: o2 }, 'Order saved', `li[data-k="${k}"] [data-sec-${dir < 0 ? 'up' : 'dn'}]`); };
+      li.querySelector('[data-sec-up]').onclick = () => mv(-1); li.querySelector('[data-sec-dn]').onclick = () => mv(1);
+    });
+  }
+  const _pgFormS = pgForm;
+  pgForm = function (form) {
+    const r = _pgFormS.apply(this, arguments);
+    try { const act = form.querySelector('.actions'); if (act) { const box = document.createElement('div'); box.className = 'f'; act.before(box); pgSecDraw(box); } } catch (e) { console.error(e); }
+    return r;
   };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
