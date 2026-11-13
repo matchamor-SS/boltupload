@@ -6251,6 +6251,66 @@ function appExtras() {
       ${Object.keys(ppl).length ? `<span class="eyebrow">Who sends you work</span><ul class="ssx-foundlist">${rows(ppl, id => { const c = (S.contacts || []).find(x => x.id === id); return c ? cName(c) : 'Someone'; })}</ul>` : ''}
       ${list.length - known.length ? `<p class="note">${list.length - known.length} show${list.length - known.length === 1 ? '' : 's'} without an answer yet. Open a show → Edit → More details → How they found you.</p>` : ''}`;
   }  
+/* -- Invoice template: set once how every new invoice reads (the main line, when it's due, invoice numbers, payment
+     instructions and the note at the bottom). Saved with your invoice details (settings/invoice); invoices you already
+     made keep their own wording. */
+  const INV_TPL_DEF = '{perf} – {show}';
+  const invTplFill = (t, b) => { let v = null; try { v = contact(b.venueId); } catch (_) {}
+    const map = { perf: (() => { try { return flPerf(); } catch (_) { return 'Performance'; } })(), show: (() => { try { return showName(b); } catch (_) { return b.title || ''; } })(), venue: v ? cName(v) : '', date: b.date ? niceDate(b.date) : '', city: b.city || '' };
+    return String(t || INV_TPL_DEF).replace(/\{(perf|show|venue|date|city)\}/g, (m, k) => map[k] || '').replace(/\s*(·|–|-|,)\s*(?=(·|–|-|,|$))/g, '').replace(/\(\s*\)/g, '').replace(/^\s*(·|–|-|,)\s*/, '').replace(/\s{2,}/g, ' ').trim() || map.show || map.perf; };
+  function invTplWrap() {
+    const o = window.newInvoice; if (typeof o !== 'function' || o.__ssxTpl) return;
+    const w = function (b) { const inv = o.apply(this, arguments); try { const t = (S.invset || {}).lineTpl; if (t && inv && inv.lines && inv.lines[0] && inv.lines[0].kind === 'service') inv.lines[0].desc = invTplFill(t, b); } catch (_) {} return inv; };
+    w.__ssxTpl = true; w.__fl = o.__fl; window.newInvoice = w;
+  }
+  const invNext = () => (flBk().filter(b => b.date && b.date >= todayStr() && ['confirmed', 'pitched'].includes(flKind(b.status))).sort((a, b) => a.date.localeCompare(b.date))[0]) || flBk().filter(b => b.date).sort((a, b) => b.date.localeCompare(a.date))[0] || { title: 'Friday Night Live', date: todayStr(), city: 'San Diego' };
+  function invTplSheet() {
+    const k = (() => { try { return INVSET(); } catch (_) { return {}; } })(), s0 = S.invset || {}, ex = invNext();
+    const chip = (t, l) => `<button type="button" class="ssx-chip" data-it-ins="{${t}}">${l}</button>`;
+    try { navSheet('invtpl', () => invTplSheet()); } catch (_) {}
+    sheet(`<h3>Invoice template</h3><p class="note" style="margin:0 0 6px">Every new invoice starts like this. You can still change anything on a single invoice.</p>
+      <div class="f"><label for="it-line">Main line</label><input id="it-line" maxlength="120" value="${esc(s0.lineTpl || INV_TPL_DEF)}">
+        <div class="ssx-chips" style="margin-top:6px">${chip('perf', 'Performance type')}${chip('show', 'Show name')}${chip('venue', 'Venue')}${chip('date', 'Date')}${chip('city', 'City')}</div>
+        <span class="note" id="it-line-ex"></span></div>
+      <div class="frow"><div class="f"><label for="it-terms">Payment due</label><select id="it-terms">${[[0, 'When it\'s sent'], [7, '7 days after it\'s sent'], [14, '14 days after'], [15, '15 days after'], [30, '30 days after'], [45, '45 days after']].map(([n, l]) => `<option value="${n}"${Number(k.terms) === n ? ' selected' : ''}>${l}</option>`).join('')}</select><span class="note">A show's own "Payment due on" date wins when it has one.</span></div>
+        <div class="f"><label for="it-hourly">Hourly rate <i class="note">(optional)</i></label><input id="it-hourly" inputmode="decimal" maxlength="10" value="${esc(k.hourly || '')}" placeholder="e.g. 150"></div></div>
+      <div class="f"><label for="it-prefix">Invoice numbers start with</label><input id="it-prefix" maxlength="12" value="${esc(String(k.prefix || '').replace(/-$/, ''))}"><span class="note">Numbers count up on their own each year, like ${esc((() => { try { return invNum(k); } catch (_) { return 'INV-2026-001'; } })())}.</span></div>
+      <div class="f"><label for="it-pay">Extra payment instructions <i class="note">(optional)</i></label><textarea id="it-pay" maxlength="600" style="min-height:56px" placeholder="e.g. Checks payable to …">${esc(k.pay || '')}</textarea><span class="note">Your Venmo, Zelle, Cash App and PayPal are added on their own from your Business profile. Bank and card numbers are never saved.</span></div>
+      <div class="f"><label for="it-note">Note at the bottom</label><textarea id="it-note" maxlength="600" style="min-height:56px">${esc(k.note ?? 'Thank you for having me!')}</textarea></div>
+      <div class="ssx-itprev" id="it-prev"></div>
+      <div class="actions"><button type="button" class="btn" data-it-cancel>Cancel</button>${ex.id ? '<button type="button" class="btn" data-it-try>Save and try it</button>' : ''}<button type="button" class="btn primary" data-it-save>Save template</button></div>`, root => {
+      const q = s => root.querySelector(s), line = q('#it-line');
+      const prev = () => { const due = Number(q('#it-terms').value) || 0; let num = ''; try { num = invSuggest(q('#it-prefix').value, String(new Date().getFullYear()), '').num; } catch (_) {}
+        q('#it-line-ex').textContent = 'Example: ' + invTplFill(line.value, ex);
+        q('#it-prev').innerHTML = `<span class="eyebrow">Preview</span><div><b>${esc(invTplFill(line.value, ex))}</b></div><div class="note">Invoice ${esc(num)} · due ${due ? due + ' days after it\'s sent' : 'when it\'s sent'}</div>${q('#it-note').value.trim() ? `<div class="ssx-itnote">${esc(q('#it-note').value.trim())}</div>` : ''}`; };
+      root.addEventListener('input', prev); root.addEventListener('change', prev); prev();
+      root.querySelectorAll('[data-it-ins]').forEach(b => b.onmousedown = e => e.preventDefault());
+      root.querySelectorAll('[data-it-ins]').forEach(b => b.onclick = () => { const t = b.dataset.itIns, a = line.selectionStart ?? line.value.length, z = line.selectionEnd ?? a; line.value = (line.value.slice(0, a) + t + line.value.slice(z)).slice(0, 120); line.focus(); line.setSelectionRange(a + t.length, a + t.length); prev(); });
+      q('[data-it-cancel]').onclick = () => close();
+      const save = async () => {
+        const hr = q('#it-hourly').value.replace(/[$,\s]/g, '');
+        if (hr && !/^\d{1,6}(\.\d{1,2})?$/.test(hr)) { toast('Write the hourly rate as a number, like 150'); q('#it-hourly').focus(); return false; }
+        const t = line.value.trim() || INV_TPL_DEF, cur = S.invset || {};
+        const doc = { ...cur, lineTpl: t === INV_TPL_DEF ? '' : t, terms: Number(q('#it-terms').value) || 0, hourly: hr, prefix: q('#it-prefix').value.trim().slice(0, 12), pay: q('#it-pay').value.trim(), note: q('#it-note').value.trim() };
+        if (!(await window.save('settings', 'invoice', doc))) { toast("Couldn't save. Check your connection and try again."); return false; }
+        try { S.invset = doc; } catch (_) {} return true;
+      };
+      q('[data-it-save]').onclick = async () => { if (await save()) { close(); toast('Invoice template saved. New invoices start this way.'); } };
+      const tr = q('[data-it-try]'); if (tr) tr.onclick = async () => { if (await save()) { close(); try { invoiceSheet(ex.id); } catch (_) {} } };
+    });
+  }
+  // Settings: the Invoice template card under the Business profile
+  function invTplCard() {
+    const biz = document.getElementById('ssx-biz'); if (!biz) return;
+    const k = (() => { try { return INVSET(); } catch (_) { return {}; } })(), s0 = S.invset || {}, ex = invNext();
+    const sig = JSON.stringify([s0.lineTpl, k.terms, k.prefix, k.note, k.pay, k.hourly, ex.id, flBk().length]); let card = document.getElementById('ssx-invtpl');
+    if (card && card.dataset.sig === sig) return;
+    if (!card) { card = document.createElement('div'); card.id = 'ssx-invtpl'; card.className = 'card ssx'; biz.after(card); }
+    card.dataset.sig = sig;
+    card.innerHTML = `<div class="ssx-head"><div><h3>Invoice template</h3><p class="note">How every new invoice starts: the main line, when it's due, numbering, payment instructions and your note.</p></div><button type="button" class="btn small" data-it-open>Edit</button></div>
+      <div class="ssx-bz-sum"><div class="ssx-bz-l"><span class="eyebrow">Main line</span><span>${esc(invTplFill(s0.lineTpl, ex))}</span></div><div class="ssx-bz-l"><span class="eyebrow">Due</span><span>${Number(k.terms) ? k.terms + ' days after it\'s sent' : 'When it\'s sent'}</span></div><div class="ssx-bz-l"><span class="eyebrow">Next number</span><span>${esc((() => { try { return invNum(k); } catch (_) { return ''; } })())}</span></div>${k.note ? `<div class="ssx-bz-l"><span class="eyebrow">Note</span><span>${esc(k.note)}</span></div>` : ''}</div>`;
+    card.querySelector('[data-it-open]').onclick = () => invTplSheet();
+  }  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); } catch (e) { console.error(e); }
     FL.raf = 0;
