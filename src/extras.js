@@ -4223,7 +4223,7 @@ function appExtras() {
     { tab: 'money', target: '[data-new="expense"]', title: 'Your money, organized', body: 'Fees, extra income and expenses in one list, with invoices, receipts and mileage. When tax time comes, it shows what to set aside and builds your tax packet. It keeps your records organized, and it is not tax advice.' },
     { tab: 'media', target: '#ssx-fl-mhost, section[data-view="media"] .head', title: 'Media from every show', body: 'Media opens under Kit in the menu. Photo folders, videos and links, sorted by show. Open them, share them in a tap, and ask your photographer for files when a show has none yet.' },
     { tab: 'kit', target: '#ssx-hist', title: 'Bring your history', body: 'Add the shows you did before Set & Settled: one at a time, from a Google Sheet, or with our template. They build your EPK without touching your bookings or money.', action: ['Add past shows', () => { const b = document.querySelector('#ssx-hist [data-nh-import]'); if (b) b.click(); }] },
-    { tab: 'kit', target: '#ssx-epk-btn', title: 'Your EPK', body: 'Your Kit and your shows become a designed press kit. Pick a color theme, choose and reorder the sections, edit any text, then download a PDF for venues.', action: ['Create my EPK', () => { const b = document.getElementById('ssx-epk-btn'); if (b) b.click(); }] },
+    { tab: 'kit', target: '#tabs [data-tab="epk"]', title: 'Your EPK', body: 'Your Kit and your shows become a designed press kit. Pick a color theme, choose and reorder the sections, edit any text, then download a PDF for venues.', action: ['Create my EPK', () => { const b = document.getElementById('ssx-epk-btn'); if (b) b.click(); }] },
     { tab: 'settings', group: 'reminders', target: '#ssx-notify', title: 'Reminders', body: 'Choose phone and laptop alerts, a morning email, or both. They come from your checklists and goals, so nothing slips.' },
     { title: "You're all set", body: 'Two shortcuts to remember: search anything with the magnifying glass (or press / on a computer), and use Arrange on any page to show only what you need. Take this tour again anytime from Settings, under Account. Have a great season!' },
   ];
@@ -6427,7 +6427,74 @@ function appExtras() {
     if (b('[data-pg-openc]')) b('[data-pg-openc]').onclick = () => window.open(pgUrl(), '_blank', 'noopener');
     if (b('[data-pg-copy]')) b('[data-pg-copy]').onclick = () => (navigator.clipboard ? navigator.clipboard.writeText(pgUrl()) : Promise.reject()).then(() => toast('Page link copied'), () => toast(pgUrl()));
     if (b('[data-pg-link-setup]')) b('[data-pg-link-setup]').onclick = () => { try { curGroup = 'bookings'; localStorage.setItem('ss-setgroup', 'bookings'); } catch (_) {} window.setTab('settings'); };
-  }  
+  }
+  /* -- Kit's menu: EPK (or Portfolio / Resume), My page and Media open underneath Kit, instead of living inside the Kit page.
+     EPK opens the EPK creator; My page is its own page with the manager right on it. */
+  NAV_KIDS.kit = [['epk', 'EPK'], ['mypage', 'My page'], ['media', 'Media']]; NAV_GROUP.mypage = 'kit';
+  try { if (typeof TAB_NAMES === 'object') TAB_NAMES.mypage = 'My page'; } catch (_) {}
+  const KM_ICON = {
+    epk: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M10 13h6M10 17h4"/></svg>',
+    mypage: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9s1.3-6.3 3.8-9z"/></svg>'
+  };
+  function kmTabs() {
+    const tabs = document.getElementById('tabs'), main = document.getElementById('main'), kit = document.querySelector('section[data-view="kit"]'); if (!tabs || !main || !kit) return;
+    const k = tabs.querySelector(':scope > [data-tab="kit"]');
+    for (const [t, label] of [['epk', 'EPK'], ['mypage', 'My page']]) {
+      if (tabs.querySelector(`:scope > [data-tab="${t}"]`)) continue;
+      const b = document.createElement('button'); b.type = 'button'; b.dataset.tab = t; b.setAttribute('aria-current', 'false'); b.title = label; b.innerHTML = KM_ICON[t] + label;
+      b.onclick = t === 'epk' ? () => { const e = document.getElementById('ssx-epk-btn'); if (e) e.click(); else toast('Open Kit once, then try again'); } : () => window.goTab('mypage');
+      k ? k.after(b) : tabs.appendChild(b);
+    }
+    if (!document.querySelector('section[data-view="mypage"]')) {
+      const sec = document.createElement('section'); sec.dataset.view = 'mypage'; sec.hidden = true;
+      sec.innerHTML = `<div class="head"><div><h2>My page</h2><p class="note" style="margin:2px 0 0">Your public page: upcoming shows, links, bio and a Book me button, in your EPK colors. A website and link-in-bio in one.</p></div></div><div id="ssx-page" class="card ssx"></div><div id="ssx-pgform" class="card ssx"></div>`;
+      (document.querySelector('section[data-view="media"]') || kit).after(sec);
+    }
+  }
+  const _navGroupsKM = navGroups;
+  navGroups = function () { try { kmTabs(); } catch (e) { console.error(e); } return _navGroupsKM.apply(this, arguments); };
+  // My page: status and the editor right on the page (replaces the card in Kit and the pop-up)
+  pgCard = function () {
+    const sec = document.querySelector('section[data-view="mypage"]'); if (!sec || !st.db) return;
+    if (!PGE.loaded) { pgLoad(); return; }
+    const d = PGE.doc || {}, slug = pgSlug(), n = pgShows().filter(b => !(d.hide || []).includes(b.id)).length, addr = pgUrl().replace(/^https?:\/\//, '');
+    const card = document.getElementById('ssx-page'), form = document.getElementById('ssx-pgform'); if (!card || !form) return;
+    const sig = JSON.stringify([!!d.on, slug, n, !!d.photo]);
+    if (card.dataset.sig !== sig) {
+      card.dataset.sig = sig;
+      card.innerHTML = !slug ? `<div class="ssx-head"><div><h3>Choose your page name first</h3><p class="note">Your page uses your booking link's name (like setnsettled.com/yourname). Set up your booking link and come back.</p></div><button type="button" class="btn small primary" data-pg-link-setup>Set up booking link</button></div>`
+        : d.on ? `<div class="ssx-head"><div><h3>Live <span class="ssx-pill-on">Public</span></h3><p class="note"><b>${esc(addr)}</b> · ${n} upcoming show${n === 1 ? '' : 's'}</p></div><div class="ssx-row"><button type="button" class="btn small" data-pg-copy>Copy link</button><button type="button" class="btn small primary" data-pg-openc>Open my page</button></div></div>`
+        : `<div class="ssx-head"><div><h3>Not public yet</h3><p class="note">It will be at <b>${esc(addr)}</b> with ${n} upcoming show${n === 1 ? '' : 's'}. Check the details below, then tick "My page is public" and save.</p></div></div>`;
+      const b = s => card.querySelector(s);
+      if (b('[data-pg-openc]')) b('[data-pg-openc]').onclick = () => window.open(pgUrl(), '_blank', 'noopener');
+      if (b('[data-pg-copy]')) b('[data-pg-copy]').onclick = () => (navigator.clipboard ? navigator.clipboard.writeText(pgUrl()) : Promise.reject()).then(() => toast('Page link copied'), () => toast(pgUrl()));
+      if (b('[data-pg-link-setup]')) b('[data-pg-link-setup]').onclick = () => { try { curGroup = 'bookings'; localStorage.setItem('ss-setgroup', 'bookings'); } catch (_) {} window.setTab('settings'); };
+    }
+    form.hidden = !slug;
+    const fsig = JSON.stringify([d.updatedAt || '', pgShows().map(x => x.id + x.date + (x.ticketUrl ? 1 : 0)).join(), pgAllLinks().map(pgLinkKey).join()]);
+    if (slug && form.dataset.sig !== fsig && !form.contains(document.activeElement)) { form.dataset.sig = fsig; pgForm(form); }
+  };
+  function pgForm(form) {
+    const d = PGE.doc || {}, k = S.kit || {}, hide = new Set(d.hide || []), off = new Set(d.linkOff || []), shows = pgShows().slice(0, 40), links = pgAllLinks();
+    form.innerHTML = `<h3>Page details</h3>
+      <label class="ssx-check"><input type="checkbox" id="pg-on"${d.on ? ' checked' : ''}> <b>My page is public</b></label>
+      <div class="f"><label for="pg-tag">One line about you</label><input id="pg-tag" maxlength="160" value="${esc(d.tagSet ? d.tagline || '' : (d.tagline || k.genres || ''))}" placeholder="e.g. Latin indie dance & baile funk"></div>
+      <div class="f"><label for="pg-city">Based in <i class="note">(optional)</i></label><input id="pg-city" maxlength="80" value="${esc(d.city || '')}" placeholder="e.g. San Diego"></div>
+      <div class="f"><label for="pg-bio">About</label><textarea id="pg-bio" maxlength="3000" style="min-height:110px">${esc(d.bioSet ? d.bio || '' : (d.bio || k.bioShort || k.bioLong || ''))}</textarea><span class="note">Starts from your Kit's short bio. Your picture is the one your EPK uses.</span></div>
+      <div class="f"><label>Upcoming shows on your page</label>${shows.length ? `<div class="ssx-pglist">${shows.map(b => `<label class="ssx-check"><input type="checkbox" data-pg-show="${esc(b.id)}"${hide.has(b.id) ? '' : ' checked'}> ${esc(niceDate(b.date))} · ${esc(bookingName(b))}${b.ticketUrl ? ' · <span class="note">tickets</span>' : ''}</label>`).join('')}</div><span class="note">Every confirmed show appears on its own. Untick private ones, like weddings. Add a ticket link to a show and a Tickets button appears.</span>` : '<span class="note">No confirmed shows coming up. They appear here on their own.</span>'}</div>
+      <div class="f"><label>Links</label>${links.length ? `<div class="ssx-pglist">${links.map(l => `<label class="ssx-check"><input type="checkbox" data-pg-link="${esc(pgLinkKey(l))}"${off.has(pgLinkKey(l)) ? '' : ' checked'}> ${esc(l.label || l.url)}</label>`).join('')}</div>` : '<span class="note">Add links (Instagram, SoundCloud, Spotify, your website) in Kit and they show up here.</span>'}</div>
+      <div class="actions" style="justify-content:flex-end"><button type="button" class="btn primary" data-pg-save>Save</button></div>`;
+    const q = s => form.querySelector(s);
+    q('[data-pg-save]').onclick = async e => {
+      const btn = e.currentTarget; btn.disabled = true;
+      const on = q('#pg-on').checked, tag = q('#pg-tag').value.trim(), bio = q('#pg-bio').value.trim();
+      const ok = await pgSave({ on, tagline: tag, tagSet: tag !== (k.genres || ''), city: q('#pg-city').value.trim(), bio, bioSet: bio !== (k.bioShort || k.bioLong || ''),
+        hide: [...form.querySelectorAll('[data-pg-show]')].filter(c => !c.checked).map(c => c.dataset.pgShow), linkOff: [...form.querySelectorAll('[data-pg-link]')].filter(c => !c.checked).map(c => c.dataset.pgLink), updatedAt: new Date().toISOString() });
+      btn.disabled = false; if (!ok) return;
+      btn.blur(); toast(on ? 'Saved. Your page is live.' : 'Saved. Your page is off.'); if (on) pgSync(true);
+    };
+  }
+  pgSheet = () => window.goTab('mypage');
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
