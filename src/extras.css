@@ -1325,3 +1325,24 @@ html body .ssx-qa-row .d { flex: none; width: 56px; font-size: 13px; font-weight
 html body .ssx-qa-row span:last-child { display: flex; flex-direction: column; min-width: 0; }
 html body .ssx-qa-row small { color: var(--muted); }
 html body .ssx-qa-row:hover, html body .ssx-qa-row:focus-visible { border-color: var(--accent); }
+/* Activity timeline on shows and contacts */
+html body .ssx-tl { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+html body .ssx-tl h4 { margin: 0 0 8px; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+html body .ssx-tl ol { list-style: none; margin: 0; padding: 0; position: relative; }
+html body .ssx-tl ol::before { content: ""; position: absolute; left: 75px; top: 14px; bottom: 14px; width: 1px; background: var(--line); }
+html body .ssx-tl li > a, html body .ssx-tl li > button, html body .ssx-tl li > div { display: grid; grid-template-columns: 64px 22px minmax(0, 1fr); align-items: start; gap: 0; width: 100%; padding: 7px 4px; border: 0; border-radius: 10px; background: transparent; color: var(--ink); text-align: left; text-decoration: none; font: inherit; }
+html body .ssx-tl li > a, html body .ssx-tl li > button { cursor: pointer; }
+html body .ssx-tl li > a:hover, html body .ssx-tl li > button:hover, html body .ssx-tl li > a:focus-visible, html body .ssx-tl li > button:focus-visible { background: var(--soft, rgba(127,127,127,.1)); }
+html body .ssx-tl .when { font-size: 12px; color: var(--muted); padding-top: 2px; white-space: nowrap; }
+html body .ssx-tl .dot { position: relative; z-index: 1; width: 11px; height: 11px; margin: 4px 0 0 6px; border-radius: 50%; background: var(--line); box-shadow: 0 0 0 3px var(--surface, var(--bg)); }
+html body .ssx-tl .dot.k-stage { background: var(--accent); }
+html body .ssx-tl .dot.s-paid { background: var(--ok, #74C795); }
+html body .ssx-tl .dot.s-lost { background: var(--bad, #EC8686); }
+html body .ssx-tl .dot.k-mail, html body .ssx-tl .dot.k-reach { background: var(--warn, #E8B566); }
+html body .ssx-tl .dot.k-inv, html body .ssx-tl .dot.k-money { background: var(--ok, #74C795); }
+html body .ssx-tl .dot.k-req, html body .ssx-tl .dot.k-ref { background: var(--hot, #F47CA3); }
+html body .ssx-tl .what { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; overflow-wrap: anywhere; }
+html body .ssx-tl .what small { color: var(--muted); font-size: 12px; }
+html body .ssx-tl li.future .what, html body .ssx-tl li.future .when { color: var(--accent); font-weight: 600; }
+html body .ssx-tl li.future .dot { background: transparent; border: 2px solid var(--accent); }
+html body .ssx-tl [data-tl-more] { margin-top: 6px; min-height: 40px; }

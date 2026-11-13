@@ -7237,6 +7237,100 @@ function appExtras() {
   });
   const _pgCardQA = pgCard;
   pgCard = function () { const r = _pgCardQA.apply(this, arguments); try { qaWire(); } catch (e) { console.error(e); } return r; };
+/* -- Activity timeline on every show and every contact: what happened, newest first, built only from what the app
+     already keeps (stage dates, booking-link requests, emails sent from the app, invoices, money, outreach, referrals).
+     Tap a line to open it. Also: status buttons on a show now keep the earlier stage dates instead of replacing them. */
+  // (applied as soon as the app's save function exists)
+  function tlKeepStages() { if (typeof window.patch !== 'function' || window.patch.__tlKeep) return;
+    const _patchTL = window.patch;
+    window.patch = async function (col, id, data) {
+      try {
+        if (col === 'bookings' && data && data.stageAt && typeof data.stageAt === 'object') {
+          const cur = (S.bookings || []).find(x => x.id === id);
+          if (cur && cur.stageAt) data = { ...data, stageAt: { ...cur.stageAt, ...data.stageAt } };
+        }
+      } catch (_) {}
+      return _patchTL.call(this, col, id, data);
+    };
+    window.patch.__tlKeep = true;
+  }
+  tlKeepStages();
+  const TL = { open: new Set(), N: 5 };
+  const tlDay = s => String(s || '').slice(0, 10);
+  const tlNice = s => {
+    const d = tlDay(s); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return '';
+    const t = todayStr(); if (d === t) return 'Today'; if (d === addDays(t, -1)) return 'Yesterday'; if (d === addDays(t, 1)) return 'Tomorrow';
+    try { const x = new Date(d + 'T12:00:00'); return x.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(d.slice(0, 4) !== t.slice(0, 4) ? { year: 'numeric' } : {}) }); } catch (_) { return d; }
+  };
+  const tlMoney = n => { try { return money(n); } catch (_) { return '$' + Math.round(Number(n) || 0).toLocaleString('en-US'); } };
+  const tlStat = k => { try { return (STATUSES.find(s => s[0] === k) || [k, k])[1]; } catch (_) { return k; } };
+  const tlShowName = b => { try { return bookingName(b); } catch (_) { return b.title || 'Show'; } };
+  const TL_VIA = { email: 'Emailed', dm: 'Messaged', call: 'Called', text: 'Texted', meet: 'Met', inperson: 'Met in person' };
+  const tlGmail = id => id ? 'https://mail.google.com/mail/#all/' + encodeURIComponent(id) : '';
+  function tlFound(b) {
+    const v = b.foundVia; if (!v) return '';
+    let lab = ''; try { lab = (FOUND().find(f => f[0] === v) || [v, v])[1]; } catch (_) { lab = v; }
+    if (v === 'saw' && b.foundShowId) { const n = foundShowName(b.foundShowId); if (n) return `Saw you at ${n}`; }
+    if (v === 'referral' && b.foundById) { const c = contact(b.foundById); if (c) return `Referred by ${cName(c)}`; }
+    return lab + (b.foundText ? `: ${b.foundText}` : '');
+  }
+  // one show's story
+  function tlForShow(b, withName) {
+    const out = [], nm = withName ? ` · ${tlShowName(b)}` : '', open = () => bookingView(b.id), fromLink = b.source === 'booking-link';
+    if (b.createdAt) out.push({ at: b.createdAt, k: fromLink ? 'req' : 'new', text: (fromLink ? 'Request came in through your booking link' : 'Added') + nm, sub: tlFound(b), go: withName ? open : null });
+    const st = b.stageAt || {}, seen = new Set();
+    ['lead', 'pitched', 'confirmed', 'played', 'paid', 'lost'].forEach(k => { if (!st[k]) return; seen.add(k); if (k === 'lead' && tlDay(st[k]) === tlDay(b.createdAt)) return; out.push({ at: st[k], k: 'stage', st: k, text: `${tlStat(k)}${nm}`, go: withName ? open : null }); });
+    if (b.paidDate && !seen.has('paid')) out.push({ at: b.paidDate, k: 'stage', st: 'paid', text: `Paid${nm}`, go: withName ? open : null });
+    if (!withName && b.requestStatus) { const d = b.requestAt || b.updatedAt; if (d && !Object.keys(st).length) out.push({ at: d, k: 'stage', text: b.requestStatus === 'declined' ? 'Request declined' : 'Request accepted' }); }
+    const inv = b.invoice || {};
+    if (!withName) {
+      if (inv.issueDate) out.push({ at: inv.issueDate, k: 'inv', text: `Invoice${inv.number ? ' ' + inv.number : ''} created`, go: () => invoiceSheet(b.id) });
+      if (inv.sentAt) out.push({ at: inv.sentAt, k: 'inv', text: `Invoice${inv.number ? ' ' + inv.number : ''} sent`, go: () => invoiceSheet(b.id) });
+      (S.expenses || []).filter(e => e.bookingId === b.id).forEach(e => out.push({ at: e.date || e.createdAt, k: 'money', text: `Expense: ${e.desc || 'expense'} · ${tlMoney(e.amount)}`, go: () => expenseForm(e) }));
+      (S.income || []).filter(x => x.bookingId === b.id).forEach(x => out.push({ at: x.date || x.createdAt, k: 'money', text: `Income: ${x.desc || x.source || 'income'} · ${tlMoney(x.amount)}`, go: () => incomeForm(x) }));
+      if (b.date && b.date > todayStr() && ['confirmed', 'pitched'].includes(flKind(b.status))) out.push({ at: b.date, k: 'soon', text: 'Show day', future: true });
+    }
+    return out;
+  }
+  const tlEmails = f => (S.sentLog || []).filter(f).map(x => ({ at: x.at, k: 'mail', text: `Email sent${x.label ? ': ' + x.label : ''}`, sub: x.attachment ? 'With an attachment' : '', href: tlGmail(x.threadId) }));
+  function tlForContact(c) {
+    const cid = c.id, rel = (S.bookings || []).filter(b => [b.venueId, b.promoterId, b.contactPersonId, b.mediaId, b.bookingContactId].includes(cid));
+    let out = [];
+    if (c.createdAt) out.push({ at: c.createdAt, k: 'new', text: 'Added to your contacts' });
+    rel.forEach(b => { out = out.concat(tlForShow(b, true)); });
+    (S.bookings || []).filter(b => b.foundById === cid && b.createdAt).forEach(b => out.push({ at: b.createdAt, k: 'ref', text: `Referred you · ${tlShowName(b)}`, go: () => bookingView(b.id) }));
+    out = out.concat(tlEmails(x => x.contactId === cid));
+    (S.income || []).filter(x => x.sourceId === cid).forEach(x => out.push({ at: x.date || x.createdAt, k: 'money', text: `Paid you ${tlMoney(x.amount)}${x.desc ? ' · ' + x.desc : ''}`, go: () => incomeForm(x) }));
+    try { flRoList(c).forEach(r => { if (r.via === 'email' && (S.sentLog || []).some(x => x.contactId === cid && tlDay(x.at) === tlDay(r.at))) return; out.push({ at: r.at, k: 'reach', text: `${TL_VIA[r.via] || 'Reached out'}${r.bookingId ? ' about ' + tlShowName((S.bookings || []).find(b => b.id === r.bookingId) || {}) : ''}`, sub: r.note && r.via !== 'email' ? r.note : (r.outcome || '') }); }); } catch (_) {}
+    return out;
+  }
+  function tlDraw(root, key, items, title) {
+    const list = items.filter(i => tlDay(i.at)).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    const sig = JSON.stringify(list.map(i => [i.at, i.text, i.sub])) + TL.open.has(key);
+    let box = root.querySelector(':scope .ssx-tl');
+    if (!list.length) { if (box) box.remove(); return; }
+    if (!box) { box = document.createElement('div'); box.className = 'ssx-tl'; const act = root.querySelector(':scope > .actions, :scope .sheet-actions'); act ? act.before(box) : root.appendChild(box); }
+    if (box.dataset.sig === sig) return; box.dataset.sig = sig;
+    const all = TL.open.has(key), shown = all ? list : list.slice(0, TL.N);
+    box.innerHTML = `<h4>${esc(title)}</h4><ol>${shown.map((i, n) => {
+      const inner = `<span class="when">${esc(tlNice(i.at))}</span><span class="dot k-${i.k}${i.st ? ' s-' + i.st : ''}" aria-hidden="true"></span><span class="what">${esc(i.text)}${i.sub ? `<small>${esc(i.sub)}</small>` : ''}</span>`;
+      return `<li${i.future ? ' class="future"' : ''}>${i.href ? `<a href="${esc(i.href)}" target="_blank" rel="noopener">${inner}</a>` : i.go ? `<button type="button" data-tl="${n}">${inner}</button>` : `<div>${inner}</div>`}</li>`;
+    }).join('')}</ol>${list.length > TL.N ? `<button type="button" class="linkbtn" data-tl-more>${all ? 'Show less' : `Show all ${list.length}`}</button>` : ''}`;
+    box.querySelectorAll('[data-tl]').forEach(b => b.onclick = () => { const it = shown[+b.dataset.tl]; if (it && it.go) it.go(); });
+    const m = box.querySelector('[data-tl-more]'); if (m) m.onclick = () => { all ? TL.open.delete(key) : TL.open.add(key); box.dataset.sig = ''; tlDraw(root, key, items, title); const mm = box.querySelector('[data-tl-more]'); if (mm) mm.focus(); };
+  }
+  const _flContactPhoneTL = flContactPhone;
+  flContactPhone = function (root) {
+    tlKeepStages(); const r = _flContactPhoneTL.apply(this, arguments);
+    try { const id = root.dataset && root.dataset.booking, b = id && (S.bookings || []).find(x => x.id === id); if (b) tlDraw(root, 'b:' + id, [...tlForShow(b, false), ...tlEmails(x => x.bookingId === id)], 'Activity'); } catch (e) { console.error(e); }
+    return r;
+  };
+  const _flRoSheet2TL = flRoSheet2;
+  flRoSheet2 = function (root) {
+    const r = _flRoSheet2TL.apply(this, arguments);
+    try { const cur = typeof SH_CUR !== 'undefined' && SH_CUR && SH_CUR.key; if (cur && /^r:/.test(cur) && root.querySelector('[data-editc]')) { const c = contact(cur.slice(2)); if (c) tlDraw(root, cur, tlForContact(c), 'Activity'); } } catch (e) { console.error(e); }
+    return r;
+  };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
