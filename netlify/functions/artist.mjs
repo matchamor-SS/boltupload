@@ -31,7 +31,11 @@ const CSP = "default-src 'none'; img-src https: data:; style-src 'unsafe-inline'
 export default async (req, context) => {
   const u = new URL(req.url), slug = String((context.params || {}).slug || '').toLowerCase();
   if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(slug)) return notFound(slug);
-  const d = await load(slug); if (!d || !d.slug) return notFound(slug);
+  const d = await load(slug);
+  // an old name of this artist: send people on to their page's current address
+  if (d && typeof d.moved === 'string' && /^[a-z0-9][a-z0-9-]{1,39}$/.test(d.moved) && d.moved !== slug)
+    return new Response(null, { status: 302, headers: { location: `${u.origin}/${d.moved}${u.pathname.endsWith('/photo.jpg') ? '/photo.jpg' : ''}`, 'cache-control': 'public, max-age=300' } });
+  if (!d || !d.slug) return notFound(slug);
   if (u.pathname.endsWith('/photo.jpg')) {
     if (/^https:\/\//.test(d.photo || '')) return Response.redirect(d.photo, 302);
     const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(d.photo || ''); if (!m) return new Response('', { status: 404 });

@@ -6918,6 +6918,17 @@ function appExtras() {
     el.dataset.sig = pdSig();
     el.querySelector('[data-pw-openbtn]').onclick = pwOpen;
   };  
+/* -- Link names stay yours: before a new name is saved, check it isn't one another artist has used (their old links
+     must never lead to someone else). Names you used before still work and forward to your current one. */
+  const _perfLN = perf;
+  perf = async function (op, extra) {
+    if (op === 'claim' && extra && extra.slug) {
+      let free = true; try { const { data, error } = await sb.rpc('link_name_free', { p_slug: String(extra.slug).toLowerCase() }); if (!error && data === false) free = false; } catch (_) {}
+      if (!free) throw Object.assign(new Error('fn'), { code: 'slug_taken' });
+    }
+    try { return await _perfLN.apply(this, arguments); }
+    catch (e) { if (op === 'claim' && e && /slug_taken|23505|duplicate/i.test(String(e.code || ''))) e.code = 'slug_taken'; throw e; }
+  };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;

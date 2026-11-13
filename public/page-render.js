@@ -145,7 +145,7 @@ function page(d, origin, opts) {
   const fontUrl = `https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=${encodeURIComponent(F[0]).replace(/%20/g, '+')}:${F[2].includes('italic') ? 'ital,wght@1,' : 'wght@'}${F[1]}&display=swap`;
   const pic = img && !cover ? `<img class="pic" src="${esc(picSrc)}" alt="${esc(name)}" width="${W}" height="${PH}">` : '';
   const heroText = `<div class="htext"><h1>${esc(name)}</h1>${d.tagline ? `<p class="tag">${esc(d.tagline)}</p>` : ''}${d.city ? `<p class="city">${svg('pin', 13)}${esc(d.city)}</p>` : ''}
-<div class="cta">${book ? `<a class="btn primary" href="${esc(book)}">Book me</a>` : ''}${shows.length && showsOn ? '<a class="btn" href="#shows">Upcoming shows</a>' : ''}</div></div>`;
+<div class="cta">${book ? `<a class="btn primary" href="${esc(book)}">Book me</a>` : ''}</div></div>`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(name)}${shows.length ? ' \u00b7 Upcoming shows' : ''}${book ? ' & booking' : ''}</title>
 <meta name="description" content="${esc(desc)}"><link rel="canonical" href="${esc(url)}">
