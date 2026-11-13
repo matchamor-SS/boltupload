@@ -42,10 +42,20 @@ const FONTS = {
   italiana: ['Italiana', 400, ''], playfair: ['Playfair Display', 600, ''], bebas: ['Bebas Neue', 400, 'letter-spacing:.03em'], unbounded: ['Unbounded', 600, 'letter-spacing:-.01em'],
   grotesk: ['Space Grotesk', 600, 'letter-spacing:-.02em'], marker: ['Permanent Marker', 400, ''], cormorant: ['Cormorant Garamond', 500, 'font-style:italic'], syne: ['Syne', 700, 'letter-spacing:-.01em']
 };
-const DEF_ORDER = ['shows', 'photos', 'watch', 'links', 'bio', 'book'];
-const DEF_TITLE = { shows: 'Upcoming', photos: 'Photos', watch: 'Watch & listen', links: 'Listen & follow', bio: 'About', book: 'Booking' };
-const DEF_ICON = { shows: 'ticket', photos: 'camera', watch: 'play', links: 'link', bio: 'sparkle', book: 'calendar' };
+const DEF_ORDER = ['news', 'shows', 'photos', 'watch', 'links', 'bio', 'book'];
+const DEF_TITLE = { news: 'News', shows: 'Upcoming', photos: 'Photos', watch: 'Watch & listen', links: 'Listen & follow', bio: 'About', book: 'Booking' };
+const DEF_ICON = { news: 'bolt', shows: 'ticket', photos: 'camera', watch: 'play', links: 'link', bio: 'sparkle', book: 'calendar' };
 // saved order first; sections added later slot in after their usual neighbour
+// "-08:00": the artist's time zone offset at that moment, so Google reads show times exactly
+function tzOffset(date, hm, tz) {
+  try {
+    const [y, mo, d] = date.split('-').map(Number), [h, mi] = hm.split(':').map(Number), guess = Date.UTC(y, mo - 1, d, h, mi);
+    const at = t => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(new Date(t)).map(x => [x.type, x.value])); return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - t; };
+    const off = Math.round(at(guess - at(guess)) / 60000), sg = off < 0 ? '-' : '+', a = Math.abs(off);
+    return `${sg}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`;
+  } catch (_) { return ''; }
+}
+const isoAt = (date, hm, tz) => { const dd = hm < '06:00' ? nextDay(date) : date; return `${dd}T${hm}:00${tzOffset(dd, hm, tz)}`; };
 function mergeOrder(saved) {
   const o = [...new Set((Array.isArray(saved) ? saved : []).filter(k => DEF_ORDER.includes(k)))];
   DEF_ORDER.forEach((k, i) => { if (o.includes(k)) return; const prev = DEF_ORDER.slice(0, i).reverse().find(x => o.includes(x)); o.splice(prev ? o.indexOf(prev) + 1 : 0, 0, k); });
@@ -95,9 +105,20 @@ function page(d, origin, opts) {
   const remote = /^https:\/\//.test(d.photo || ''), img = d.photo ? (remote ? d.photo : `${origin}/${d.slug}/photo.jpg`) : '', picSrc = remote ? d.photo : (d.photo || '');
   const music = ['dj', 'singer', 'rapper', 'band', 'instrumentalist', 'producer', ''].includes(d.kind || '');
   const off = new Set(Array.isArray(d.off) ? d.off : []), order = mergeOrder(d.order), showsOn = !off.has('shows');
+  const tz = /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$/.test(d.tz || '') ? d.tz : 'America/Los_Angeles';
+  const today = /^\d{4}-\d{2}-\d{2}$/.test(d.today || '') ? d.today : new Date().toISOString().slice(0, 10);
+  // news posts: up to 6, newest first as the artist ordered them; a post with an end date disappears after that day
+  const news = (Array.isArray(d.news) ? d.news : []).filter(n => n && typeof n === 'object').map(n => ({
+    title: String(n.title || '').trim().slice(0, 80), text: String(n.text || '').trim().slice(0, 600), url: safeUrl(n.url), label: String(n.label || '').trim().slice(0, 30),
+    img: n.img && ASSET.test(String(n.img.url || '')) ? String(n.img.url) : '', until: /^\d{4}-\d{2}-\d{2}$/.test(n.until || '') ? n.until : ''
+  })).filter(n => (n.title || n.text) && (!n.until || n.until >= today)).slice(0, 6);
   const ld = (showsOn ? shows : []).map(s => ({
     '@context': 'https://schema.org', '@type': music ? 'MusicEvent' : 'Event', name: s.title || `${name} at ${s.venue || s.city || 'a show'}`,
-    startDate: s.time ? `${s.time < '06:00' ? nextDay(s.date) : s.date}T${s.time}` : s.date, eventStatus: 'https://schema.org/EventScheduled', eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
+    startDate: s.time ? isoAt(s.date, s.time, tz) : s.date,
+    ...(s.time && /^\d{2}:\d{2}$/.test(s.end || '') ? { endDate: (() => { let dd = s.time < '06:00' ? nextDay(s.date) : s.date; if (s.end <= s.time) dd = nextDay(dd); return `${dd}T${s.end}:00${tzOffset(dd, s.end, tz)}`; })() } : {}),
+    description: `${name}${s.venue ? ' at ' + s.venue : ''}${s.city ? ', ' + s.city : ''}${s.time ? '. Set at ' + t12(s.time) : ''}.`,
+    organizer: s.promoter ? { '@type': 'Organization', name: s.promoter } : s.venue ? { '@type': 'Organization', name: s.venue } : { '@type': music ? 'MusicGroup' : 'Person', name, url },
+    eventStatus: 'https://schema.org/EventScheduled', eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
     location: { '@type': 'Place', name: s.venue || s.city || 'TBA', address: { '@type': 'PostalAddress', ...(s.address ? { streetAddress: s.address } : {}), ...(s.city ? { addressLocality: s.city } : {}) } },
     performer: { '@type': music ? 'MusicGroup' : 'Person', name }, ...(img ? { image: [img] } : {}),
     ...(s.tickets ? { offers: { '@type': 'Offer', url: s.tickets, availability: 'https://schema.org/InStock' } } : {}), url
@@ -112,6 +133,7 @@ function page(d, origin, opts) {
   const bio = String(d.bio || '').trim().split(/\n{2,}/).filter(Boolean).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
   const head = k => { const ic = look.icons ? iconOf(k) : ''; return `<h2 id="h-${k}">${ic ? `<span class="ic">${svg(ic, look.heads === 'big' ? 20 : 16)}</span>` : ''}<span>${esc(titleOf(k))}</span></h2>`; };
   const SEC = {
+    news: () => news.length ? `<section aria-labelledby="h-news">${head('news')}<div class="news">${news.map(n => `<article class="post card">${n.img ? `<img src="${esc(n.img)}" alt="" loading="lazy" decoding="async">` : ''}<div class="pbody">${n.title ? `<h3>${esc(n.title)}</h3>` : ''}${n.text ? `<p>${esc(n.text).replace(/\n/g, '<br>')}</p>` : ''}${n.url ? `<a class="btn small" href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.label || 'Learn more')}</a>` : ''}</div></article>`).join('')}</div></section>` : '',
     shows: () => `<section id="shows" aria-labelledby="h-shows">${head('shows')}<ul>${showHtml}</ul></section>`,
     photos: () => gallery.length ? `<section aria-labelledby="h-photos">${head('photos')}<div class="gal ${look.gallery}${gallery.length === 1 ? ' one' : ''}">${gallery.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="${esc(name)}, photo ${i + 1}" loading="lazy" decoding="async"></a>`).join('')}</div></section>` : '',
     // in the designer, players show as stand-ins (the app can't load other sites' players); on the live page they play
@@ -188,6 +210,7 @@ ul{list-style:none;margin:0;padding:0}
 .gal.strip{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px;margin:0 -16px;padding-left:16px;padding-right:16px;scrollbar-width:thin}.gal.strip a{flex:0 0 72%;aspect-ratio:4/5;scroll-snap-align:center}
 .players{display:flex;flex-direction:column;gap:12px}.stand{height:100%;min-height:110px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:${muted};text-align:center;padding:12px}.stand svg{color:${solid}}.stand span{color:${ink};font-weight:600}.stand small{font-size:12px}.player{overflow:hidden;padding:0}.player.video{aspect-ratio:16/9}.player iframe{width:100%;height:100%;border:0;display:block}
 .bio p{margin:0 0 12px}
+.news{display:flex;flex-direction:column;gap:12px}.post{overflow:hidden;padding:0}.post img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block}.post .pbody{padding:16px 18px}.post h3{margin:0 0 6px;font-size:18px;line-height:1.3}.post p{margin:0 0 12px;color:${muted}}.post p:last-child{margin-bottom:0}
 .bookbox{padding:18px}.bookbox p{margin:0 0 14px;color:${muted}}
 ${preview ? 'a{pointer-events:none}' : ''}
 footer{margin-top:56px;text-align:center;font-size:13px;color:${muted}}footer a{color:${muted}}

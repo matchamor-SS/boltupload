@@ -1290,3 +1290,20 @@ html body [data-pm-emb][aria-pressed="true"] { background: var(--accent); border
 html body .ssx-cf-act { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 html body #ssx-calfeed .ssx-check { display: flex; align-items: center; gap: 8px; min-height: 44px; }
 html body #ssx-calfeed a.btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+/* My page: news posts in the designer, and the switch on a show */
+html body .ssx-pn { display: grid; gap: 8px; padding: 12px; margin: 10px 0; border: 1px solid var(--line); border-radius: 14px; }
+html body .ssx-pn-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+html body .ssx-pn-top .mv { margin-left: auto; display: flex; gap: 6px; }
+html body .ssx-pn-top .mv .btn { min-height: 36px; }
+html body .ssx-pn-top .mv .btn:disabled { opacity: .35; }
+html body .ssx-pn input, html body .ssx-pn textarea { width: 100%; margin: 0; min-width: 0; }
+html body .ssx-pn textarea { min-height: 72px; resize: vertical; }
+html body .ssx-pn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+html body .ssx-pn-row > input { flex: 1 1 160px; }
+html body .ssx-pn-until { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+html body .ssx-pn-until input { width: auto; }
+html body .ssx-pn-ph { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
+html body .ssx-pn-ph img { width: 56px; height: 32px; object-fit: cover; border-radius: 6px; }
+html body .ssx-pn-pick { display: grid; gap: 8px; }
+html body dd.ssx-pgrow .ssx-check { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+html body .ssx-pn input, html body .ssx-pn textarea { box-sizing: border-box; font: inherit; }

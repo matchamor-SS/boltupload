@@ -7073,6 +7073,83 @@ function appExtras() {
   }
   const _pgCardCF = pgCard;
   pgCard = function () { const r = _pgCardCF.apply(this, arguments); try { cfCard(); } catch (e) { console.error(e); } return r; };  
+/* -- My page, finished: news posts written in the designer (with the live preview), and a "My page" switch on every
+     upcoming confirmed show, so a private gig can stay off the page without leaving the show. */
+  if (!PD_ORDER.includes('news')) PD_ORDER.unshift('news');
+  PD_TITLE.news = 'News'; PD_ICON0.news = 'bolt'; if (!PW_KEYS.includes('news')) PW_KEYS.push('news');
+  const PN = { pick: -1 };
+  const pnToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const pnId = () => Math.random().toString(36).slice(2, 10);
+  const pnList = () => ((PW.draft || {}).news || []).filter(n => n && typeof n === 'object');
+  // the preview gets the draft's posts, today's date and the time zone, like the live page does
+  const _pwDataN = pwData;
+  pwData = function () {
+    const d = _pwDataN.apply(this, arguments);
+    d.news = pnList(); d.today = pnToday(); try { d.tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (_) {}
+    return d;
+  };
+  function pnSet(list, focus) { pwSet({ news: list }, focus); }
+  function pnEditor(box) {
+    const list = pnList(), photos = pdPhotos(), det = document.createElement('details');
+    det.className = 'ssx-pd'; det.dataset.pd = 'news'; if (PW.open.has('news')) det.open = true;
+    det.innerHTML = `<summary>News posts <span class="note">${list.length} of 6</span></summary>
+      <p class="note">Short updates at the top of your page: a new mix, a residency, a big show. Add an end date and a post disappears on its own after that day.</p>
+      ${list.map((n, i) => `<div class="ssx-pn" data-i="${i}">
+        <div class="ssx-pn-top"><b>Post ${i + 1}</b>${n.until && n.until < pnToday() ? ' <span class="note">(ended, not showing)</span>' : ''}<span class="mv"><button type="button" class="btn small" data-pn-up aria-label="Move post ${i + 1} up"${i ? '' : ' disabled'}>↑</button><button type="button" class="btn small" data-pn-dn aria-label="Move post ${i + 1} down"${i < list.length - 1 ? '' : ' disabled'}>↓</button><button type="button" class="btn small" data-pn-del>Remove</button></span></div>
+        <input type="text" data-pn="title" maxlength="80" value="${esc(n.title || '')}" placeholder="Headline, e.g. New mix out now" aria-label="Headline for post ${i + 1}">
+        <textarea data-pn="text" maxlength="600" placeholder="A few words (optional)" aria-label="Text for post ${i + 1}">${esc(n.text || '')}</textarea>
+        <div class="ssx-pn-row"><input type="url" inputmode="url" data-pn="url" value="${esc(n.url || '')}" placeholder="Link (optional)" aria-label="Link for post ${i + 1}"><input type="text" data-pn="label" maxlength="30" value="${esc(n.label || '')}" placeholder="Button text, e.g. Listen" aria-label="Button text for post ${i + 1}"></div>
+        <div class="ssx-pn-row"><label class="ssx-pn-until">Show until <input type="date" data-pn="until" value="${esc(n.until || '')}" min="${pnToday()}"></label>
+          <span class="ssx-pn-ph">${n.img && n.img.url ? `<img src="${esc(n.img.id ? (flSrc(n.img.id) || n.img.url) : n.img.url)}" alt="">` : ''}<button type="button" class="btn small" data-pn-pic aria-expanded="${PN.pick === i}">${n.img ? 'Change photo' : 'Add photo'}</button>${n.img ? '<button type="button" class="btn small" data-pn-nopic>Remove photo</button>' : ''}</span></div>
+        ${PN.pick === i ? `<div class="ssx-pn-pick"><button type="button" class="btn small primary" data-pn-up-ph>Upload a photo</button>${photos.length ? `<div class="ssx-pd-phs">${photos.map(p => `<button type="button" class="ssx-pd-ph" data-pn-use="${esc(p.id)}" aria-pressed="${!!(n.img && n.img.id === p.id)}" aria-label="Use this photo"><img src="${esc(flSrc(p.id) || p.url)}" alt="" loading="lazy"></button>`).join('')}</div>` : ''}</div>` : ''}
+      </div>`).join('')}
+      ${list.length < 6 ? '<button type="button" class="btn small primary" data-pn-add>+ Add a post</button>' : '<p class="note">Your page shows up to 6 posts. Remove one to add another.</p>'}`;
+    const sec = box.querySelector('details[data-pd="sections"]'); sec ? sec.before(det) : box.appendChild(det);
+    det.ontoggle = () => { det.open ? PW.open.add('news') : PW.open.delete('news'); };
+    const add = det.querySelector('[data-pn-add]'); if (add) add.onclick = () => { PW.open.add('news'); pnSet([{ id: pnId(), title: '', text: '' }, ...list], '.ssx-pn[data-i="0"] [data-pn="title"]'); };
+    det.querySelectorAll('.ssx-pn').forEach(row => {
+      const i = +row.dataset.i, f = s => `.ssx-pn[data-i="${i}"] ${s}`;
+      // typing updates the preview right away, without redrawing the form
+      row.querySelectorAll('[data-pn]').forEach(inp => {
+        const k = inp.dataset.pn;
+        inp.addEventListener(k === 'until' ? 'change' : 'input', () => { const L = pnList().map(x => ({ ...x })); L[i] = { ...L[i], [k]: inp.value }; PW.draft.news = L; PW.dirty = true; pwStatus(); pwPreview(); });
+        if (k === 'url') inp.addEventListener('change', () => { let v = inp.value.trim(); if (v && !/^https?:\/\//i.test(v) && /\.[a-z]{2,}/i.test(v)) { v = 'https://' + v; inp.value = v; } const L = pnList().map(x => ({ ...x })); L[i] = { ...L[i], url: v }; PW.draft.news = L; pwPreview(); });
+      });
+      const mv = dir => { const L = pnList().slice(), j = i + dir; if (j < 0 || j >= L.length) return; [L[i], L[j]] = [L[j], L[i]]; PN.pick = -1; pnSet(L, `.ssx-pn[data-i="${j}"] ${dir < 0 ? '[data-pn-up]' : '[data-pn-dn]'}`); };
+      row.querySelector('[data-pn-up]').onclick = () => mv(-1); row.querySelector('[data-pn-dn]').onclick = () => mv(1);
+      row.querySelector('[data-pn-del]').onclick = () => { const L = pnList().filter((_, k) => k !== i); PN.pick = -1; pnSet(L, L.length ? `.ssx-pn[data-i="${Math.max(0, i - 1)}"] [data-pn="title"]` : '[data-pn-add]'); toast('Post removed. Discard changes brings it back.'); };
+      row.querySelector('[data-pn-pic]').onclick = () => { PN.pick = PN.pick === i ? -1 : i; pwControls(PN.pick === i ? f('[data-pn-up-ph]') : f('[data-pn-pic]')); };
+      const np = row.querySelector('[data-pn-nopic]'); if (np) np.onclick = () => { const L = pnList().map(x => ({ ...x })); delete L[i].img; pnSet(L, f('[data-pn-pic]')); };
+      const setImg = id => { const u = pdUrl(id); if (!u) return; const L = pnList().map(x => ({ ...x })); if (!L[i]) return; L[i].img = { id, url: u }; PN.pick = -1; pnSet(L, f('[data-pn-pic]')); };
+      row.querySelectorAll('[data-pn-use]').forEach(b => b.onclick = () => setImg(b.dataset.pnUse));
+      const upb = row.querySelector('[data-pn-up-ph]'); if (upb) upb.onclick = () => flAddPhotos('', ids => { if (ids && ids[0]) setImg(ids[0]); });
+    });
+  }
+  const _pwControlsN = pwControls;
+  pwControls = function (focus) {
+    const r = _pwControlsN.apply(this, arguments);
+    try { const box = PW.el && PW.el.querySelector('.ssx-pw-opts'); if (box && !box.querySelector('details[data-pd="news"]')) { pnEditor(box); if (focus) { const b = box.querySelector(focus); if (b && document.activeElement !== b) b.focus(); } } } catch (e) { console.error(e); }
+    return r;
+  };
+  // on a show: "My page: Shown / Hidden", right under Tickets
+  function pgShowRow(root) {
+    const id = root.dataset && root.dataset.booking, dl = root.querySelector('dl.kv'); if (!id || !dl || !pgSlug() || !PGE.loaded) { if (!PGE.loaded) pgLoad(); return; }
+    const b = flBk().find(x => x.id === id); if (!b || flKind(b.status) !== 'confirmed' || !b.date || b.date < todayStr()) { const old = dl.querySelector('.ssx-pgrow'); if (old) { old.previousElementSibling.remove(); old.remove(); } return; }
+    let dd = dl.querySelector('dd.ssx-pgrow');
+    if (!dd) {
+      const dt = document.createElement('dt'); dt.textContent = 'My page'; dd = document.createElement('dd'); dd.className = 'ssx-pgrow';
+      const tix = dl.querySelector('.ssx-tix'), anchor = tix ? tix.closest('dd') : null;
+      if (anchor) anchor.after(dt, dd); else dl.append(dt, dd);
+    }
+    const hidden = ((PGE.doc || {}).hide || []).includes(id), sig = String(hidden); if (dd.dataset.sig === sig) return; dd.dataset.sig = sig;
+    dd.innerHTML = `<label class="ssx-check"><input type="checkbox" data-pg-onpage${hidden ? '' : ' checked'}> ${hidden ? 'Hidden from your page' : 'Shown on your page'}</label>`;
+    dd.querySelector('input').onchange = async e => {
+      const show = e.target.checked, h = new Set((PGE.doc || {}).hide || []); show ? h.delete(id) : h.add(id);
+      if (await pgSave({ hide: [...h], updatedAt: new Date().toISOString() })) { toast(show ? 'Shown on your page' : 'Hidden from your page. Still in your calendar and bookings.'); dd.dataset.sig = ''; pgShowRow(root); const c = dd.querySelector('input'); if (c) c.focus(); }
+    };
+  }
+  const _flContactPhoneN = flContactPhone;
+  flContactPhone = function (root) { const r = _flContactPhoneN.apply(this, arguments); try { pgShowRow(root); } catch (e) { console.error(e); } return r; };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
