@@ -1286,3 +1286,7 @@ html body details.ssx-pm-over .ssx-pm-drop { border-color: var(--accent); backgr
 html body .ssx-pm-on { display: block; width: 100%; margin-top: 6px; min-height: 32px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 12px; font-weight: 600; cursor: pointer; }
 html body .ssx-pm-on[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #141711; }
 html body [data-pm-emb][aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #141711; }
+/* Apple Calendar card */
+html body .ssx-cf-act { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+html body #ssx-calfeed .ssx-check { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+html body #ssx-calfeed a.btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
