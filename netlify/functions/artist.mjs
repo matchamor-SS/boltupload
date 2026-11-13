@@ -31,9 +31,9 @@ function page(d, origin) {
   const url = `${origin}/${d.slug}`, name = d.name || d.slug, shows = Array.isArray(d.shows) ? d.shows : [], links = (Array.isArray(d.links) ? d.links : []).map(l => ({ label: String(l.label || '').slice(0, 60), url: safeUrl(l.url) })).filter(l => l.url && l.label).slice(0, 24);
   const desc = (d.tagline || (d.bio || '').split(/\n/)[0] || `${name}: upcoming shows and booking`).slice(0, 158);
   const book = d.booking ? `${origin}/?book=${encodeURIComponent(d.slug)}` : '';
-  const img = d.photo ? `${origin}/${d.slug}/photo.jpg` : '';
+  const remote = /^https:\/\//.test(d.photo || ''), img = d.photo ? (remote ? d.photo : `${origin}/${d.slug}/photo.jpg`) : '';
   const music = ['dj', 'singer', 'rapper', 'band', 'instrumentalist', 'producer', ''].includes(d.kind || '');
-  const ld = shows.map(s => ({
+  const ld = (Array.isArray(d.off) && d.off.includes('shows') ? [] : shows).map(s => ({
     '@context': 'https://schema.org', '@type': music ? 'MusicEvent' : 'Event', name: s.title || `${name} at ${s.venue || s.city || 'a show'}`,
     startDate: s.time ? `${s.date}T${s.time}` : s.date, eventStatus: 'https://schema.org/EventScheduled', eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
     location: { '@type': 'Place', name: s.venue || s.city || 'TBA', address: { '@type': 'PostalAddress', ...(s.address ? { streetAddress: s.address } : {}), ...(s.city ? { addressLocality: s.city } : {}) } },
@@ -44,7 +44,16 @@ function page(d, origin) {
   const showHtml = shows.length ? shows.map(s => { const D = dt(s.date); return `<li class="show"><div class="when"><span class="m">${MON[D.getUTCMonth()]}</span><span class="d">${D.getUTCDate()}</span><span class="w">${DAY[D.getUTCDay()]}</span></div>
       <div class="what"><b>${esc(s.title || s.venue || 'Show')}</b><span>${esc([s.title ? s.venue : '', s.city].filter(Boolean).join(' · '))}${s.time ? ` · ${esc(t12(s.time))}` : ''}</span></div>
       ${s.tickets ? `<a class="btn small" href="${esc(safeUrl(s.tickets))}" rel="noopener" target="_blank">Tickets</a>` : ''}</li>`; }).join('') : `<li class="empty">No public dates right now.${book ? ' Want to book a date? Send a request below.' : ''}</li>`;
+  const SEC = {
+    shows: () => `<section id="shows" aria-labelledby="h-shows"><h2 id="h-shows">Upcoming</h2><ul>${showHtml}</ul></section>`,
+    links: () => links.length ? `<section aria-labelledby="h-links"><h2 id="h-links">Listen & follow</h2><div class="links">${links.map(l => `<a class="btn" href="${esc(l.url)}" rel="noopener" target="_blank">${esc(l.label)}</a>`).join('')}</div></section>` : '',
+    bio: () => bio ? `<section class="bio" aria-labelledby="h-bio"><h2 id="h-bio">About</h2>${bio}</section>` : '',
+    book: () => book ? `<section aria-labelledby="h-book"><h2 id="h-book">Booking</h2><p style="margin:0 0 14px;color:${muted}">See open dates and send a request in a minute.</p><a class="btn primary" href="${esc(book)}">Check dates and book</a></section>` : ''
+  };
+  const off = new Set(Array.isArray(d.off) ? d.off : []), order = [...new Set([...(Array.isArray(d.order) ? d.order : []).filter(k => SEC[k]), 'shows', 'links', 'bio', 'book'])];
+  const showsOn = !off.has('shows');
   const bio = String(d.bio || '').trim().split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
+  const sections = order.filter(k => !off.has(k)).map(k => SEC[k]()).join('\n');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(name)}${shows.length ? ' · Upcoming shows' : ''}${book ? ' & booking' : ''}</title>
 <meta name="description" content="${esc(desc)}"><link rel="canonical" href="${esc(url)}">
@@ -76,13 +85,10 @@ ul{list-style:none;margin:0;padding:0}
 footer{margin-top:48px;text-align:center;font-size:13px;color:${muted}}footer a{color:${muted}}
 @media (max-width:420px){main{padding-top:32px}.show{flex-wrap:wrap}.show .btn{width:100%}}
 </style></head><body><main>
-<header class="hero">${img ? `<img class="pic" src="${esc(d.photo)}" alt="${esc(name)}" width="148" height="148">` : ''}
+<header class="hero">${img ? `<img class="pic" src="${esc(img && remote ? img : d.photo)}" alt="${esc(name)}" width="148" height="148">` : ''}
 <h1>${esc(name)}</h1>${d.tagline ? `<p class="tag">${esc(d.tagline)}</p>` : ''}${d.city ? `<p class="city">${esc(d.city)}</p>` : ''}
-<div class="cta">${book ? `<a class="btn primary" href="${esc(book)}">Book me</a>` : ''}${shows.length ? '<a class="btn" href="#shows">Upcoming shows</a>' : ''}</div></header>
-<section id="shows" aria-labelledby="h-shows"><h2 id="h-shows">Upcoming</h2><ul>${showHtml}</ul></section>
-${links.length ? `<section aria-labelledby="h-links"><h2 id="h-links">Listen & follow</h2><div class="links">${links.map(l => `<a class="btn" href="${esc(l.url)}" rel="noopener" target="_blank">${esc(l.label)}</a>`).join('')}</div></section>` : ''}
-${bio ? `<section class="bio" aria-labelledby="h-bio"><h2 id="h-bio">About</h2>${bio}</section>` : ''}
-${book ? `<section aria-labelledby="h-book"><h2 id="h-book">Booking</h2><p style="margin:0 0 14px;color:${muted}">See open dates and send a request in a minute.</p><a class="btn primary" href="${esc(book)}">Check dates and book</a></section>` : ''}
+<div class="cta">${book ? `<a class="btn primary" href="${esc(book)}">Book me</a>` : ''}${shows.length && showsOn ? '<a class="btn" href="#shows">Upcoming shows</a>' : ''}</div></header>
+${sections}
 <footer>Made with <a href="${esc(origin)}/">Set &amp; Settled</a></footer>
 </main></body></html>`;
 }
@@ -92,6 +98,7 @@ export default async (req, context) => {
   if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(slug)) return notFound(slug);
   const d = await load(slug); if (!d || !d.slug) return notFound(slug);
   if (u.pathname.endsWith('/photo.jpg')) {
+    if (/^https:\/\//.test(d.photo || '')) return Response.redirect(d.photo, 302);
     const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(d.photo || ''); if (!m) return new Response('', { status: 404 });
     return new Response(Buffer.from(m[2], 'base64'), { headers: { 'content-type': m[1], 'cache-control': 'public, max-age=3600' } });
   }
