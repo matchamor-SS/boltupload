@@ -6562,6 +6562,176 @@ function appExtras() {
     try { const act = form.querySelector('.actions'); if (act) { const box = document.createElement('div'); box.className = 'f'; act.before(box); pgSecDraw(box); } } catch (e) { console.error(e); }
     return r;
   };  
+/* -- My page designer: a Design card on My page. Look (colors, layout, picture size and shape, name font, background, boxes,
+     section titles), Sections (order, show or hide, your own titles and icons), Photos (pick up to 12 from Media and Kit) and
+     Watch & listen (YouTube, SoundCloud, Spotify, Mixcloud and Vimeo players). Every change saves as you go; Preview shows it. */
+  PG_SECS.push(['photos', 'Photos'], ['watch', 'Watch & listen']);
+  pgSecDraw = box => box.remove(); // sections now live in the Design card
+  const PD_ORDER = ['shows', 'photos', 'watch', 'links', 'bio', 'book'];
+  const PD_TITLE = { shows: 'Upcoming', photos: 'Photos', watch: 'Watch & listen', links: 'Listen & follow', bio: 'About', book: 'Booking' };
+  const PD_ICON0 = { shows: 'ticket', photos: 'camera', watch: 'play', links: 'link', bio: 'sparkle', book: 'calendar' };
+  const PD_ICONS = {
+    ticket: '<path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z"/><path d="M14 6v12" stroke-dasharray="2 2.5"/>',
+    calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+    mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+    note: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
+    headphones: '<path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3zM3 19a2 2 0 0 0 2 2h1v-6H3z"/>',
+    vinyl: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 6.5A5.5 5.5 0 0 0 6.5 12"/>',
+    star: '<path d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2-5.5-2.9-5.5 2.9 1-6.2L3 9.6l6.2-.9z"/>',
+    sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7z"/>',
+    heart: '<path d="M12 20s-7-4.4-9-9a5 5 0 0 1 9-3 5 5 0 0 1 9 3c-2 4.6-9 9-9 9z"/>',
+    camera: '<path d="M4 7h3l2-3h6l2 3h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="4"/>',
+    play: '<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5z"/>',
+    link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9s1.3-6.3 3.8-9z"/>',
+    pin: '<path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/>',
+    mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+    bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+    moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+    flame: '<path d="M12 22a7 7 0 0 0 7-7c0-4-3-6-4-10-2 2-3 4-3 6-1-1-2-2-2-4-2 2-5 5-5 8a7 7 0 0 0 7 7z"/>'
+  };
+  const pdSvg = k => PD_ICONS[k] ? `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PD_ICONS[k]}</svg>` : '<span aria-hidden="true">–</span>';
+  const PD_FONTS = [['italiana', 'Elegant'], ['playfair', 'Classic'], ['cormorant', 'Romantic'], ['bebas', 'Poster'], ['unbounded', 'Club'], ['grotesk', 'Modern'], ['syne', 'Art'], ['marker', 'Street']];
+  const PD = { open: new Set(['look']), ic: '' };
+  const pdLook = () => ({ layout: 'center', size: 'm', shape: 'circle', font: 'italiana', name: 'm', bg: 'glow', cards: 'soft', heads: 'caps', icons: true, gallery: 'grid', align: 'center', palette: '', mode: '', ...((PGE.doc || {}).look || {}) });
+  function pdOrder() {
+    const o = [...new Set(((PGE.doc || {}).order || []).filter(k => PD_ORDER.includes(k)))];
+    PD_ORDER.forEach((k, i) => { if (o.includes(k)) return; const prev = PD_ORDER.slice(0, i).reverse().find(x => o.includes(x)); o.splice(prev ? o.indexOf(prev) + 1 : 0, 0, k); });
+    return o;
+  }
+  const PD_PLAYS = /^https?:\/\/(www\.|m\.)?(youtube\.com\/(watch\?|shorts\/|live\/)|music\.youtube\.com\/watch\?|youtu\.be\/[\w-]{11}|vimeo\.com\/\d{5,}|open\.spotify\.com\/(intl-[a-z-]+\/)?(track|album|playlist|artist|episode|show)\/|soundcloud\.com\/[\w-]+\/[\w-]+|mixcloud\.com\/[\w-]+\/[\w-]+)/i;
+  const pdName = u => { const m = /(youtu|vimeo|spotify|soundcloud|mixcloud)/i.exec(u) || [], t = (/spotify\.com\/(?:intl-[a-z-]+\/)?(\w+)/i.exec(u) || [])[1];
+    return ({ youtu: 'YouTube video', vimeo: 'Vimeo video', spotify: 'Spotify ' + (t || 'link'), soundcloud: 'SoundCloud', mixcloud: 'Mixcloud mix' })[String(m[1] || '').toLowerCase()] || 'Player'; };
+  const pdUrl = id => { let u = ''; try { u = flSrc(id) || ''; if (!/^https:\/\//.test(u) && typeof cl === 'function') u = cl(id) || ''; } catch (_) {} return /^https:\/\//.test(u) ? u.split('?')[0] : ''; };
+  function pdPhotos() {
+    const seen = new Set(), out = []; let all = [];
+    try { all = [...flPhotos().map(m => m.assetId), ...flKitPhotos().map(f => f.assetId)]; } catch (_) {}
+    all.forEach(id => { if (!id || seen.has(id)) return; seen.add(id); const u = pdUrl(id); if (u) out.push({ id, url: u }); });
+    return out;
+  }
+  // the page's colors follow My page's own choice, or the EPK's when it says "Match my EPK"
+  pgSync = async function (force) {
+    if (PGE.busy || (!force && Date.now() - PGE.at < 30000)) return; await pgLoad(); const d = PGE.doc || {}; if (!d.on) return;
+    PGE.at = Date.now(); PGE.busy = true;
+    try {
+      const p = S.profile || {}, k = S.kit || {}; let A = {}; try { A = flArtist(); } catch (_) {}
+      const L = d.look || {}, c = PGE.epk || {};
+      let theme = d.theme || {}; try { const T = epkTheme(L.palette || c.palette || 'champagne', L.mode || c.mode || 'dark'); theme = { bg: T.bg, glow: T.glow, ink: T.ink, muted: T.muted, line: T.line, panel: T.panel, solid: T.solid, metal: T.metal }; } catch (_) {}
+      const off = new Set(d.linkOff || []), links = pgAllLinks().filter(l => !off.has(pgLinkKey(l))).map(l => ({ label: String(l.label || l.url).slice(0, 60), url: String(l.url).slice(0, 500) })).slice(0, 24);
+      const auto = { name: p.djName || p.myName || '', kind: A.kind || '', theme, links };
+      if (!d.bioSet) auto.bio = k.bioShort || k.bioLong || ''; if (!d.tagSet) auto.tagline = k.genres || '';
+      let ph = null; try { ph = await pgPhoto(); } catch (_) {} if (ph) { auto.photo = ph.data; auto.photoKey = ph.key; }
+      if (Object.keys(auto).some(x => JSON.stringify(auto[x] ?? '') !== JSON.stringify(d[x] ?? ''))) await pgSave(auto);
+    } catch (e) { console.error(e); } finally { PGE.busy = false; }
+  };
+  const pdSig = () => { const d = PGE.doc || {}; return JSON.stringify([d.look, d.titles, d.icons, d.order, d.secOff, d.gallery, d.embeds, !!d.on, pdPhotos().map(x => x.id), pgAllLinks().map(l => l.url)]); };
+  async function pdSave(el, patch, focus, theme) {
+    const ok = await pgSave(patch); pdDraw(el, focus);
+    const s = el.querySelector('[data-pd-st]'); if (s && ok) { s.textContent = 'Saved'; clearTimeout(PD.t); PD.t = setTimeout(() => { s.textContent = ''; }, 1600); }
+    if (ok && theme) pgSync(true);
+  }
+  function pdDraw(el, focus) {
+    const d = PGE.doc || {}, L = pdLook(), titles = d.titles || {}, icons = d.icons || {}, off = new Set(d.secOff || []), o = pdOrder();
+    const gal = (d.gallery || []).filter(g => g && g.url), emb = (d.embeds || []).filter(e => e && e.url), photos = pdPhotos();
+    const chips = (k, list) => list.map(([v, n]) => `<button type="button" class="ssx-chip" data-pd-k="${k}" data-pd-v="${v}" aria-pressed="${String(L[k]) === String(v)}">${esc(n)}</button>`).join('');
+    const row = (label, k, list) => `<div class="ssx-epk-row"><span class="ssx-epk-k">${label}</span>${chips(k, list)}</div>`;
+    let themes = []; try { themes = flThemeList(); } catch (_) {}
+    const dark = (L.mode || (PGE.epk || {}).mode || 'dark') !== 'light', sw = t => { const [bg, , , solid] = dark ? t[2] : t[3]; return `linear-gradient(90deg,${bg} 0 46%,${solid} 46% 76%,${t[4][1]} 76%)`; };
+    const pal = `<div class="ssx-epk-row ssx-fl-themes"><span class="ssx-epk-k">Colors</span><button type="button" class="ssx-chip" data-pd-k="palette" data-pd-v="" aria-pressed="${!L.palette}">Match my EPK</button>${themes.map(t => `<button type="button" class="ssx-chip" data-pd-k="palette" data-pd-v="${esc(t[0])}" aria-pressed="${L.palette === t[0]}"><span class="ssx-epk-sw" style="background:${sw(t)}"></span>${esc(t[1])}</button>`).join('')}</div>`;
+    const name = k => PD_TITLE[k] || k, ic = k => icons[k] === 'none' ? '' : (PD_ICONS[icons[k]] ? icons[k] : PD_ICON0[k]);
+    const empty = { photos: !gal.length ? 'Pick photos below' : '', watch: !emb.length ? 'Pick players below' : '' };
+    const secs = o.map((k, i) => `<li data-k="${k}"${off.has(k) ? ' class="off"' : ''}>
+        <button type="button" class="ssx-pd-ic" data-pd-icbtn aria-expanded="${PD.ic === k}" aria-label="Icon for ${esc(name(k))}" title="Change icon">${L.icons ? pdSvg(ic(k)) : pdSvg('')}</button>
+        <input type="text" maxlength="40" data-pd-title value="${esc(titles[k] || '')}" placeholder="${esc(name(k))}" aria-label="Title for ${esc(name(k))}">
+        <label class="ssx-check"><input type="checkbox" data-pd-on${off.has(k) ? '' : ' checked'}> Show</label>
+        <span class="mv"><button type="button" class="btn small" data-pd-up aria-label="Move ${esc(name(k))} up"${i ? '' : ' disabled'}>↑</button><button type="button" class="btn small" data-pd-dn aria-label="Move ${esc(name(k))} down"${i < o.length - 1 ? '' : ' disabled'}>↓</button></span>
+        ${empty[k] && !off.has(k) ? `<span class="note ssx-pd-hint">${empty[k]}</span>` : ''}
+        ${PD.ic === k ? `<div class="ssx-pd-icons" role="group" aria-label="Icons">${Object.keys(PD_ICONS).map(x => `<button type="button" data-pd-icon="${x}" aria-pressed="${ic(k) === x}" aria-label="${x}" title="${x}">${pdSvg(x)}</button>`).join('')}<button type="button" data-pd-icon="none" aria-pressed="${!ic(k)}">None</button></div>` : ''}</li>`).join('');
+    const pos = new Map(gal.map((g, i) => [g.id || g.url, i + 1]));
+    const links = pgAllLinks().filter(l => PD_PLAYS.test(String(l.url))), on = new Set(emb.map(e => e.url)), extra = emb.filter(e => !links.some(l => l.url === e.url));
+    el.innerHTML = `<div class="ssx-head"><div><h3>Design</h3><p class="note">Make it yours. Changes save as you go.</p></div><div class="ssx-row"><span class="note" data-pd-st aria-live="polite"></span><button type="button" class="btn small primary" data-pd-prev>Preview</button></div></div>
+      <details class="ssx-pd" data-pd="look"${PD.open.has('look') ? ' open' : ''}><summary>Look</summary>
+        ${pal}
+        ${row('Light or dark', 'mode', [['', 'Match my EPK'], ['dark', 'Dark'], ['light', 'Light']])}
+        ${row('Layout', 'layout', [['center', 'Centered'], ['side', 'Side by side'], ['cover', 'Cover photo']])}
+        ${row(L.layout === 'cover' ? 'Cover height' : 'Picture size', 'size', [['s', 'Small'], ['m', 'Medium'], ['l', 'Large'], ['xl', 'Extra large']])}
+        ${L.layout !== 'cover' ? row('Picture shape', 'shape', [['circle', 'Circle'], ['arch', 'Arch'], ['square', 'Square'], ['portrait', 'Rectangle']]) : ''}
+        ${L.layout !== 'side' ? row('Text', 'align', [['center', 'Centered'], ['left', 'Left']]) : ''}
+        ${row('Name font', 'font', PD_FONTS)}
+        ${row('Name size', 'name', [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']])}
+        ${row('Background', 'bg', [['glow', 'Glow'], ['aurora', 'Aurora'], ['grain', 'Film grain'], ['photo', 'My photo'], ['plain', 'Plain']])}
+        ${row('Boxes', 'cards', [['soft', 'Soft'], ['outline', 'Outline'], ['glass', 'Glass'], ['bold', 'Bold']])}
+        ${row('Section titles', 'heads', [['caps', 'Small caps'], ['big', 'Big']])}
+        ${row('Icons', 'icons', [[true, 'On'], [false, 'Off']])}
+      </details>
+      <details class="ssx-pd" data-pd="sections"${PD.open.has('sections') ? ' open' : ''}><summary>Sections, titles and icons</summary>
+        <p class="note">Your picture and name always lead. Rename any section, tap its icon to change it, and use the arrows to reorder.</p>
+        <ol class="ssx-pd-secs">${secs}</ol>
+      </details>
+      <details class="ssx-pd" data-pd="photos"${PD.open.has('photos') ? ' open' : ''}><summary>Photos <span class="note">${gal.length} of 12</span></summary>
+        ${photos.length ? `<p class="note">Tap photos to add them, in the order you want. Tap again to remove.</p><div class="ssx-pd-phs">${photos.map(p => { const n = pos.get(p.id) || pos.get(p.url); return `<button type="button" class="ssx-pd-ph" data-pd-ph="${esc(p.id)}" aria-pressed="${!!n}" aria-label="${n ? 'Remove photo ' + n : 'Add photo'}"><img src="${esc(flSrc(p.id) || p.url)}" alt="" loading="lazy">${n ? `<span class="n">${n}</span>` : ''}</button>`; }).join('')}</div>` : '<p class="note">No photos yet. Add some in Media and they show up here.</p>'}
+        ${row('Layout', 'gallery', [['grid', 'Grid'], ['mosaic', 'Mosaic'], ['strip', 'Swipe']])}
+        <button type="button" class="btn small" data-pd-media>Add photos in Media</button>
+      </details>
+      <details class="ssx-pd" data-pd="watch"${PD.open.has('watch') ? ' open' : ''}><summary>Watch & listen <span class="note">${emb.length} of 6</span></summary>
+        <p class="note">Players for your music and videos, right on your page. Works with YouTube, SoundCloud, Spotify, Mixcloud and Vimeo.</p>
+        ${links.length || extra.length ? `<div class="ssx-pglist">${[...links.map(l => ({ url: l.url, label: l.label || l.url })), ...extra].map(l => `<label class="ssx-check"><input type="checkbox" data-pd-emb="${esc(l.url)}" data-pd-lbl="${esc(l.label || '')}"${on.has(l.url) ? ' checked' : ''}> ${esc(l.label || pdName(l.url))}</label>`).join('')}</div>` : ''}
+        <div class="ssx-pd-add"><input type="url" inputmode="url" data-pd-new placeholder="Paste a link to a set, track, mix or video" aria-label="Link to add as a player"><button type="button" class="btn small" data-pd-addbtn>Add</button></div>
+      </details>`;
+    el.dataset.sig = pdSig();
+    const q = s => el.querySelector(s), qa = s => el.querySelectorAll(s);
+    qa('details.ssx-pd').forEach(x => x.ontoggle = () => { x.open ? PD.open.add(x.dataset.pd) : PD.open.delete(x.dataset.pd); });
+    q('[data-pd-prev]').onclick = () => { if (!(PGE.doc || {}).on) { toast('Tick "My page is public" and save first, then Preview'); return; } window.open(pgUrl() + '?v=' + Date.now(), '_blank', 'noopener'); };
+    qa('[data-pd-k]').forEach(b => b.onclick = () => {
+      const k = b.dataset.pdK, v = k === 'icons' ? b.dataset.pdV === 'true' : b.dataset.pdV;
+      pdSave(el, { look: { ...pdLook(), [k]: v } }, `[data-pd-k="${k}"][data-pd-v="${b.dataset.pdV}"]`, k === 'palette' || k === 'mode');
+    });
+    qa('.ssx-pd-secs li').forEach(li => {
+      const k = li.dataset.k, f = s => `li[data-k="${k}"] ${s}`;
+      li.querySelector('[data-pd-on]').onchange = e => { const s = new Set((PGE.doc || {}).secOff || []); e.target.checked ? s.delete(k) : s.add(k); pdSave(el, { secOff: [...s] }, f('[data-pd-on]')); };
+      const mv = dir => { const o2 = pdOrder(), i = o2.indexOf(k), j = i + dir; if (j < 0 || j >= o2.length) return; [o2[i], o2[j]] = [o2[j], o2[i]]; pdSave(el, { order: o2 }, f(dir < 0 ? '[data-pd-up]' : '[data-pd-dn]')); };
+      li.querySelector('[data-pd-up]').onclick = () => mv(-1); li.querySelector('[data-pd-dn]').onclick = () => mv(1);
+      li.querySelector('[data-pd-icbtn]').onclick = () => { PD.ic = PD.ic === k ? '' : k; pdDraw(el, PD.ic ? f('[data-pd-icon][aria-pressed="true"]') : f('[data-pd-icbtn]')); };
+      li.querySelectorAll('[data-pd-icon]').forEach(b => b.onclick = () => { PD.ic = ''; const look = pdLook(); pdSave(el, { icons: { ...((PGE.doc || {}).icons || {}), [k]: b.dataset.pdIcon }, ...(look.icons ? {} : { look: { ...look, icons: true } }) }, f('[data-pd-icbtn]')); });
+      const t = li.querySelector('[data-pd-title]'), saveT = () => { const v = t.value.trim().slice(0, 40), cur = ((PGE.doc || {}).titles || {})[k] || ''; if (v === cur) return; pdSave(el, { titles: { ...((PGE.doc || {}).titles || {}), [k]: v } }); };
+      t.onchange = saveT; t.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); t.blur(); } };
+    });
+    qa('[data-pd-ph]').forEach(b => b.onclick = () => {
+      const id = b.dataset.pdPh, g = ((PGE.doc || {}).gallery || []).filter(x => x && x.url), has = g.some(x => x.id === id);
+      if (!has && g.length >= 12) { toast('Your page shows up to 12 photos. Remove one first.'); return; }
+      const p = pdPhotos().find(x => x.id === id); if (!p) return;
+      pdSave(el, { gallery: has ? g.filter(x => x.id !== id) : [...g, { id, url: p.url }] }, `[data-pd-ph="${id}"]`);
+    });
+    q('[data-pd-media]').onclick = () => window.goTab('media');
+    qa('[data-pd-emb]').forEach(c => c.onchange = () => {
+      const e0 = ((PGE.doc || {}).embeds || []).filter(x => x && x.url), u = c.dataset.pdEmb;
+      if (c.checked && e0.length >= 6) { c.checked = false; toast('Your page shows up to 6 players. Untick one first.'); return; }
+      pdSave(el, { embeds: c.checked ? [...e0.filter(x => x.url !== u), { url: u, label: c.dataset.pdLbl || '' }] : e0.filter(x => x.url !== u) }, `[data-pd-emb="${u.replace(/"/g, '\\"')}"]`);
+    });
+    const nw = q('[data-pd-new]'), add = () => {
+      let u = nw.value.trim(); if (!u) { nw.focus(); return; } if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+      if (!PD_PLAYS.test(u)) { toast('That link can\'t play on your page. Use a YouTube, SoundCloud, Spotify, Mixcloud or Vimeo link.'); nw.focus(); return; }
+      const e0 = ((PGE.doc || {}).embeds || []).filter(x => x && x.url); if (e0.some(x => x.url === u)) { nw.value = ''; return; }
+      if (e0.length >= 6) { toast('Your page shows up to 6 players. Untick one first.'); return; }
+      pdSave(el, { embeds: [...e0, { url: u.slice(0, 500), label: '' }] }, '[data-pd-new]');
+    };
+    q('[data-pd-addbtn]').onclick = add; nw.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
+    if (focus) { let b = el.querySelector(focus); if (b && b.disabled) b = b.parentNode.querySelector('button:not([disabled])'); if (b) b.focus(); }
+  }
+  const _pgCardD = pgCard;
+  pgCard = function () {
+    const r = _pgCardD.apply(this, arguments);
+    try {
+      const card = document.getElementById('ssx-page'); if (!card || !PGE.loaded || !PGE.doc) return r;
+      let el = document.getElementById('ssx-pgdesign');
+      if (!el) { el = document.createElement('div'); el.id = 'ssx-pgdesign'; el.className = 'card ssx'; card.after(el); }
+      el.hidden = !pgSlug(); if (el.hidden) return r;
+      const a = document.activeElement, typing = el.contains(a) && a.tagName === 'INPUT';
+      if (!typing && el.dataset.sig !== pdSig()) pdDraw(el);
+    } catch (e) { console.error(e); }
+    return r;
+  };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
