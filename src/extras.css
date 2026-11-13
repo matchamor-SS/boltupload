@@ -1363,3 +1363,19 @@ html body .ssx-su li.next .tx b { color: var(--accent); }
 html body .ssx-su .go { color: var(--muted); font-size: 20px; }
 html body .ssx-su-foot { margin: 8px 0 0; }
 html body #ssx-setup [data-su-hide] { white-space: nowrap; flex: none; min-height: 32px; }
+/* Connections card on Home */
+html body #ssx-sync .ssx-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+html body #ssx-sync [data-sc-tog] { white-space: nowrap; flex: none; min-height: 32px; }
+html body .ssx-sc { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; }
+html body .ssx-sc li { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 4px; border-top: 1px solid var(--line); }
+html body .ssx-sc li:first-child { border-top: 0; }
+html body .ssx-sc .tx { flex: 1; display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+html body .ssx-sc .tx small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+html body .ssx-sc li .btn { flex: none; }
+html body .ssx-sc-l { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--line); vertical-align: 1px; margin-right: 6px; }
+html body .ssx-sc li .ssx-sc-l { margin: 0 2px 0 4px; }
+html body .ssx-sc-l.ok { background: var(--ok, #74C795); }
+html body .ssx-sc-l.warn { background: var(--warn, #E8B566); }
+html body .ssx-sc-l.bad { background: var(--bad, #EC8686); }
+html body .ssx-sc-l.wait { background: transparent; border: 2px solid var(--muted); }
+html body .ssx-sc .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

@@ -7391,6 +7391,57 @@ function appExtras() {
   }
   const _pgCardSU = pgCard;
   pgCard = function () { const r = _pgCardSU.apply(this, arguments); try { suCard(); suRestore(); } catch (e) { console.error(e); } return r; };  
+/* -- Connections on Home: is everything hooked up and working? Google (with when it last synced), booking link (and
+     requests waiting), My page, reminders (with the next one coming), Apple Calendar. Anything broken shows first, in red,
+     with one tap to fix it. When everything's fine it folds into one line. What's due lives in Next moves, right above. */
+  const SC = { open: (() => { try { return localStorage.getItem('ss-sc-open') === '1'; } catch (_) { return false; } })() };
+  const scAgo = ms => { if (!ms) return ''; const m = Math.round((Date.now() - ms) / 60000); if (m < 1) return 'just now'; if (m < 60) return `${m} min ago`; const h = Math.round(m / 60); return h < 24 ? `${h} hr ago` : `${Math.round(h / 24)} days ago`; };
+  const scNice = ds => { try { return new Date(ds + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); } catch (_) { return ds; } };
+  function scRows() {
+    const rows = [], link = st.link || {}, prefs = st.prefs || {};
+    // Google: [state, text, fix]
+    const gs = typeof G !== 'undefined' ? G : { state: 'none' };
+    if (gs.state === 'ok') rows.push(['ok', 'Google', `Calendar and email connected${gs.at ? ' · synced ' + scAgo(gs.at) : ''}`, null]);
+    else if (gs.state === 'loading') rows.push(['wait', 'Google', 'Checking your calendars…', null]);
+    else if (gs.state === 'partial') rows.push(['warn', 'Google', `Synced ${gs.okCount || 0} of ${gs.total || 0} calendars`, ['Choose calendars', () => window.ssShowSettings('google')]]);
+    else if (gs.state === 'error') rows.push(['bad', 'Google', 'Not syncing. It may need you to sign in again.', ['Reconnect', () => window.ssShowSettings('google')]]);
+    else rows.push(['bad', 'Google', 'Not connected. Your calendar and email work better together.', ['Connect', () => window.ssShowSettings('google')]]);
+    // booking link and requests waiting
+    const waiting = (S.bookings || []).filter(b => b.source === 'booking-link' && !b.requestStatus && flKind(b.status) === 'lead').length;
+    if (link.on && link.slug) rows.push([waiting ? 'warn' : 'ok', 'Booking link', `Live${waiting ? ` · ${waiting} request${waiting === 1 ? '' : 's'} waiting for you` : ' · no new requests'}`, waiting ? ['See requests', () => window.goTab('bookings')] : ['Copy link', () => { const u = `${location.origin}/?book=${encodeURIComponent(link.slug)}`; (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => toast('Booking link copied'), () => toast(u)); }]]);
+    else rows.push(['bad', 'Booking link', 'Off. Venues can\'t send you requests.', ['Turn on', () => window.ssShowSettings('bookings', 'ssx-host-link')]]);
+    // My page
+    const pd = PGE.doc || {}, slug = pgSlug();
+    if (pd.on && slug) rows.push(['ok', 'My page', `Public at ${location.host.replace(/^www\./, '')}/${slug}`, ['Open', () => window.open(pgUrl(), '_blank', 'noopener')]]);
+    else rows.push(['off', 'My page', 'Not public yet', ['Set it up', () => window.goTab('mypage')]]);
+    // reminders, with the next one so you can see they're working
+    let nextR = null; try { const t0 = todayStr(); nextR = (buildQueue() || []).find(x => x.at >= t0); } catch (_) {}
+    const how = [prefs.push !== false ? 'phone alerts' : '', prefs.email ? 'email digest' : ''].filter(Boolean).join(' and ');
+    if (prefs.on) rows.push(['ok', 'Reminders', `On${how ? ' · ' + how : ''}${nextR ? ` · next: ${nextR.kind === 'paid' ? 'check you got paid for ' + nextR.show : [nextR.label, nextR.show].filter(Boolean).join(' for ')} (${scNice(nextR.at)})` : ''}`, null]);
+    else rows.push(['bad', 'Reminders', 'Off. You won\'t get alerts for due tasks or unpaid shows.', ['Turn on', () => window.ssShowSettings('reminders')]]);
+    // Apple Calendar: shown on Apple devices, or anywhere once it's on
+    const apple = /iPhone|iPad|Macintosh|Mac OS X/.test(navigator.userAgent), cf = CF.doc || {};
+    if (cf.on) rows.push(['ok', 'Apple Calendar', 'On · updates about every hour', null]);
+    else if (apple) rows.push(['off', 'Apple Calendar', 'Off (optional)', ['Add', () => window.ssShowSettings('google', 'ssx-calfeed')]]);
+    return rows;
+  }
+  function scCard() {
+    const home = document.querySelector('section[data-view="home"]'); if (!home || !st.db) return;
+    if (!PGE.loaded) pgLoad(); if (!CF.loaded) cfLoad();
+    const rows = scRows(), bad = rows.filter(r => r[0] === 'bad' || r[0] === 'warn'), healthy = !bad.length && !rows.some(r => r[0] === 'wait');
+    let el = document.getElementById('ssx-sync');
+    if (!el) { el = document.createElement('div'); el.id = 'ssx-sync'; el.className = 'card ssx'; const nm = home.querySelector('#ssx-upnext'), anchor = nm && (nm.closest('.card') || nm); anchor && anchor.parentElement === home ? anchor.after(el) : home.appendChild(el); }
+    const open = SC.open || !healthy, sig = JSON.stringify([rows.map(r => [r[0], r[2]]), open]); if (el.dataset.sig === sig) return; el.dataset.sig = sig;
+    const order = { bad: 0, warn: 1, wait: 2, ok: 3, off: 4 }, list = rows.slice().sort((a, b) => order[a[0]] - order[b[0]]);
+    const okNames = rows.filter(r => r[0] === 'ok').map(r => r[1]);
+    el.innerHTML = `<div class="ssx-head"><div><h3>Connections</h3><p class="note">${healthy ? `<span class="ssx-sc-l ok" aria-hidden="true"></span>All set${okNames.length ? ': ' + esc(okNames.join(', ')) : ''}` : `${bad.length} thing${bad.length === 1 ? '' : 's'} need${bad.length === 1 ? 's' : ''} you`}</p></div>
+        ${healthy ? `<button type="button" class="linkbtn" data-sc-tog aria-expanded="${open}">${open ? 'Hide details' : 'Details'}</button>` : ''}</div>
+      ${open ? `<ul class="ssx-sc">${list.map((r, i) => `<li class="${r[0]}"><span class="ssx-sc-l ${r[0]}" aria-hidden="true"></span><span class="tx"><b>${esc(r[1])}</b><small>${esc(r[2])}</small></span>${r[3] ? `<button type="button" class="btn small${r[0] === 'bad' ? ' primary' : ''}" data-sc="${i}">${esc(r[3][0])}</button>` : ''}<span class="sr-only">${{ ok: 'Working', bad: 'Needs attention', warn: 'Needs a look', wait: 'Checking', off: 'Off' }[r[0]]}</span></li>`).join('')}</ul>` : ''}`;
+    el.querySelectorAll('[data-sc]').forEach(b => b.onclick = () => { const r = list[+b.dataset.sc]; if (r && r[3]) r[3][1](); });
+    const tg = el.querySelector('[data-sc-tog]'); if (tg) tg.onclick = () => { SC.open = !SC.open; try { localStorage.setItem('ss-sc-open', SC.open ? '1' : '0'); } catch (_) {} el.dataset.sig = ''; scCard(); const t2 = el.querySelector('[data-sc-tog]'); if (t2) t2.focus(); };
+  }
+  const _pgCardSC = pgCard;
+  pgCard = function () { const r = _pgCardSC.apply(this, arguments); try { scCard(); } catch (e) { console.error(e); } return r; };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
