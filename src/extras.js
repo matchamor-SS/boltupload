@@ -7029,6 +7029,50 @@ function appExtras() {
     } catch (e) { console.error(e); }
     return r;
   };  
+/* -- Apple Calendar: a private subscribe link (Settings → Google & calendars). Shows appear in the Calendar app on
+     iPhone, iPad and Mac and update on their own. Also works in Outlook or any app that can "subscribe to a calendar". */
+  const CF = { doc: null, loaded: false, armed: false };
+  const cfApple = () => /iPhone|iPad|Macintosh|Mac OS X/.test(navigator.userAgent);
+  const cfToken = () => { const a = new Uint8Array(20); crypto.getRandomValues(a); return [...a].map(b => b.toString(16).padStart(2, '0')).join(''); };
+  const cfTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Los_Angeles'; } catch (_) { return 'America/Los_Angeles'; } };
+  const cfUrl = (web) => { const t = (CF.doc || {}).token; if (!t) return ''; return `${web ? 'webcal' : location.protocol.replace(':', '')}://${location.host}/cal/${t}.ics`; };
+  async function cfLoad() { if (CF.loaded || !st.db) return; CF.loaded = true; try { const s = await st.db.doc('settings/calfeed').get(); CF.doc = s.exists ? s.data() : {}; } catch (_) { CF.doc = null; CF.loaded = false; } cfCard(); }
+  async function cfSave(patch, msg) {
+    const next = { ...(CF.doc || {}), ...patch, updatedAt: new Date().toISOString() };
+    try { await st.db.doc('settings/calfeed').set(next); CF.doc = next; if (msg) toast(msg); cfCard(true); return true; } catch (_) { toast("Couldn't save. " + OFFLINE); return false; }
+  }
+  function cfCard(force) {
+    const grp = document.querySelector('section[data-view="settings"] > .ssg[data-ssg="google"]'); if (!grp || !st.db) return;
+    const nb = document.querySelector('section[data-view="settings"] [data-ssg-go="google"]'); if (nb && nb.textContent !== 'Google & calendars') nb.textContent = 'Google & calendars';
+    if (!CF.loaded) { cfLoad(); return; } if (!CF.doc) return;
+    let el = document.getElementById('ssx-calfeed');
+    if (!el) { el = document.createElement('div'); el.id = 'ssx-calfeed'; el.className = 'card ssx'; const cals = grp.querySelector('#setCals'); (cals && (cals.closest('.card') || cals)) ? (cals.closest('.card') || cals).after(el) : grp.appendChild(el); }
+    const d = CF.doc, on = !!(d.on && d.token), sig = JSON.stringify([on, d.token, !!d.holds]);
+    if (!force && el.dataset.sig === sig) return; el.dataset.sig = sig;
+    const apple = cfApple();
+    el.innerHTML = on ? `<div class="ssx-head"><div><h3>Apple Calendar <span class="ssx-pill-on">On</span></h3>
+        <p class="note">Your shows appear in the Calendar app and update on their own, about every hour.</p></div></div>
+      <div class="ssx-cf-act">${apple ? '<a class="btn primary" data-cf-add>Add to Apple Calendar</a>' : ''}<button type="button" class="btn${apple ? '' : ' primary'}" data-cf-copy>Copy calendar link</button></div>
+      <p class="note">${apple ? 'On this device, tap <b>Add to Apple Calendar</b>, then <b>Subscribe</b>. ' : 'On your iPhone: open Set &amp; Settled there and tap <b>Add to Apple Calendar</b>, or paste this link in Settings → Calendar → Accounts → Add Account → Other → Add Subscribed Calendar. '}Outlook and other apps: paste the link where they ask for a calendar "from URL" or "subscribed calendar".</p>
+      <label class="ssx-check"><input type="checkbox" data-cf-holds${d.holds ? ' checked' : ''}> Include holds (they show as "Hold:" and don't block your time)</label>
+      <p class="note">Only shows the date, set times, show name, venue and address, and ticket link. Never fees, contacts or notes. Anyone with the link can see those details, so keep it to your own devices.${(typeof G !== 'undefined' && G.mcp) ? ' Your Google Calendar is connected: if it\'s already on your iPhone, your shows may show up twice.' : ''}</p>
+      <div class="ssx-cf-act"><button type="button" class="btn small" data-cf-reset>Make a new link</button><button type="button" class="btn small" data-cf-off>Turn off</button></div>`
+      : `<div class="ssx-head"><div><h3>Apple Calendar</h3>
+        <p class="note">See your shows in the Calendar app on your iPhone, iPad and Mac. They update on their own. Works with Outlook too.</p></div>
+        <button type="button" class="btn primary" data-cf-on>Turn on</button></div>`;
+    const q = s => el.querySelector(s);
+    if (q('[data-cf-on]')) q('[data-cf-on]').onclick = async e => { e.currentTarget.disabled = true; if (await cfSave({ on: true, token: d.token || cfToken(), tz: cfTz(), holds: !!d.holds }, 'Calendar link ready')) { const a = q('[data-cf-add]'); if (a) a.focus(); else { const c = q('[data-cf-copy]'); if (c) c.focus(); } } };
+    const add = q('[data-cf-add]'); if (add) add.href = cfUrl(true);
+    if (q('[data-cf-copy]')) q('[data-cf-copy]').onclick = () => { const u = cfUrl(false); (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => toast('Calendar link copied'), () => toast(u)); };
+    if (q('[data-cf-holds]')) q('[data-cf-holds]').onchange = e => cfSave({ holds: e.target.checked }, e.target.checked ? 'Holds will show in your calendar' : 'Holds removed from your calendar').then(() => { const c = el.querySelector('[data-cf-holds]'); if (c) c.focus(); });
+    if (q('[data-cf-off]')) q('[data-cf-off]').onclick = () => cfSave({ on: false }, 'Calendar link turned off. Calendars that subscribed stop updating.');
+    const rs = q('[data-cf-reset]'); if (rs) rs.onclick = () => {
+      if (!CF.armed) { CF.armed = true; rs.textContent = 'Tap again: the old link stops working'; setTimeout(() => { CF.armed = false; if (rs.isConnected) rs.textContent = 'Make a new link'; }, 5000); return; }
+      CF.armed = false; cfSave({ token: cfToken(), on: true }, 'New link made. The old one no longer works. Add this one to your devices.');
+    };
+  }
+  const _pgCardCF = pgCard;
+  pgCard = function () { const r = _pgCardCF.apply(this, arguments); try { cfCard(); } catch (e) { console.error(e); } return r; };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
