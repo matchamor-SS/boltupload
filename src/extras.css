@@ -1205,3 +1205,45 @@ html body .ssx-pgsec li .ssx-check { margin: 0; }
 html body .ssx-pgsec .mv { display: flex; gap: 6px; flex-shrink: 0; }
 html body .ssx-pgsec .mv .btn { min-width: 40px; min-height: 36px; padding: 0 10px; }
 html body .ssx-pgsec .mv .btn:disabled { opacity: .35; cursor: default; }
+/* My page: Design card */
+html body #ssx-pgdesign .ssx-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+html body #ssx-pgdesign .ssx-row { display: flex; align-items: center; gap: 10px; }
+html body .ssx-pd { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 4px; }
+html body .ssx-pd > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 600; }
+html body .ssx-pd > summary::-webkit-details-marker { display: none; }
+html body .ssx-pd > summary::after { content: ""; margin-left: auto; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); opacity: .6; transition: transform .2s; }
+html body .ssx-pd[open] > summary::after { transform: rotate(-135deg); }
+html body .ssx-pd > summary .note { font-weight: 400; }
+html body .ssx-pd .ssx-epk-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 10px 0; }
+html body .ssx-pd .ssx-epk-k { flex: 0 0 120px; font-size: 13px; color: var(--muted); }
+html body .ssx-pd > .btn { margin: 4px 0 10px; }
+html body .ssx-pd-secs { list-style: none; margin: 8px 0 12px; padding: 0; display: grid; gap: 8px; }
+html body .ssx-pd-secs li { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 12px; }
+html body .ssx-pd-secs li.off { opacity: .55; }
+html body .ssx-pd-secs li input[type="text"] { width: 100%; min-height: 40px; margin: 0; }
+html body .ssx-pd-secs li .ssx-check { margin: 0; white-space: nowrap; }
+html body .ssx-pd-secs .mv { display: flex; gap: 6px; }
+html body .ssx-pd-secs .mv .btn { min-width: 40px; min-height: 40px; padding: 0 10px; }
+html body .ssx-pd-secs .mv .btn:disabled { opacity: .35; cursor: default; }
+html body .ssx-pd-hint { grid-column: 2 / -1; margin-top: -2px; }
+html body .ssx-pd-ic, html body .ssx-pd-icons button { display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--accent, var(--ink)); cursor: pointer; }
+html body .ssx-pd-ic[aria-expanded="true"] { outline: 2px solid var(--accent, currentColor); outline-offset: 1px; }
+html body .ssx-pd-icons { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
+html body .ssx-pd-icons button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent, #D4B26E) 22%, transparent); border-color: var(--accent, currentColor); }
+html body .ssx-pd-icons button:last-child { width: auto; padding: 0 12px; font-size: 13px; color: var(--ink); }
+html body .ssx-pd-phs { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; margin: 8px 0 4px; }
+html body .ssx-pd-ph { position: relative; padding: 0; aspect-ratio: 1; border-radius: 12px; overflow: hidden; border: 2px solid transparent; background: var(--line); cursor: pointer; }
+html body .ssx-pd-ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+html body .ssx-pd-ph[aria-pressed="false"] img { opacity: .55; }
+html body .ssx-pd-ph[aria-pressed="true"] { border-color: var(--accent, #D4B26E); }
+html body .ssx-pd-ph .n { position: absolute; top: 6px; left: 6px; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 999px; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--accent, #D4B26E); color: #141711; }
+html body .ssx-pd-add { display: flex; gap: 8px; margin: 10px 0 12px; }
+html body .ssx-pd-add input { flex: 1; min-width: 0; margin: 0; }
+@media (max-width: 600px) {
+  html body .ssx-pd .ssx-epk-k { flex-basis: 100%; }
+  html body .ssx-pd-secs li { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  html body .ssx-pd-secs .mv { grid-column: 2 / -1; justify-content: flex-end; }
+}
+html body .ssx-pd .ssx-check { display: inline-flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+html body .ssx-pd .ssx-pglist { display: grid; gap: 4px; margin: 8px 0; }
+html body .ssx-pd .ssx-pglist .ssx-check { min-height: 40px; }
