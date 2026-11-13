@@ -1188,3 +1188,7 @@ html.ssx-rail-min body #tabs.tabs .ssx-chev { display: none; }
 html.ssx-rail-min body #tabs.tabs button.ssx-subtab { margin-left: 6px; width: calc(100% - 6px); }
 @media (prefers-reduced-motion: reduce) { html body #tabs.tabs .ssx-chev { transition: none; } }
 @media (max-width: 1023px) { html body #tabs.tabs .ssx-chev { display: none; } html body #tabs.tabs button.ssx-subtab { margin-left: 0; width: 100%; border-left: 0; border-radius: 12px; font-size: 11px; background: color-mix(in srgb, var(--accent) 10%, transparent); } }
+/* My page card in Kit */
+html body section[data-view="kit"] > #ssx-page { order: 0 !important; }
+html body .ssx-pglist { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow: auto; padding: 4px 2px; }
+html body .ssx-pill-on { display: inline-block; margin-left: 8px; padding: 2px 10px; border-radius: 999px; font: 600 12px/1.6 Inter, sans-serif; background: color-mix(in srgb, var(--ok, #3a8f5c) 22%, transparent); color: var(--ok, #3a8f5c); vertical-align: middle; }
