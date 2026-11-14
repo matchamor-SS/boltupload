@@ -1456,3 +1456,5 @@ html body .ssx-bkp-adds { margin-top: 10px; }
 html body .ssx-bkp-al { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 6px; }
 html body .ssx-bkp-ad { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; }
 html body .ssx-bkp-total { margin: 10px 0 0; }
+html body .ssx-reqtop .ssx-rc, html body .ssx-reqbar .ssx-rc { margin-left: 8px; vertical-align: middle; }
+html body .ssx-rcline { margin: 4px 0 10px; }

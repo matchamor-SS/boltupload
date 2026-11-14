@@ -8036,30 +8036,56 @@ function appExtras() {
   };
   const _pgCardSV = pgCard;
   pgCard = function () { const r = _pgCardSV.apply(this, arguments); try { svCard(); svInvWire(); svFillWire(); } catch (e) { console.error(e); } return r; };  
-/* -- Booking page v3, your side. A request that chose a package arrives with it set on the show (package, add-ons and the
-     fee, using your returning-client price when they've booked with you before). Every request says whether it's a
-     returning or new client, and attaches to their existing contact (the server already matches by email). */
-  const rcPerson = b => b.contactPersonId || b.promoterId || '';
-  // past work with this person: shows they were part of, other than this one
+/* -- Booking page v3, your side. Every request is labeled at the top: "Booked you before" (with how many times and when)
+     or "First time booking you". The same label shows inside the opened show. A request that chose a package arrives with it
+     set on the show (package, add-ons and the fee, using your returning-client price when they've booked with you before). */
+  const rcIds = b => [b.contactPersonId, b.promoterId, b.venueId].filter(Boolean);
+  // past shows with the same person, collective or venue (confirmed, played or paid), other than this one
   function rcHistory(b) {
-    const pid = rcPerson(b); if (!pid) return { n: 0, last: '' };
-    const past = (S.bookings || []).filter(x => x.id !== b.id && [x.venueId, x.promoterId, x.contactPersonId, x.bookingContactId].includes(pid) && ['confirmed', 'played', 'paid'].includes(flKind(x.status)));
+    const ids = rcIds(b); if (!ids.length) return { n: 0, last: '' };
+    const past = (S.bookings || []).filter(x => x.id !== b.id && [x.venueId, x.promoterId, x.contactPersonId, x.bookingContactId].some(v => v && ids.includes(v)) && ['confirmed', 'played', 'paid'].includes(flKind(x.status)));
     const last = past.map(x => x.date || '').filter(Boolean).sort().pop() || '';
     return { n: past.length, last };
   }
   const rcMonth = d => { try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }); } catch (_) { return d; } };
-  // on each request: "Returning client · 3 past bookings · last Oct 2026" or "New client"
+  const rcText = b => { const h = rcHistory(b); return { on: h.n > 0, text: h.n ? `Booked you before · ${h.n} time${h.n === 1 ? '' : 's'}${h.last ? ', last ' + rcMonth(h.last) : ''}` : 'First time booking you' }; };
+  const rcPill = b => { const r = rcText(b), s = document.createElement('span'); s.className = 'ssx-pill ssx-rc' + (r.on ? ' on' : ''); s.textContent = r.text; return s; };
+  // the request card: label next to the title, and what they asked for first in the list
   const _reqFitRC = reqFit;
   reqFit = function (b) {
-    const out = _reqFitRC.apply(this, arguments);
+    const out = _reqFitRC.apply(this, arguments).filter(x => x !== 'New to you');
     try {
-      const h = rcHistory(b), pkg = b.packageId && svItems().find(p => p.id === b.packageId);
-      const lead = h.n ? `Returning client · ${h.n} past booking${h.n === 1 ? '' : 's'}${h.last ? ' · last ' + rcMonth(h.last) : ''}` : 'New client';
-      out.unshift(lead);
-      if (pkg) out.splice(1, 0, `Asked for: ${pkg.name}${b.addonIds ? ' + ' + String(b.addonIds).split(',').map(id => ((pkg.addons || []).find(a => a.id === id) || {}).name).filter(Boolean).join(', ') : ''}`);
-      else if (b.customReq) out.splice(1, 0, 'Asked for: something custom (see their message)');
+      const pkg = b.packageId && svItems().find(p => p.id === b.packageId);
+      if (pkg) out.unshift(`Asked for: ${pkg.name}${b.addonIds ? ' + ' + String(b.addonIds).split(',').map(id => ((pkg.addons || []).find(a => a.id === id) || {}).name).filter(Boolean).join(', ') : ''}`);
+      else if (b.customReq) out.unshift('Asked for: something custom (see their message)');
     } catch (e) { console.error(e); }
     return out;
+  };
+  const _renderRequestsRC = renderRequests;
+  renderRequests = function () {
+    _renderRequestsRC.apply(this, arguments);
+    try {
+      document.querySelectorAll('#ssx-requests [data-req]').forEach(item => {
+        const b = (S.bookings || []).find(x => x.id === item.dataset.req), t = item.querySelector('.ssx-reqtop b'); if (!b || !t) return;
+        const old = item.querySelector('.ssx-rc'), nw = rcPill(b); if (old && old.textContent === nw.textContent) return;
+        old ? old.replaceWith(nw) : t.after(nw);
+      });
+    } catch (e) { console.error(e); }
+  };
+  // inside an opened show that came from your booking link
+  const _requestBarRC = requestBar;
+  requestBar = function (id) {
+    const r = _requestBarRC.apply(this, arguments);
+    try {
+      const sh = document.querySelector('#sheetRoot .sheet'), b = (S.bookings || []).find(x => x.id === id); if (!sh || !b) return r;
+      sh.querySelectorAll('.ssx-rcline').forEach(x => x.remove());
+      if (b.source !== 'booking-link' && !b.returning) return r;
+      const bar = sh.querySelector('.ssx-reqbar b');
+      if (bar) { bar.after(rcPill(b)); return r; }
+      const p = document.createElement('p'); p.className = 'ssx-rcline'; p.appendChild(rcPill(b));
+      const head = sh.querySelector(':scope > .head') || sh.querySelector('.head'); head ? head.after(p) : sh.prepend(p);
+    } catch (e) { console.error(e); }
+    return r;
   };
   // when a request arrives: put its package on the show
   const _flReqOneRC = flReqOne;
