@@ -7651,6 +7651,76 @@ function appExtras() {
     { title: "You're all set", body: 'Three shortcuts: + Add (or N) adds anything, Settings has a search box (press /), and the Get set up card on Home shows what\'s left. Retake this tour anytime from Settings, under Account. Have a great season!' }
   ];
   try { FL_TOUR.splice(0, FL_TOUR.length, ...FL_TOUR2); if (FL.tour && typeof TOUR !== 'undefined') TOUR.splice(0, TOUR.length, ...FL_TOUR2); } catch (e) { console.error(e); }  
+/* -- Phase 1 fixes.
+     1. Bookings always opens on Active (a Home stat tile still opens its own filter, and Back keeps where you were).
+        If no filter is selected it resets, and "No bookings" only shows when there are none: otherwise it says what's
+        hidden, or "Loading your shows…" while they arrive.
+     2. Links in templates are clickable everywhere: websites and other links fill in as full https:// addresses, and
+        Instagram fills in as its link ("Instagram: https://instagram.com/you", or "@you (https://instagram.com/you)"
+        on its own). The Instagram quick insert adds its label. Emails are plain text, so a full address is what every
+        mail app turns into a link. */
+  const BK = { keep: false, t0: Date.now(), init: null, busy: false };
+  const bkLoaded = () => { try { if (BK.init === null) BK.init = S.bookings; return S.bookings !== BK.init || (S.bookings || []).length > 0 || Date.now() - BK.t0 > 6000; } catch (_) { return true; } };
+  document.addEventListener('click', e => { if (e.target.closest && e.target.closest('[data-filter-go]')) BK.keep = true; }, true);
+  function bkAfter() {
+    if (BK.busy) return; const bar = document.getElementById('bookingFilter'), list = document.getElementById('bookingList'); if (!bar || !list) return;
+    // nothing selected: go back to Active
+    if (bar.querySelector('.chip') && !bar.querySelector('.chip[aria-pressed="true"]')) { try { bFilter = 'active'; BK.busy = true; window.renderBookings(); } catch (_) {} finally { BK.busy = false; } return; }
+    const empty = list.querySelector(':scope > .empty'); if (!empty) return;
+    const all = S.bookings || [];
+    if (!all.length) { if (!bkLoaded()) { empty.textContent = 'Loading your shows…'; setTimeout(() => { try { window.renderBookings(); } catch (_) {} }, 1200); } return; }
+    const on = bar.querySelector('.chip[aria-pressed="true"]'), lab = on ? on.textContent.trim().toLowerCase() : 'here', shown = on ? on.textContent.trim() : '';
+    const act = all.filter(b => !['paid', 'lost'].includes(flKind(b.status))).length;
+    empty.innerHTML = `No shows under ${esc(shown || 'this filter')} right now. You have ${all.length} show${all.length === 1 ? '' : 's'} in total.
+      <div class="ssx-row" style="margin-top:10px">${lab !== 'active' && act ? `<button type="button" class="btn small" data-bf="active">Show active (${act})</button>` : ''}<button type="button" class="btn small" data-bf="all">Show all (${all.length})</button></div>`;
+  }
+  function bkWire() {
+    if (typeof window.setTab === 'function' && !window.setTab.__bk) {
+      const o = window.setTab, w = function (t) {
+        if (t === 'bookings') { if (!BK.keep) { try { bFilter = 'active'; } catch (_) {} } }
+        BK.keep = false; const r = o.apply(this, arguments);
+        if (t === 'bookings') setTimeout(() => { try { window.renderBookings(); } catch (_) {} }, 0);
+        return r;
+      }; w.__bk = true; window.setTab = w;
+    }
+    if (typeof window.goBack === 'function' && !window.goBack.__bk) { const o = window.goBack, w = function () { BK.keep = true; return o.apply(this, arguments); }; w.__bk = true; window.goBack = w; }
+    if (typeof window.renderBookings === 'function' && !window.renderBookings.__bk) { const o = window.renderBookings, w = function () { const r = o.apply(this, arguments); try { bkAfter(); } catch (e) { console.error(e); } return r; }; w.__bk = true; window.renderBookings = w; }
+  }
+  // links in templates
+  const tlUrl = v => { const s = String(v || '').trim(); if (!s) return ''; if (/^https?:\/\//i.test(s)) return s; if (/^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}(\/\S*)?$/i.test(s)) return 'https://' + s; return s; };
+  const tlIg = v => { const t = String(v || '').trim(); if (!t) return ''; const m = t.match(/instagram\.com\/([A-Za-z0-9._]+)/i); return (m ? m[1] : t).replace(/^@/, '').replace(/[\/?#].*$/, ''); };
+  function tlWrapFill(orig) {
+    const f = function (str, ctx, b, to) {
+      try {
+        const c = ctx || {}, p = c.profile || {}, h = tlIg(p.instagram), ig = h ? 'https://instagram.com/' + h : '';
+        let s = String(str || '');
+        if (ig) s = s.replace(/(instagram\s*[:\-–]\s*)\{\{\s*instagram\s*\}\}/gi, (_, lab) => lab + ig).replace(/\{\{\s*instagram\s*\}\}/gi, `@${h} (${ig})`);
+        const ctx2 = { ...c, profile: { ...p, website: tlUrl(p.website), epk: tlUrl(p.epk) }, kit: { ...(c.kit || {}), promoFolderUrl: tlUrl((c.kit || {}).promoFolderUrl) },
+          links: (c.links || []).map(l => ({ ...l, url: tlUrl(l.url) })), promoFiles: (c.promoFiles || []).map(x => ({ ...x, shareUrl: tlUrl(x.shareUrl) })) };
+        const b2 = b ? { ...b, ticketUrl: tlUrl(b.ticketUrl), driveUrl: tlUrl(b.driveUrl) } : b;
+        return orig.call(this, s, ctx2, b2, to);
+      } catch (e) { console.error(e); return orig.apply(this, arguments); }
+    };
+    f.__links = true; return f;
+  }
+  function tlWire() {
+    const s = window.SS; if (!s || !s.templates || typeof s.templates.fill !== 'function' || s.templates.fill.__links) return;
+    try { window.SS = Object.freeze({ ...s, templates: Object.freeze({ ...s.templates, fill: tlWrapFill(s.templates.fill) }) }); } catch (e) { console.error(e); }
+  }
+  // the Instagram quick insert brings its label: right after the app drops in the Instagram bubble, "Instagram: " goes in front of it
+  window.addEventListener('change', e => {
+    const sel = e.target; if (!sel || !/^(t-fill|cm-fill)$/.test(sel.id) || sel.value !== 'instagram') return;
+    const sh = sel.closest('.sheet'), api = sh && sh.__ssxBody; if (!api || !api.ed) return;
+    const had = new Set(api.ed.querySelectorAll('[data-tok="instagram"]'));
+    setTimeout(() => {
+      const pill = [...api.ed.querySelectorAll('[data-tok="instagram"]')].find(x => !had.has(x)); if (!pill) return;
+      let prev = '', n = pill.previousSibling; while (n && prev.length < 40) { prev = (n.textContent || '') + prev; n = n.previousSibling; }
+      if (/instagram\s*[:\-–]?\s*$/i.test(prev.replace(/\u200b/g, ''))) return;
+      pill.before(document.createTextNode('Instagram: ')); api.ed.dispatchEvent(new Event('input', { bubbles: true }));
+    }, 0);
+  }, true);
+  const _pgCardP1 = pgCard;
+  pgCard = function () { const r = _pgCardP1.apply(this, arguments); try { bkWire(); tlWire(); } catch (e) { console.error(e); } return r; };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
