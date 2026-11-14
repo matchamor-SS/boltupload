@@ -8152,9 +8152,10 @@ function appExtras() {
     const t = todayStr(); let best = null;
     const take = (at, what) => { const d = String(at || '').slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d > t) return; if (!best || d > best.at) best = { at: d, what }; };
     try { tlForContact(c).forEach(e => { if (e.k === 'new' || e.future) return; take(e.at, String(e.text || '').replace(/ · .*$/, '')); }); } catch (_) {}
-    try { (S.bookings || []).filter(b => [b.venueId, b.promoterId, b.contactPersonId, b.mediaId, b.bookingContactId].includes(c.id) && ['played', 'paid'].includes(flKind(b.status))).forEach(b => take(b.date, 'Played a show')); } catch (_) {}
+    try { (S.bookings || []).filter(b => [b.venueId, b.promoterId, b.contactPersonId, b.mediaId, b.bookingContactId].includes(c.id) && ['played', 'paid'].includes(flKind(b.status))).forEach(b => take(b.date, ntDid())); } catch (_) {}
     return best;
   }
+  const ntDid = () => { const w = (flWords() || {}).show; return w === 'appointment' ? 'Had an appointment' : w === 'session' ? 'Had a session' : w === 'gig' ? 'Performed at a gig' : w === 'booking' ? 'Worked a booking' : 'Played a show'; };
   const ntAgo = d => { const days = Math.round((new Date(todayStr() + 'T12:00:00') - new Date(d + 'T12:00:00')) / 864e5); if (days < 14) return days <= 1 ? (days ? 'yesterday' : 'today') : days + ' days ago'; if (days < 60) return Math.round(days / 7) + ' weeks ago'; const m = Math.round(days / 30.4); return m < 24 ? m + ' months ago' : Math.floor(m / 12) + ' years ago'; };
   const ntDate = d => { try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch (_) { return d; } };
   function ntBar() {
@@ -8240,7 +8241,7 @@ function appExtras() {
     if (!tok) return;
     const who = rvWho(b), first = who ? String(who.name || cName(who) || '').split(' ')[0] : '', link = `${/^https?:/.test(location.origin) ? location.origin : 'https://setnsettled.com'}/?review=${tok}`;
     composeSheet({ booking: b.id, to: who ? who.id : '', title: 'Ask for a review', subject: `How was ${bName(b)}?`,
-      body: `Hi ${first || 'there'},\n\nThank you again for having me at ${bName(b)}. If you have a minute, I'd really appreciate a short review. It helps other people know what it's like to work with me.\n\nLeave a review here (it takes about a minute): ${link}\n\nThe link is just for you and works for 60 days.\n\nThank you!\n${myName()}` });
+      body: `Hi ${first || 'there'},\n\nThank you again for ${flArtist().group === 'service' || flArtist().group === 'other' ? 'booking me for' : 'having me at'} ${bName(b)}. If you have a minute, I'd really appreciate a short review. It helps other people know what it's like to work with me.\n\nLeave a review here (it takes about a minute): ${link}\n\nThe link is just for you and works for 60 days.\n\nThank you!\n${myName()}` });
     rvLoad(true);
   }
   async function rvSet(id, status) {
@@ -8303,7 +8304,10 @@ function appExtras() {
     return d;
   };
   // check for new reviews now and then while the app is open
-  setInterval(() => { try { if (st.db && document.visibilityState === 'visible') rvLoad(); } catch (_) {} }, 300000);  
+  setInterval(() => { try { if (st.db && document.visibilityState === 'visible') rvLoad(); } catch (_) {} }, 300000); 
+  /* -- Photographers and videographers book "sessions" (not "appointments") and show a Portfolio. */
+  const _flWordsPV = flWords;
+  flWords = function () { const k = flArtist().kind; return k === 'photographer' || k === 'videographer' ? { show: 'session', set: 'session', epk: 'Portfolio' } : _flWordsPV.apply(this, arguments); };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
