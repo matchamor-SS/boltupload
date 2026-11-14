@@ -85,6 +85,7 @@ async function perf(op, extra = {}) {
 
 const params = new URLSearchParams(location.search);
 if (params.get('book')) bookingPage(params.get('book'));
+else if (params.get('review')) reviewPage(params.get('review'));
 else appExtras();
 
 /* ============================================================== in the app */
@@ -8209,6 +8210,100 @@ function appExtras() {
     w.__nt = true; window.renderContacts = w;
   }
   setTimeout(() => { try { ntApply(); } catch (_) {} }, 0);  
+/* -- Client reviews. After a show, "Ask for a review" (in Wrap up, or from the Reviews card in Kit) makes a one-time link
+     and opens an email for you to check and send. When a review comes in it waits in the Reviews card: you choose
+     "Show on my page" (it appears in a Reviews section, marked "Verified booking", first name and last initial) or keep
+     it off. You can hide a shown review any time, but nobody can edit what the client wrote. */
+  const RV = { list: [], loaded: false, loading: false, at: 0, seenNew: null, pick: false };
+  const RV_STARS = n => '★'.repeat(n) + '☆'.repeat(5 - n);
+  async function rvLoad(force) {
+    if (RV.loading || (!force && RV.loaded && Date.now() - RV.at < 120000)) return; RV.loading = true;
+    try {
+      const { data, error } = await sb.rpc('reviews_mine'); if (error) throw error;
+      RV.list = Array.isArray(data) ? data : []; RV.loaded = true; RV.at = Date.now();
+      const nw = RV.list.filter(r => r.status === 'new').map(r => r.id);
+      if (RV.seenNew && nw.some(id => !RV.seenNew.has(id))) toast('New review in. See Kit → Reviews.');
+      RV.seenNew = new Set(nw);
+    } catch (e) { console.error(e); RV.loaded = true; RV.at = Date.now(); }
+    RV.loading = false; try { rvCard(); } catch (e) { console.error(e); }
+  }
+  const rvFor = id => RV.list.find(r => r.booking === id) || null;
+  const rvWho = b => { const ids = [b.contactPersonId, b.promoterId, b.venueId].filter(Boolean); return ids.map(person).find(c => c && c.email) || person(ids[0]) || null; };
+  const rvShortName = n => { const p = String(n || '').trim().split(/\s+/).filter(Boolean); return p.length ? p[0][0].toUpperCase() + p[0].slice(1) + (p[1] ? ' ' + p[1][0].toUpperCase() + '.' : '') : ''; };
+  const rvWhen = d => { try { return new Date(String(d).slice(0, 10) + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch (_) { return ''; } };
+  // shows you can ask about: played or paid, in the last year
+  const rvShows = () => { const t = todayStr(), from = addDays(t, -365); return (S.bookings || []).filter(b => ['played', 'paid'].includes(stat(b)) && b.date && b.date >= from && b.date <= t).sort((a, b) => b.date.localeCompare(a.date)); };
+  async function rvAsk(b) {
+    let tok = '';
+    try { const { data, error } = await sb.rpc('review_request', { p_booking: b.id }); if (error) throw error; tok = (data || {}).token || ''; }
+    catch (e) { console.error(e); toast(/rate_limited/.test(String((e && e.message) || '')) ? "You've asked for a lot of reviews today. Try again tomorrow." : "Couldn't make the review link. Check your connection and try again."); return; }
+    if (!tok) return;
+    const who = rvWho(b), first = who ? String(who.name || cName(who) || '').split(' ')[0] : '', link = `${/^https?:/.test(location.origin) ? location.origin : 'https://setnsettled.com'}/?review=${tok}`;
+    composeSheet({ booking: b.id, to: who ? who.id : '', title: 'Ask for a review', subject: `How was ${bName(b)}?`,
+      body: `Hi ${first || 'there'},\n\nThank you again for having me at ${bName(b)}. If you have a minute, I'd really appreciate a short review. It helps other people know what it's like to work with me.\n\nLeave a review here (it takes about a minute): ${link}\n\nThe link is just for you and works for 60 days.\n\nThank you!\n${myName()}` });
+    rvLoad(true);
+  }
+  async function rvSet(id, status) {
+    try { const { data, error } = await sb.rpc('review_set', { p_id: id, p_status: status }); if (error || !data) throw error || new Error('no');
+      toast(status === 'shown' ? 'Review added to your page' : 'Review hidden from your page'); }
+    catch (e) { console.error(e); toast("Couldn't update the review. Try again."); }
+    rvLoad(true);
+  }
+  // in Wrap up: "Ask for a review"
+  const _nmStepsRV = nmSteps;
+  nmSteps = function (b) {
+    const out = _nmStepsRV.apply(this, arguments);
+    try {
+      rvLoad(); const r = rvFor(b.id), c = apCfg(), old = b.date && daysBetween(b.date, todayStr()) > 21;
+      if (!['played', 'paid'].includes(stat(b)) || (old && !r)) return out;
+      const done = !!r, note = !r ? '' : r.status === 'requested' ? `Asked ${rvWhen(r.asked)}, no answer yet` : r.status === 'shown' ? 'On your page' : r.status === 'new' ? 'Review in. Choose whether to show it.' : 'Review in';
+      const step = { k: 'review', icon: '⭐', label: 'Ask for a review', done, note, btn: done ? (r.status === 'requested' ? 'Ask again' : 'See it') : 'Ask', keep: true,
+        go: () => { if (r && r.status !== 'requested') { try { close(); } catch (_) {} goTab('kit'); setTimeout(() => { const el = document.getElementById('ssx-reviews'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 250); } else rvAsk(b); } };
+      step.skipped = !done && !!c.dismissed['review:' + b.id];
+      const i = out.findIndex(x => x.k === 'thanks'); out.splice(i >= 0 ? i + 1 : out.length, 0, step);
+    } catch (e) { console.error(e); }
+    return out;
+  };
+  // Kit: the Reviews card, under My page
+  function rvCard() {
+    const sec = document.querySelector('section[data-view="kit"]'); if (!sec || !st.db) return;
+    if (!RV.loaded) { rvLoad(); return; }
+    const L = RV.list, by = s => L.filter(r => r.status === s), shows = rvShows(), asked = new Set(L.map(r => r.booking));
+    const sig = JSON.stringify([L.map(r => [r.id, r.status, r.asked]), RV.pick, shows.length]); let card = document.getElementById('ssx-reviews');
+    if (card && card.dataset.sig === sig) return;
+    if (!card) { card = document.createElement('div'); card.id = 'ssx-reviews'; card.className = 'card ssx'; const pg = document.getElementById('ssx-page'), hd = sec.querySelector(':scope > .head'); pg ? pg.after(card) : hd ? hd.after(card) : sec.prepend(card); }
+    card.dataset.sig = sig;
+    const item = (r, acts) => `<div class="ssx-rv" data-rv-id="${esc(r.id)}"><div class="ssx-rv-top"><span class="ssx-rv-stars" aria-label="${r.rating} out of 5 stars">${RV_STARS(r.rating || 0)}</span><span class="note">${esc(rvShortName(r.name))}${r.show ? ' · ' + esc(r.show) : ''}${r.date ? ' · ' + esc(rvWhen(r.date)) : ''}</span></div>
+      <p class="ssx-rv-body">${esc(r.body || '')}</p><div class="ssx-row">${acts}</div></div>`;
+    const nw = by('new'), shown = by('shown'), hid = by('hidden'), wait = by('requested'), t = new Date().toISOString();
+    const pickable = shows.filter(b => !asked.has(b.id));
+    card.innerHTML = `<div class="ssx-head"><div><h3>Reviews${nw.length ? ` <span class="ssx-pill on">${nw.length} new</span>` : ''}</h3>
+        <p class="note">Ask clients after a show. You choose which reviews show on your page, marked "Verified booking". You can hide a review any time, but nobody can change what a client wrote.</p></div>
+        <button type="button" class="btn small primary" data-rv-ask aria-expanded="${RV.pick}">Ask for a review</button></div>
+      ${RV.pick ? `<div class="ssx-rv-pick"><p class="note">Pick the show you'd like a review for.</p>${pickable.length ? pickable.slice(0, 20).map(b => `<button type="button" class="btn small" data-rv-show="${esc(b.id)}">${esc(bName(b))} · ${esc(rvWhen(b.date))}</button>`).join('') : '<p class="note">No played shows from the last year left to ask about. Once you mark a show Played, it shows up here.</p>'}</div>` : ''}
+      ${nw.length ? `<h4>Waiting for you</h4>${nw.map(r => item(r, '<button type="button" class="btn small primary" data-rv-do="shown">Show on my page</button><button type="button" class="btn small" data-rv-do="hidden">Keep it off</button>')).join('')}` : ''}
+      ${shown.length ? `<h4>On your page</h4>${shown.map(r => item(r, '<button type="button" class="btn small" data-rv-do="hidden">Hide</button>')).join('')}` : ''}
+      ${hid.length ? `<details class="ssx-rv-more"><summary>Not on your page (${hid.length})</summary>${hid.map(r => item(r, '<button type="button" class="btn small" data-rv-do="shown">Show on my page</button>')).join('')}</details>` : ''}
+      ${wait.length ? `<details class="ssx-rv-more"><summary>Asked, no answer yet (${wait.length})</summary>${wait.map(r => `<div class="ssx-rv" data-rv-b="${esc(r.booking)}"><div class="ssx-rv-top"><b>${esc(r.client || 'Client')}</b><span class="note">${esc(r.show || 'Show')} · asked ${esc(rvWhen(r.asked))}${r.expires < t ? ' · link expired' : ''}</span></div><div class="ssx-row"><button type="button" class="btn small" data-rv-again>${r.expires < t ? 'Send a new link' : 'Ask again'}</button></div></div>`).join('')}</details>` : ''}
+      ${!L.length && !RV.pick ? '<p class="note">No reviews yet. Tap <b>Ask for a review</b> after a show, or use the step in Wrap up.</p>' : ''}`;
+    card.querySelector('[data-rv-ask]').onclick = () => { RV.pick = !RV.pick; card.dataset.sig = ''; rvCard(); const f = card.querySelector('[data-rv-show], [data-rv-ask]'); if (f) f.focus(); };
+    card.querySelectorAll('[data-rv-show]').forEach(x => x.onclick = () => { const b = (S.bookings || []).find(y => y.id === x.dataset.rvShow); if (b) { RV.pick = false; rvAsk(b); } });
+    card.querySelectorAll('[data-rv-do]').forEach(x => x.onclick = () => { x.disabled = true; rvSet(x.closest('[data-rv-id]').dataset.rvId, x.dataset.rvDo); });
+    card.querySelectorAll('[data-rv-again]').forEach(x => x.onclick = () => { const b = (S.bookings || []).find(y => y.id === x.closest('[data-rv-b]').dataset.rvB); b ? rvAsk(b) : toast('That show was removed, so it can\'t be asked about again.'); });
+  }
+  const _pgCardRV = pgCard;
+  pgCard = function () { const r = _pgCardRV.apply(this, arguments); try { rvCard(); } catch (e) { console.error(e); } return r; };
+  // My page: a Reviews section (in the designer's section list, with a live preview of the reviews you've chosen to show)
+  if (!PD_ORDER.includes('reviews')) PD_ORDER.splice(Math.max(0, PD_ORDER.indexOf('bio')) + 1, 0, 'reviews');
+  PD_TITLE.reviews = 'Reviews'; PD_ICON0.reviews = 'star';
+  const _pwDataRV = pwData;
+  pwData = function () {
+    const d = _pwDataRV.apply(this, arguments);
+    try { rvLoad(); d.reviews = RV.list.filter(r => r.status === 'shown').slice(0, 12).map(r => ({ r: r.rating, t: r.body, n: rvShortName(r.name), d: String(r.date || r.at || '').slice(0, 7) })); } catch (_) {}
+    return d;
+  };
+  // check for new reviews now and then while the app is open
+  setInterval(() => { try { if (st.db && document.visibilityState === 'visible') rvLoad(); } catch (_) {} }, 300000);  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
@@ -9063,4 +9158,59 @@ if (/[?&]book=/.test(location.search)) {
   const startP = () => { moP.observe(document.body, { childList: true, subtree: true }); bkpApply(); };
   document.body ? startP() : document.addEventListener('DOMContentLoaded', startP);
   document.addEventListener('submit', bkpSubmit, true);
+}
+/* ============================================================== review page (setnsettled.com/?review=…)
+   The link a client gets when you ask for a review. Works once and for 60 days. Shows only your name and the show:
+   no client details. Their review waits for you; it appears on your My page only if you choose to show it. */
+async function reviewPage(rawTok) {
+  const tok = String(rawTok || '').toLowerCase().replace(/[^0-9a-f]/g, '').slice(0, 48);
+  document.documentElement.classList.add('ss-book');
+  const m = document.createElement('meta'); m.name = 'robots'; m.content = 'noindex'; document.head.appendChild(m);
+  const root = document.createElement('main'); root.id = 'ss-book'; root.className = 'rv-page'; root.setAttribute('aria-live', 'polite');
+  const put = () => document.body.appendChild(root); document.body ? put() : document.addEventListener('DOMContentLoaded', put);
+  const brand = `<a class="bk-brand" href="${location.origin}/" target="_blank" rel="noopener" aria-label="Set &amp; Settled website"><img src="/favicon.svg" alt="" width="30" height="30"><span>Set &amp; Settled</span></a>`;
+  const shell = inner => { root.innerHTML = `<div class="bk-wrap">${brand}${inner}<footer class="bk-foot">Reviews by <b>Set &amp; Settled</b> · <a href="/privacy-policy/" target="_blank" rel="noopener">Privacy</a> · <a href="/terms-of-service/" target="_blank" rel="noopener">Terms</a></footer></div>`; };
+  const note = (h, p) => shell(`<div class="bk-card bk-center"><h1>${h}</h1><p class="bk-muted">${p}</p></div>`);
+  root.innerHTML = '<div class="bk-wrap"><p class="bk-muted">Loading…</p></div>';
+  let R = null;
+  try { if (tok.length === 48) { const { data, error } = await sb.rpc('review_get', { p_token: tok }); if (!error) R = data; } } catch (_) {}
+  if (!R) { document.title = 'Review · Set & Settled'; return note('This review link isn\'t working', 'Check the link in the email you got, or ask the performer for a new one.'); }
+  const who = esc(R.artist || 'your performer');
+  document.title = `Review ${R.artist || 'a performer'} · Set & Settled`;
+  if (R.done) return note('Thank you!', `Your review for ${who} is in. There's nothing else to do.`);
+  if (R.expired) return note('This review link has expired', `Links work for 60 days. Ask ${who} to send you a new one.`);
+  const when = R.date ? (() => { try { return new Date(R.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }); } catch (_) { return ''; } })() : '';
+  const show = [R.show, when].filter(Boolean).map(esc).join(' · ');
+  const W = ['', 'Poor', 'Fair', 'Good', 'Great', 'Amazing'], st = { r: 0 };
+  shell(`<form class="bk-card rv-card" id="rv-form" novalidate>
+      <div><h1>How was working with ${who}?</h1>${show ? `<p class="bk-muted">${show}</p>` : ''}</div>
+      <fieldset class="rv-stars"><legend class="bk-f">Your rating</legend><div class="rv-row" role="radiogroup" aria-label="Rating, 1 to 5 stars">
+        ${[1, 2, 3, 4, 5].map(n => `<button type="button" class="rv-star" role="radio" aria-checked="false" data-rv="${n}" aria-label="${n} star${n > 1 ? 's' : ''}, ${W[n]}" tabindex="${n === 1 ? 0 : -1}"><svg viewBox="0 0 24 24" width="36" height="36" aria-hidden="true"><path d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2-5.5-2.9-5.5 2.9 1-6.2L3 9.6l6.2-.9z"/></svg></button>`).join('')}
+        <span class="rv-word bk-muted" aria-hidden="true"></span></div></fieldset>
+      <label class="bk-f">Your review<textarea id="rv-text" rows="5" maxlength="1000" placeholder="What was it like? What stood out?"></textarea><span class="rv-count bk-muted bk-small" aria-live="polite">0 / 1000</span></label>
+      <label class="bk-f">Your name<input id="rv-name" maxlength="60" autocomplete="name" placeholder="First and last name"><span class="bk-muted bk-small rv-shown"></span></label>
+      <p class="bk-muted bk-small">${who} reads your review first and chooses whether to show it on their page, marked "Verified booking", with your first name and last initial. Nobody can change what you write.</p>
+      <p class="bk-err" id="rv-err" role="alert"></p>
+      <button type="submit" class="bk-btn" id="rv-send">Send review</button>
+    </form>`);
+  const f = root.querySelector('#rv-form'), q = s => f.querySelector(s), stars = [...f.querySelectorAll('[data-rv]')];
+  const paint = () => { stars.forEach(b => { const n = +b.dataset.rv; b.classList.toggle('on', n <= st.r); b.setAttribute('aria-checked', String(n === st.r)); b.tabIndex = (st.r ? n === st.r : n === 1) ? 0 : -1; }); q('.rv-word').textContent = W[st.r] || ''; };
+  stars.forEach(b => { b.onclick = () => { st.r = +b.dataset.rv; paint(); q('#rv-err').textContent = ''; }; });
+  q('.rv-row').addEventListener('keydown', e => { const i = stars.indexOf(document.activeElement); if (i < 0) return; let j = -1;
+    if (/Arrow(Right|Up)/.test(e.key)) j = Math.min(4, i + 1); else if (/Arrow(Left|Down)/.test(e.key)) j = Math.max(0, i - 1); if (j < 0) return; e.preventDefault(); st.r = j + 1; paint(); stars[j].focus(); });
+  q('#rv-text').oninput = () => { q('.rv-count').textContent = `${q('#rv-text').value.length} / 1000`; };
+  q('#rv-name').oninput = () => { const p = q('#rv-name').value.trim().split(/\s+/).filter(Boolean); q('.rv-shown').textContent = p.length ? `Shown as ${p[0][0].toUpperCase() + p[0].slice(1)}${p[1] ? ' ' + p[1][0].toUpperCase() + '.' : ''}` : ''; };
+  f.onsubmit = async e => {
+    e.preventDefault();
+    const text = q('#rv-text').value.trim(), name = q('#rv-name').value.trim(), err = q('#rv-err'), btn = q('#rv-send');
+    const miss = !st.r ? 'Pick a rating from 1 to 5 stars.' : text.length < 2 ? 'Write a few words about it.' : !name ? 'Add your name.' : '';
+    if (miss) { err.textContent = miss; return; }
+    err.textContent = ''; btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+      const { error } = await sb.rpc('review_submit', { p_token: tok, p_rating: st.r, p_body: text, p_name: name });
+      if (!error) { note('Thank you!', `Your review is on its way to ${who}.`); window.scrollTo(0, 0); return; }
+      err.textContent = /not_found/.test(error.message || '') ? 'This link has already been used or has expired.' : 'Couldn\'t send your review. Please try again.';
+    } catch (_) { err.textContent = 'Couldn\'t send your review. Check your connection and try again.'; }
+    btn.disabled = false; btn.textContent = 'Send review';
+  };
 }

@@ -42,9 +42,9 @@ const FONTS = {
   italiana: ['Italiana', 400, ''], playfair: ['Playfair Display', 600, ''], bebas: ['Bebas Neue', 400, 'letter-spacing:.03em'], unbounded: ['Unbounded', 600, 'letter-spacing:-.01em'],
   grotesk: ['Space Grotesk', 600, 'letter-spacing:-.02em'], marker: ['Permanent Marker', 400, ''], cormorant: ['Cormorant Garamond', 500, 'font-style:italic'], syne: ['Syne', 700, 'letter-spacing:-.01em']
 };
-const DEF_ORDER = ['news', 'shows', 'photos', 'watch', 'links', 'bio', 'book'];
-const DEF_TITLE = { news: 'News', shows: 'Upcoming', photos: 'Photos', watch: 'Watch & listen', links: 'Listen & follow', bio: 'About', book: 'Booking' };
-const DEF_ICON = { news: 'bolt', shows: 'ticket', photos: 'camera', watch: 'play', links: 'link', bio: 'sparkle', book: 'calendar' };
+const DEF_ORDER = ['news', 'shows', 'photos', 'watch', 'links', 'bio', 'reviews', 'book'];
+const DEF_TITLE = { news: 'News', shows: 'Upcoming', photos: 'Photos', watch: 'Watch & listen', links: 'Listen & follow', bio: 'About', reviews: 'Reviews', book: 'Booking' };
+const DEF_ICON = { news: 'bolt', shows: 'ticket', photos: 'camera', watch: 'play', links: 'link', bio: 'sparkle', reviews: 'star', book: 'calendar' };
 // saved order first; sections added later slot in after their usual neighbour
 // "-08:00": the artist's time zone offset at that moment, so Google reads show times exactly
 function tzOffset(date, hm, tz) {
@@ -130,6 +130,13 @@ function page(d, origin, opts) {
   const showHtml = shows.length ? shows.map(s => { const D = dt(s.date); return `<li class="show card"><div class="when"><span class="m">${MON[D.getUTCMonth()]}</span><span class="d">${D.getUTCDate()}</span><span class="w">${DAY[D.getUTCDay()]}</span></div>
       <div class="what"><b>${esc(s.title || s.venue || 'Show')}</b><span>${mapLink(s, [s.title ? s.venue : '', s.city].filter(Boolean).join(' \u00b7 '))}${s.time ? ` \u00b7 ${esc(t12(s.time))}` : ''}</span></div>
       ${s.tickets ? `<a class="btn small" href="${esc(safeUrl(s.tickets))}" rel="noopener" target="_blank">Tickets</a>` : ''}</li>`; }).join('') : `<li class="empty card">No public dates right now.${book ? ' Want to book a date? Send a request below.' : ''}</li>`;
+  // reviews the artist chose to show: only from clients they were booked by (each was asked for after a real show)
+  const reviews = (Array.isArray(d.reviews) ? d.reviews : []).filter(r => r && typeof r === 'object').map(r => ({
+    r: Math.max(1, Math.min(5, Math.round(Number(r.r) || 0))), t: String(r.t || '').trim().slice(0, 1000), n: String(r.n || '').trim().slice(0, 40),
+    d: /^\d{4}-\d{2}$/.test(r.d || '') ? `${MON[+r.d.slice(5, 7) - 1]} ${r.d.slice(0, 4)}` : ''
+  })).filter(r => r.t && Number(r.r)).slice(0, 12);
+  const avg = reviews.length ? reviews.reduce((s, r) => s + r.r, 0) / reviews.length : 0;
+  const stars = n => `<span class="stars" aria-hidden="true">${'\u2605'.repeat(n)}<span class="off">${'\u2605'.repeat(5 - n)}</span></span>`;
   const bio = String(d.bio || '').trim().split(/\n{2,}/).filter(Boolean).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
   const head = k => { const ic = look.icons ? iconOf(k) : ''; return `<h2 id="h-${k}">${ic ? `<span class="ic">${svg(ic, look.heads === 'big' ? 20 : 16)}</span>` : ''}<span>${esc(titleOf(k))}</span></h2>`; };
   const SEC = {
@@ -140,6 +147,7 @@ function page(d, origin, opts) {
     watch: () => players.length ? `<section aria-labelledby="h-watch">${head('watch')}<div class="players">${players.map(x => `<div class="player ${x.e.kind} card"${x.e.h ? ` style="height:${x.e.h}px"` : ''}>${preview ? `<div class="stand">${svg('play', 28)}<span>${esc(x.label || x.e.name)}</span><small>Plays here on your live page</small></div>` : `<iframe src="${esc(x.e.src)}" title="${esc(x.label || x.e.name)}" loading="lazy" allow="autoplay; encrypted-media; picture-in-picture; fullscreen; clipboard-write" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`}</div>`).join('')}</div></section>` : '',
     links: () => links.length ? `<section aria-labelledby="h-links">${head('links')}<div class="links">${links.map(l => `<a class="lk card" href="${esc(l.url)}" rel="noopener" target="_blank">${esc(l.label)}</a>`).join('')}</div></section>` : '',
     bio: () => bio ? `<section class="bio" aria-labelledby="h-bio">${head('bio')}${bio}</section>` : '',
+    reviews: () => reviews.length ? `<section aria-labelledby="h-reviews">${head('reviews')}${reviews.length > 1 ? `<p class="rvsum">${stars(Math.round(avg))}<span>${avg.toFixed(1)} from ${reviews.length} verified bookings</span></p>` : ''}<div class="reviews">${reviews.map(r => `<figure class="review card"><div class="rvtop">${stars(r.r)}<span class="sr">${r.r} out of 5 stars</span></div><blockquote>${esc(r.t).replace(/\n/g, '<br>')}</blockquote><figcaption>${r.n ? `<b>${esc(r.n)}</b>` : ''}<span class="vb"><svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Verified booking${r.d ? ' \u00b7 ' + esc(r.d) : ''}</span></figcaption></figure>`).join('')}</div></section>` : '',
     book: () => book ? `<section aria-labelledby="h-book">${head('book')}<div class="bookbox card"><p>See open dates and send a request in a minute.</p><a class="btn primary" href="${esc(book)}">Check dates and book</a></div></section>` : ''
   };
   const sections = order.filter(k => !off.has(k)).map(k => SEC[k]()).filter(Boolean).join('\n');
@@ -211,6 +219,7 @@ ul{list-style:none;margin:0;padding:0}
 .players{display:flex;flex-direction:column;gap:12px}.stand{height:100%;min-height:110px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:${muted};text-align:center;padding:12px}.stand svg{color:${solid}}.stand span{color:${ink};font-weight:600}.stand small{font-size:12px}.player{overflow:hidden;padding:0}.player.video{aspect-ratio:16/9}.player iframe{width:100%;height:100%;border:0;display:block}
 .bio p{margin:0 0 12px}
 .news{display:flex;flex-direction:column;gap:12px}.post{overflow:hidden;padding:0}.post img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block}.post .pbody{padding:16px 18px}.post h3{margin:0 0 6px;font-size:18px;line-height:1.3}.post p{margin:0 0 12px;color:${muted}}.post p:last-child{margin-bottom:0}
+.reviews{display:flex;flex-direction:column;gap:12px}.review{margin:0;padding:16px 18px}.review blockquote{margin:8px 0 10px;font-size:16px;line-height:1.5}.review figcaption{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:13px;color:${muted}}.review figcaption b{color:${ink}}.vb{display:inline-flex;align-items:center;gap:4px}.vb svg{color:${solid}}.stars{color:${solid};letter-spacing:2px;font-size:17px}.stars .off{opacity:.25}.rvsum{display:flex;align-items:center;gap:10px;margin:0 0 12px;color:${muted};font-size:14px}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .bookbox{padding:18px}.bookbox p{margin:0 0 14px;color:${muted}}
 ${preview ? 'a{pointer-events:none}' : ''}
 footer{margin-top:56px;text-align:center;font-size:13px;color:${muted}}footer a{color:${muted}}

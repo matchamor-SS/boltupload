@@ -1470,3 +1470,24 @@ html body .ssx-nt-sum { flex-basis: 100%; margin: 0; }
 html body .ssx-nt-last { display: block; font-size: 12px; opacity: .75; margin-top: 2px; }
 html body #contactList > .row.ssx-nt-off { display: none !important; }
 html body #contactList [data-nt-mail] { align-self: center; }
+/* Review page (setnsettled.com/?review=...) */
+html body .rv-stars { border: 0; padding: 0; margin: 0; }
+html body .rv-stars legend { padding: 0; margin-bottom: 6px; }
+html body .rv-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+html body .rv-star { width: 48px; height: 48px; display: grid; place-items: center; border: 0; border-radius: 12px; background: transparent; cursor: pointer; padding: 0; }
+html body .rv-star svg { fill: none; stroke: var(--bk-gold, #B08D57); stroke-width: 1.6; stroke-linejoin: round; transition: transform .12s; }
+html body .rv-star.on svg { fill: var(--bk-gold, #B08D57); }
+html body .rv-star:hover svg { transform: scale(1.08); }
+html body .rv-star:focus-visible { outline: 3px solid var(--bk-gold, #B08D57); outline-offset: 2px; }
+html body .rv-word { margin-left: 8px; font-weight: 600; }
+html body .rv-count { align-self: flex-end; font-weight: 400; }
+/* Kit: Reviews card */
+html body #ssx-reviews h4 { margin: 16px 0 8px; font-size: 14px; }
+html body .ssx-rv { padding: 12px 0; border-top: 1px solid var(--line, rgba(127,127,127,.25)); }
+html body .ssx-rv-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+html body .ssx-rv-stars { color: var(--accent, #D4B26E); letter-spacing: 2px; }
+html body .ssx-rv-body { margin: 6px 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+html body .ssx-rv-pick { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+html body .ssx-rv-pick .note { flex-basis: 100%; margin: 0; }
+html body .ssx-rv-more { margin-top: 12px; }
+html body .ssx-rv-more summary { cursor: pointer; min-height: 40px; display: flex; align-items: center; }
