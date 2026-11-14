@@ -7840,6 +7840,202 @@ function appExtras() {
   if (typeof window.renderKit === 'function' && !window.renderKit.__pl) { const o = window.renderKit, w = function () { const r = o.apply(this, arguments); try { plKitRows(); } catch (e) { console.error(e); } return r; }; w.__pl = true; window.renderKit = w; }
   const _pgCardPL = pgCard;
   pgCard = function () { const r = _pgCardPL.apply(this, arguments); try { if (typeof window.renderKit === 'function' && !window.renderKit.__pl) { const o = window.renderKit, w = function () { const r2 = o.apply(this, arguments); try { plKitRows(); } catch (e) { console.error(e); } return r2; }; w.__pl = true; window.renderKit = w; } plKitRows(); } catch (e) { console.error(e); } return r; };  
+/* -- What you offer: packages for every kind of artist (a DJ's wedding package, a photographer's headshot session).
+     Settings → Profile → "What you offer" (settings/services). Start with suggestions for your artist type (no prices are
+     made up: you set them). Packages already work in the show form (fills fee, title and end time), on invoices (package
+     and add-ons as their own lines) and in emails ({{packages}}). The booking page uses them next.
+     Also: Photographer and Videographer artist types, and Instagram + EPK link in the Business profile. */
+  try {
+    const svc = FL_GROUPS.find(g => g[0] === 'service');
+    if (svc && !svc[2].some(k => k[0] === 'photographer')) {
+      svc[1] = 'Photo, video & services';
+      svc[2].unshift(['photographer', 'Photographer', 'Photographer'], ['videographer', 'Videographer', 'Videographer']);
+      FL_KINDS.push(['photographer', 'Photographer', 'service'], ['videographer', 'Videographer', 'service']);
+    }
+  } catch (e) { console.error(e); }
+  const SV = { doc: null, loaded: false, busy: false };
+  const svCfg = () => ({ items: [], custom: true, travel: '', ...(SV.doc || {}) });
+  const svItems = () => (svCfg().items || []).filter(p => p && p.id && p.name);
+  async function svLoad() { if (SV.loaded || !st.db) return; SV.loaded = true; try { const s = await st.db.doc('settings/services').get(); SV.doc = s.exists ? s.data() : {}; } catch (_) { SV.doc = null; SV.loaded = false; } }
+  async function svSave(patch, msg) { const next = { ...svCfg(), ...patch, updatedAt: new Date().toISOString() }; try { await st.db.doc('settings/services').set(next); SV.doc = next; if (msg) toast(msg); return true; } catch (_) { toast("Couldn't save. " + OFFLINE); return false; } }
+  const svId = () => 'p' + Math.random().toString(36).slice(2, 9);
+  const svLen = m => { m = Number(m) || 0; if (!m) return ''; if (m >= 480 && m % 60 === 0 && m > 600) return `${m / 60} hr`; const h = Math.floor(m / 60), r = m % 60; return h ? `${h}${r ? '.' + Math.round(r / 6) : ''} hr` : `${r} min`; };
+  const svMoney = n => { try { return money(n); } catch (_) { return '$' + Math.round(Number(n) || 0).toLocaleString('en-US'); } };
+  const svPrice = p => (p.price === '' || p.price == null || isNaN(Number(p.price))) ? 'Price on request' : `${p.from ? 'From ' : ''}${svMoney(p.price)}`;
+  const svDeposit = p => p.depKind === 'pct' && Number(p.dep) ? `${Number(p.dep)}% deposit` : p.depKind === 'amt' && Number(p.dep) ? `${svMoney(p.dep)} deposit` : '';
+  const SV_LENS = [30, 45, 60, 90, 120, 150, 180, 240, 300, 360, 480, 600];
+  // starter packages by artist type: names, lengths and what's included; prices stay blank for you to set
+  const SV_SUGGEST = {
+    dj: [['Club or bar set', 180, 'Up to 3 hours of music. Uses the venue\'s sound system.'], ['Private party', 240, '4 hours of music with sound system, a planning call and your must-play list.'], ['Wedding', 300, 'Ceremony, cocktail hour and reception, with announcements and a planning call.']],
+    music: [['Live set', 60, 'A one-hour set with my own instruments.'], ['Private event', 120, 'Two sets for parties and private events, with a planning call.'], ['Wedding ceremony', 60, 'Ceremony music, including your walk down the aisle.']],
+    comedy: [['Club set', 30, 'A 30-minute set.'], ['Hosting / MC', 180, 'Hosting your event start to finish, with announcements.'], ['Private show', 60, 'A one-hour show for parties and private events.']],
+    movement: [['Performance', 30, 'A 30-minute performance.'], ['Event appearance', 120, 'Roaming or staged performances across two hours.'], ['Workshop', 90, 'A 90-minute class for your group.']],
+    photographer: [['Event coverage', 120, 'Up to 2 hours of photos and an online gallery of edited images.', 'Within 7 days'], ['Headshots', 60, 'A one-hour session with two looks and retouched favorites.', 'Within 5 days'], ['Show or concert photos', 180, 'Full-night coverage with edited photos ready for social media.', 'Within 3 days']],
+    videographer: [['Event recap video', 180, 'Filming your event and a 60–90 second recap edit.', 'Within 14 days'], ['Music video', 480, 'A planning call, one shoot day and the edited video.', 'Within 21 days'], ['Live set recording', 120, 'Multi-angle recording with audio from the board.', 'Within 10 days']],
+    tattoo: [['Small tattoo', 60, 'Simple designs, palm-sized or smaller.'], ['Half-day session', 240, 'Up to 4 hours of tattooing.'], ['Full-day session', 480, 'Up to 8 hours of tattooing.']],
+    massage: [['60-minute massage', 60, 'Full-body massage.'], ['90-minute massage', 90, 'Full-body massage with extra focus areas.']],
+    acupuncture: [['First visit', 90, 'Intake conversation and your first treatment.'], ['Follow-up visit', 60, 'A treatment session.']],
+    hmua: [['Event makeup', 60, 'Makeup for one person.'], ['Bridal hair & makeup', 150, 'Hair and makeup for the person getting married.'], ['Trial', 60, 'A run-through before the big day.']],
+    other: [['Standard booking', 60, 'Tell people what\'s included.']]
+  };
+  function svSuggestions() {
+    let A = { kind: '', group: 'music' }; try { A = flArtist(); } catch (_) {}
+    const list = SV_SUGGEST[A.kind] || (A.kind && ['singer', 'rapper', 'band', 'instrumentalist', 'producer'].includes(A.kind) ? SV_SUGGEST.music : SV_SUGGEST[A.group]) || SV_SUGGEST.other;
+    return list.map(([name, mins, includes, turn]) => ({ id: svId(), name, mins, includes, turn: turn || '', price: '', from: false, depKind: 'none', dep: '', addons: [], online: true }));
+  }
+  // the package editor
+  function svEdit(id) {
+    const cur = svItems().find(p => p.id === id) || { id: svId(), name: '', mins: 60, includes: '', price: '', from: false, depKind: 'none', dep: '', turn: '', addons: [], online: true };
+    const isNew = !svItems().some(p => p.id === cur.id); let addons = (cur.addons || []).map(a => ({ ...a }));
+    let A = { group: 'music' }; try { A = flArtist(); } catch (_) {}
+    try { navSheet('svc:' + cur.id, () => svEdit(id)); } catch (_) {}
+    const lenOpts = [...new Set([...SV_LENS, Number(cur.mins) || 60])].sort((a, b) => a - b).map(m => `<option value="${m}"${Number(cur.mins) === m ? ' selected' : ''}>${svLen(m)}</option>`).join('');
+    sheet(`<h3>${isNew ? 'New package' : 'Edit package'}</h3>
+      <div class="f"><label for="sv-name">Name</label><input id="sv-name" maxlength="60" value="${esc(cur.name)}" placeholder="e.g. Wedding, Headshots, Club set"></div>
+      <div class="f"><label for="sv-inc">What's included</label><textarea id="sv-inc" maxlength="500" rows="3" placeholder="What they get, in a sentence or two">${esc(cur.includes || '')}</textarea></div>
+      <div class="frow"><div class="f"><label for="sv-len">Length</label><select id="sv-len">${lenOpts}</select></div>
+        <div class="f"><label for="sv-price">Price <i class="note">(blank = on request)</i></label><input id="sv-price" type="number" min="0" step="1" inputmode="decimal" value="${esc(cur.price ?? '')}" placeholder="e.g. 450"></div></div>
+      <label class="ssx-check"><input type="checkbox" id="sv-from"${cur.from ? ' checked' : ''}> Show as "From" (the price can go up)</label>
+      <div class="frow"><div class="f"><label for="sv-depk">Deposit</label><select id="sv-depk">${[['none', 'No deposit'], ['pct', 'A percentage'], ['amt', 'A set amount']].map(([v, l]) => `<option value="${v}"${(cur.depKind || 'none') === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div class="f" id="sv-depw"${(cur.depKind || 'none') === 'none' ? ' hidden' : ''}><label for="sv-dep">${cur.depKind === 'amt' ? 'Amount ($)' : 'Percent (%)'}</label><input id="sv-dep" type="number" min="0" step="1" value="${esc(cur.dep ?? '')}"></div></div>
+      <div class="f"><label for="sv-turn">Turnaround <i class="note">(optional${A.group === 'service' ? '' : ', for things you deliver later'})</i></label><input id="sv-turn" maxlength="60" value="${esc(cur.turn || '')}" placeholder="e.g. Within 7 days"></div>
+      <div class="f"><label>Add-ons <i class="note">(optional extras people can add)</i></label><div class="ssx-sv-adds"></div><button type="button" class="btn small" data-sv-addon>+ Add an add-on</button></div>
+      <label class="ssx-check"><input type="checkbox" id="sv-online"${cur.online !== false ? ' checked' : ''}> Offer this on your booking page</label>
+      <div class="actions">${isNew ? '' : '<button type="button" class="btn ssx-sv-del" data-sv-del>Delete</button>'}<button type="button" class="btn" data-sv-cancel>Cancel</button><button type="button" class="btn primary" data-sv-save>Save package</button></div>`, root => {
+      const q = s => root.querySelector(s);
+      const drawAdds = () => { const box = q('.ssx-sv-adds'); box.innerHTML = addons.map((a, i) => `<div class="ssx-sv-add" data-i="${i}"><input maxlength="50" data-a="name" value="${esc(a.name || '')}" placeholder="e.g. Extra hour" aria-label="Add-on name"><input type="number" min="0" step="1" data-a="price" value="${esc(a.price ?? '')}" placeholder="$" aria-label="Add-on price"><button type="button" class="x" data-a-del aria-label="Remove add-on">×</button></div>`).join('');
+        box.querySelectorAll('.ssx-sv-add').forEach(row => { const i = +row.dataset.i; row.querySelectorAll('[data-a]').forEach(inp => inp.oninput = () => { addons[i][inp.dataset.a] = inp.value; }); row.querySelector('[data-a-del]').onclick = () => { addons.splice(i, 1); drawAdds(); }; }); };
+      drawAdds();
+      q('[data-sv-addon]').onclick = () => { if (addons.length >= 8) { toast('Up to 8 add-ons per package'); return; } addons.push({ id: svId(), name: '', price: '' }); drawAdds(); const ins = root.querySelectorAll('.ssx-sv-add [data-a="name"]'); if (ins.length) ins[ins.length - 1].focus(); };
+      q('#sv-depk').onchange = e => { q('#sv-depw').hidden = e.target.value === 'none'; q('#sv-depw label').textContent = e.target.value === 'amt' ? 'Amount ($)' : 'Percent (%)'; };
+      q('[data-sv-cancel]').onclick = () => svSheet();
+      const del = q('[data-sv-del]'); if (del) del.onclick = async () => { if (!del.dataset.armed) { del.dataset.armed = '1'; del.textContent = 'Tap again to delete'; setTimeout(() => { if (del.isConnected) { delete del.dataset.armed; del.textContent = 'Delete'; } }, 4000); return; }
+        if (await svSave({ items: svItems().filter(p => p.id !== cur.id) }, `${cur.name} deleted`)) svSheet(); };
+      q('[data-sv-save]').onclick = async e => {
+        const name = q('#sv-name').value.trim(); if (!name) { toast('Give the package a name'); q('#sv-name').focus(); return; }
+        const priceRaw = q('#sv-price').value.trim(), dk = q('#sv-depk').value;
+        const item = { ...cur, name, includes: q('#sv-inc').value.trim(), mins: Number(q('#sv-len').value) || 60, price: priceRaw === '' ? '' : Math.max(0, Number(priceRaw)), from: q('#sv-from').checked,
+          depKind: dk, dep: dk === 'none' ? '' : Math.max(0, Number(q('#sv-dep').value) || 0), turn: q('#sv-turn').value.trim(), online: q('#sv-online').checked,
+          addons: addons.filter(a => String(a.name || '').trim()).map(a => ({ id: a.id || svId(), name: String(a.name).trim().slice(0, 50), price: a.price === '' || a.price == null ? '' : Math.max(0, Number(a.price) || 0) })) };
+        if (dk === 'pct' && item.dep > 100) { toast('A percentage deposit can be at most 100%'); q('#sv-dep').focus(); return; }
+        const btn = e.currentTarget; btn.disabled = true;
+        const list = svItems(), i = list.findIndex(p => p.id === item.id); i >= 0 ? list.splice(i, 1, item) : list.push(item);
+        if (await svSave({ items: list }, `${name} saved`)) svSheet(); else btn.disabled = false;
+      };
+      if (isNew) q('#sv-name').focus();
+    });
+  }
+  // the list of packages
+  function svSheet() {
+    const c = svCfg(), list = svItems();
+    try { navSheet('svc', () => svSheet()); } catch (_) {}
+    sheet(`<h3>What you offer</h3><p class="note" style="margin:0 0 8px">Your packages and prices, in one place. They fill in your shows, invoices and emails, and your booking page offers them.</p>
+      ${list.length ? `<ol class="ssx-sv-list">${list.map((p, i) => `<li data-id="${esc(p.id)}"><button type="button" class="ssx-sv-row" data-sv-open><span class="tx"><b>${esc(p.name)}</b><small>${esc([svLen(p.mins), svPrice(p), svDeposit(p), p.turn].filter(Boolean).join(' · '))}${p.online === false ? ' · <i>not on booking page</i>' : ''}</small></span><span aria-hidden="true">›</span></button>
+        <span class="mv"><button type="button" class="btn small" data-sv-up aria-label="Move ${esc(p.name)} up"${i ? '' : ' disabled'}>↑</button><button type="button" class="btn small" data-sv-dn aria-label="Move ${esc(p.name)} down"${i < list.length - 1 ? '' : ' disabled'}>↓</button></span></li>`).join('')}</ol>`
+        : `<div class="ssx-sv-empty"><p>No packages yet. Start with a few suggestions for your kind of work and set your own prices, or add your own.</p><button type="button" class="btn primary" data-sv-suggest>Start with suggestions</button></div>`}
+      <div class="ssx-row"><button type="button" class="btn${list.length ? ' primary' : ''}" data-sv-new>+ Add a package</button></div>
+      <label class="ssx-check" style="margin-top:12px"><input type="checkbox" id="sv-custom"${c.custom !== false ? ' checked' : ''}> Let people ask for something custom</label>
+      <div class="f"><label for="sv-travel">Travel or other fees <i class="note">(optional)</i></label><input id="sv-travel" maxlength="160" value="${esc(c.travel || '')}" placeholder="e.g. Travel over 30 miles: $1 per mile"></div>
+      <div class="actions"><button type="button" class="btn primary" data-sv-done>Done</button></div>`, root => {
+      const q = s => root.querySelector(s);
+      root.querySelectorAll('.ssx-sv-list > li').forEach(li => {
+        const id = li.dataset.id; li.querySelector('[data-sv-open]').onclick = () => svEdit(id);
+        const mv = async dir => { const L = svItems(), i = L.findIndex(p => p.id === id), j = i + dir; if (j < 0 || j >= L.length) return; [L[i], L[j]] = [L[j], L[i]]; if (await svSave({ items: L })) { svSheet(); const b = document.querySelector(`.ssx-sv-list > li[data-id="${id}"] [data-sv-${dir < 0 ? 'up' : 'dn'}]`); if (b && !b.disabled) b.focus(); } };
+        li.querySelector('[data-sv-up]').onclick = () => mv(-1); li.querySelector('[data-sv-dn]').onclick = () => mv(1);
+      });
+      const sg = q('[data-sv-suggest]'); if (sg) sg.onclick = async () => { const s = svSuggestions(); if (await svSave({ items: s }, `${s.length} packages added. Open each one to set your price.`)) svSheet(); };
+      q('[data-sv-new]').onclick = () => svEdit('');
+      q('#sv-custom').onchange = e => svSave({ custom: e.target.checked }, e.target.checked ? 'Custom requests on' : 'Custom requests off');
+      q('#sv-travel').onchange = e => svSave({ travel: e.target.value.trim() }, 'Saved');
+      q('[data-sv-done]').onclick = () => close();
+    });
+  }
+  window.ssServices = svSheet;
+  // Settings → Profile: the "What you offer" card under the Business profile
+  function svCard() {
+    const biz = document.getElementById('ssx-biz'); if (!biz || !st.db) return;
+    if (!SV.loaded) { svLoad().then(svCard); return; } if (!SV.doc) return;
+    const list = svItems(), sig = JSON.stringify(list.map(p => [p.name, p.mins, p.price, p.from])); let el = document.getElementById('ssx-svc');
+    if (!el) { el = document.createElement('div'); el.id = 'ssx-svc'; el.className = 'card ssx'; biz.after(el); }
+    if (el.dataset.sig === sig) return; el.dataset.sig = sig;
+    const noPrice = list.filter(p => p.price === '' || p.price == null).length;
+    el.innerHTML = `<div class="ssx-head"><div><h3>What you offer</h3><p class="note">${list.length ? `${list.length} package${list.length === 1 ? '' : 's'}${noPrice ? ` · ${noPrice} without a price yet` : ''}` : 'Your packages and prices. Your shows, invoices, emails and booking page use them.'}</p></div>
+      <button type="button" class="btn small${list.length ? '' : ' primary'}" data-sv-card>${list.length ? 'Edit' : 'Add packages'}</button></div>
+      ${list.length ? `<ul class="ssx-sv-sum">${list.slice(0, 5).map(p => `<li><b>${esc(p.name)}</b><span>${esc([svLen(p.mins), svPrice(p)].filter(Boolean).join(' · '))}</span></li>`).join('')}${list.length > 5 ? `<li class="note">and ${list.length - 5} more</li>` : ''}</ul>` : ''}`;
+    el.querySelector('[data-sv-card]').onclick = () => svSheet();
+  }
+  // show form: pick a package (and add-ons) to fill the fee, the title and the end time
+  function svBookField(root) {
+    if (!root.querySelector('#b-fee') || !root.querySelector('#b-title') || root.querySelector('#b-pkg')) return;
+    if (!SV.loaded) { svLoad().then(() => svBookField(root)); return; }
+    const list = svItems(); if (!list.length) return;
+    const b = FL.formB || {}, chosen = new Set(String(b.addonIds || '').split(',').filter(Boolean));
+    const w = document.createElement('div'); w.className = 'f ssx-pkg';
+    w.innerHTML = `<label for="b-pkg">Package</label><select id="b-pkg" data-k="packageId"><option value="">No package (custom)</option>${list.map(p => `<option value="${esc(p.id)}"${b.packageId === p.id ? ' selected' : ''}>${esc(p.name)} · ${esc([svLen(p.mins), svPrice(p)].filter(Boolean).join(' · '))}</option>`).join('')}</select>
+      <div class="ssx-pkg-adds"></div><input type="hidden" data-k="addonIds" value="${esc([...chosen].join(','))}"><span class="note">Picking one fills in the fee, the title and the end time. You can still change them.</span>`;
+    const anchor = root.querySelector('#b-title').closest('.f'); anchor ? anchor.after(w) : root.querySelector('#b-fee').closest('.f').before(w);
+    const sel = w.querySelector('#b-pkg'), hid = w.querySelector('[data-k="addonIds"]'), box = w.querySelector('.ssx-pkg-adds');
+    const pk = () => list.find(p => p.id === sel.value);
+    const total = () => { const p = pk(); if (!p) return null; let t = Number(p.price) || 0; (p.addons || []).forEach(a => { if (chosen.has(a.id)) t += Number(a.price) || 0; }); return (p.price === '' || p.price == null) && !t ? null : t; };
+    const fill = first => {
+      const p = pk(); if (!p) return;
+      const fee = root.querySelector('#b-fee'), t = total(); if (t != null && (!first || !fee.value)) { fee.value = t; fee.dispatchEvent(new Event('input', { bubbles: true })); }
+      const ti = root.querySelector('#b-title'); if (!ti.value.trim()) { ti.value = p.name; ti.dispatchEvent(new Event('input', { bubbles: true })); }
+      try { const s = readTime(root, 'b-ts'); if (s && p.mins) { const m = toMin(s) + Number(p.mins) + (p.addons || []).filter(a => chosen.has(a.id) && /hour/i.test(a.name)).length * 60; setTimeSel(root, 'b-te', fromMin(m % 1440)); } } catch (_) {}
+    };
+    const drawAdds = () => { const p = pk(); box.innerHTML = p && (p.addons || []).length ? `<div class="ssx-pkg-al">${p.addons.map(a => `<label class="ssx-check"><input type="checkbox" data-addon="${esc(a.id)}"${chosen.has(a.id) ? ' checked' : ''}> ${esc(a.name)}${a.price !== '' && a.price != null ? ' · +' + esc(svMoney(a.price)) : ''}</label>`).join('')}</div>` : '';
+      box.querySelectorAll('[data-addon]').forEach(c => c.onchange = () => { c.checked ? chosen.add(c.dataset.addon) : chosen.delete(c.dataset.addon); hid.value = [...chosen].join(','); fill(false); }); };
+    sel.onchange = () => { chosen.clear(); hid.value = ''; drawAdds(); fill(false); };
+    drawAdds();
+    // set the end time once a start time is picked
+    root.addEventListener('change', e => { if (e.target.closest && e.target.closest('[data-tsel="b-ts"]') && pk()) { try { const s = readTime(root, 'b-ts'); if (s) setTimeSel(root, 'b-te', fromMin((toMin(s) + Number(pk().mins)) % 1440)); } catch (_) {} } });
+  }
+  const _flBookFormSV = flBookForm;
+  flBookForm = function (root) { const r = _flBookFormSV.apply(this, arguments); try { svBookField(root); } catch (e) { console.error(e); } return r; };
+  // invoices: the package and each add-on as their own lines (they add up to the show's fee)
+  function svInvWire() {
+    if (typeof window.newInvoice !== 'function' || window.newInvoice.__sv) return;
+    const o = window.newInvoice, w = function (b) {
+      const inv = o.apply(this, arguments);
+      try {
+        const p = b && b.packageId && svItems().find(x => x.id === b.packageId); if (!p || !inv || !Array.isArray(inv.lines) || !inv.lines.length) return inv;
+        const ids = new Set(String(b.addonIds || '').split(',').filter(Boolean)), adds = (p.addons || []).filter(a => ids.has(a.id));
+        const addSum = adds.reduce((s, a) => s + (Number(a.price) || 0), 0), fee = Number(b.fee) || 0, base = fee ? Math.max(0, fee - addSum) : (Number(p.price) || 0);
+        const first = inv.lines[0], show = (() => { try { return bookingName(b); } catch (_) { return b.title || ''; } })();
+        inv.lines = [{ ...first, desc: `${p.name}${show && show !== p.name ? ' – ' + show : ''}`, qty: 1, unit: 'flat', rate: base }, ...adds.map(a => ({ ...first, desc: a.name, qty: 1, unit: 'flat', rate: Number(a.price) || 0 })), ...inv.lines.slice(1)];
+      } catch (e) { console.error(e); }
+      return inv;
+    };
+    w.__sv = true; window.newInvoice = w;
+  }
+  // emails: a "My packages & prices" fill-in
+  try { const g = FILLINS.find(x => x[0] === 'About you'); if (g && !g[1].some(i => i[0] === 'packages')) g[1].push(['packages', 'My packages & prices']); } catch (_) {}
+  const svFillText = () => { const L = svItems().filter(p => p.online !== false), c = svCfg(); if (!L.length) return ''; return L.map(p => `• ${p.name} (${[svLen(p.mins), svPrice(p).replace(/^From /, 'from ').replace(/^Price on request$/, 'price on request')].filter(Boolean).join(', ')})${p.includes ? ': ' + p.includes : ''}`).join('\n') + (c.travel ? `\n${c.travel}` : ''); };
+  function svFillWire() {
+    const s = window.SS; if (!s || !s.templates || typeof s.templates.fill !== 'function' || s.templates.fill.__svc) return;
+    const o = s.templates.fill, f = function (str, ...rest) { return o.call(this, String(str || '').replace(/\{\{\s*packages\s*\}\}/g, () => svFillText()), ...rest); }; f.__svc = true; f.__links = o.__links;
+    try { window.SS = Object.freeze({ ...s, templates: Object.freeze({ ...s.templates, fill: f }) }); } catch (e) { console.error(e); }
+  }
+  // Business profile: Instagram and EPK link, saved with everything else
+  const _bizSheetSV = bizSheet;
+  bizSheet = function () {
+    const r = _bizSheetSV.apply(this, arguments);
+    try {
+      const root = document.querySelector('#sheetRoot .sheet'), web = root && root.querySelector('#bz-web'); if (!web || root.querySelector('#bz-ig')) return r;
+      const p = S.profile || {}, w = document.createElement('div'); w.className = 'frow';
+      w.innerHTML = `<div class="f"><label for="bz-ig">Instagram <i class="note">(optional)</i></label><input id="bz-ig" maxlength="60" value="${esc(p.instagram ? '@' + String(p.instagram).replace(/^@/, '') : '')}" placeholder="@yourhandle"></div><div class="f"><label for="bz-epk">EPK link <i class="note">(optional)</i></label><input id="bz-epk" type="url" maxlength="200" value="${esc(p.epk || '')}" placeholder="https://"></div>`;
+      web.closest('.f').after(w);
+      // goes into your profile in the same save (before the Business profile writes it)
+      root.querySelector('[data-bz-save]').addEventListener('click', () => {
+        const ig = (() => { const t = root.querySelector('#bz-ig').value.trim(); const m = t.match(/instagram\.com\/([A-Za-z0-9._]+)/i); return (m ? m[1] : t).replace(/^@/, '').replace(/[\/?#].*$/, ''); })();
+        let epk = root.querySelector('#bz-epk').value.trim(); if (epk && !/^https?:\/\//i.test(epk) && /\.[a-z]{2,}/i.test(epk)) epk = 'https://' + epk;
+        try { S.profile = { ...(S.profile || {}), instagram: ig, epk }; } catch (_) {}
+      }, true);
+    } catch (e) { console.error(e); }
+    return r;
+  };
+  const _pgCardSV = pgCard;
+  pgCard = function () { const r = _pgCardSV.apply(this, arguments); try { svCard(); svInvWire(); svFillWire(); } catch (e) { console.error(e); } return r; };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
