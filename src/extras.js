@@ -8211,12 +8211,12 @@ function appExtras() {
     w.__nt = true; window.renderContacts = w;
   }
   setTimeout(() => { try { ntApply(); } catch (_) {} }, 0);  
-/* -- Client reviews. After a show, "Ask for a review" (in Wrap up, or on the Reviews page under Kit) opens an email with a
+/* /* -- Client reviews. After a show, "Ask for a review" (in Wrap up, or on the Reviews page under Kit) opens an email with a
      review link for you to check and send. Ask as many people as you like about the same show; each gets their own link,
      and links never expire ("Remind" sends the same link again). New reviews show a red count on Kit, like new booking
      requests. You choose "Show on my page" (marked "Verified booking", first name and last initial) or keep one off, and
      you can hide or delete a review any time. Nobody can edit what a client wrote. */
-  const RV = { list: [], loaded: false, loading: false, at: 0, seenNew: null, pick: false, del: '' };
+  const RV = { list: [], loaded: false, loading: false, at: 0, seenNew: null, pick: false, del: '', open: new Set() };
   const RV_STARS = n => '★'.repeat(n) + '☆'.repeat(5 - n);
   const RV_IN = r => r.status === 'new' || r.status === 'shown' || r.status === 'hidden';
   async function rvLoad(force) {
@@ -8315,27 +8315,33 @@ function appExtras() {
     const card = document.getElementById('ssx-reviews'); if (!card || !st.db) return;
     if (!RV.loaded) { rvLoad(); return; }
     const L = RV.list, by = s => L.filter(r => r.status === s), shows = rvShows();
-    const sig = JSON.stringify([L.map(r => [r.id, r.status, r.asked]), RV.pick, RV.del, shows.length]);
+    const sig = JSON.stringify([L.map(r => [r.id, r.status, r.asked]), RV.pick, [...RV.open], shows.length]);
     if (card.dataset.sig === sig) return; card.dataset.sig = sig;
     const ab = document.querySelector('section[data-view="reviews"] [data-rv-ask]'); if (ab) ab.setAttribute('aria-expanded', String(RV.pick));
-    const delBtn = r => `<button type="button" class="btn small ghost" data-rv-del>${RV.del === r.id ? 'Tap again to delete' : 'Delete'}</button>`;
+    const delBtn = () => '<button type="button" class="btn small ghost" data-rv-del>Delete</button>';
     const item = (r, acts) => `<div class="ssx-rv${r.status === 'new' ? ' is-new' : ''}" data-rv-id="${esc(r.id)}"><div class="ssx-rv-top"><span class="ssx-rv-stars" aria-label="${r.rating} out of 5 stars">${RV_STARS(r.rating || 0)}</span><span class="note">${esc(rvShortName(r.name))}${r.show ? ' · ' + esc(r.show) : ''}${r.date ? ' · ' + esc(rvWhen(r.date)) : ''}</span></div>
-      <p class="ssx-rv-body">${esc(r.body || '')}</p><div class="ssx-row">${acts}${delBtn(r)}</div></div>`;
+      <p class="ssx-rv-body">${esc(r.body || '')}</p><div class="ssx-row">${acts}${delBtn()}</div></div>`;
     const nw = by('new'), shown = by('shown'), hid = by('hidden'), wait = by('requested');
     card.innerHTML = `${RV.pick ? `<div class="ssx-rv-pick"><p class="note">Pick the show you'd like a review for. Each email gets its own link.</p>${shows.length ? shows.slice(0, 20).map(b => { const sm = rvSum(b.id), got = rvOf(b.id).some(RV_IN); return `<button type="button" class="btn small${got ? ' ssx-rv-got' : ''}" data-rv-show="${esc(b.id)}">${got ? '✓ ' : ''}${esc(bName(b))} · ${esc(rvWhen(b.date))}${sm ? `<span class="ssx-rv-sm">${esc(sm)}</span>` : ''}</button>`; }).join('') : '<p class="note">No played shows from the last year yet. Once you mark a show Played, it shows up here.</p>'}</div>` : ''}
       ${nw.length ? `<h4>Waiting for you <span class="ssx-pill on">${nw.length} new</span></h4>${nw.map(r => item(r, '<button type="button" class="btn small primary" data-rv-do="shown">Show on my page</button><button type="button" class="btn small" data-rv-do="hidden">Keep it off</button>')).join('')}` : ''}
       ${shown.length ? `<h4>On your page</h4>${shown.map(r => item(r, '<button type="button" class="btn small" data-rv-do="hidden">Hide</button>')).join('')}` : ''}
-      ${hid.length ? `<details class="ssx-rv-more"><summary>Not on your page (${hid.length})</summary>${hid.map(r => item(r, '<button type="button" class="btn small" data-rv-do="shown">Show on my page</button>')).join('')}</details>` : ''}
-      ${wait.length ? `<details class="ssx-rv-more"><summary>Asked, no answer yet (${wait.length})</summary>${wait.map(r => `<div class="ssx-rv" data-rv-id="${esc(r.id)}" data-rv-b="${esc(r.booking)}"><div class="ssx-rv-top"><b>${esc(r.client || 'Someone you emailed')}</b><span class="note">${esc(r.show || 'Show')} · asked ${esc(rvWhen(r.asked))}</span></div><div class="ssx-row"><button type="button" class="btn small" data-rv-again>Remind</button>${RV.del === r.id ? '<button type="button" class="btn small ghost" data-rv-del>Tap again to remove</button>' : '<button type="button" class="btn small ghost" data-rv-del>Remove</button>'}</div></div>`).join('')}<p class="note">Remind sends the same link again, so it always works. Remove turns that link off.</p></details>` : ''}
+      ${hid.length ? `<details class="ssx-rv-more" data-rv-more="hid"${RV.open.has('hid') ? ' open' : ''}><summary>Not on your page (${hid.length})</summary>${hid.map(r => item(r, '<button type="button" class="btn small" data-rv-do="shown">Show on my page</button>')).join('')}</details>` : ''}
+      ${wait.length ? `<details class="ssx-rv-more" data-rv-more="wait"${RV.open.has('wait') ? ' open' : ''}><summary>Asked, no answer yet (${wait.length})</summary>${wait.map(r => `<div class="ssx-rv" data-rv-id="${esc(r.id)}" data-rv-b="${esc(r.booking)}"><div class="ssx-rv-top"><b>${esc(r.client || 'Someone you emailed')}</b><span class="note">${esc(r.show || 'Show')} · asked ${esc(rvWhen(r.asked))}</span></div><div class="ssx-row"><button type="button" class="btn small" data-rv-again>Remind</button><button type="button" class="btn small ghost" data-rv-del>Remove</button></div></div>`).join('')}<p class="note">Remind sends the same link again, so it always works. Remove turns that link off.</p></details>` : ''}
       ${!L.length && !RV.pick ? '<p class="note">No reviews yet. Tap <b>Ask for a review</b> after a show, or use the step in Wrap up.</p>' : ''}`;
     if (!card.innerHTML.trim()) card.innerHTML = '<p class="note">All caught up. Reviews you get show up here first.</p>';
     card.querySelectorAll('[data-rv-show]').forEach(x => x.onclick = () => { const b = (S.bookings || []).find(y => y.id === x.dataset.rvShow); if (b) { RV.pick = false; rvAsk(b); } });
     card.querySelectorAll('[data-rv-do]').forEach(x => x.onclick = () => { x.disabled = true; rvSet(x.closest('[data-rv-id]').dataset.rvId, x.dataset.rvDo); });
     card.querySelectorAll('[data-rv-del]').forEach(x => x.onclick = () => {
       const id = x.closest('[data-rv-id]').dataset.rvId;
-      if (RV.del !== id) { RV.del = id; card.dataset.sig = ''; rvCard(); const again = card.querySelector(`[data-rv-id="${CSS.escape(id)}"] [data-rv-del]`); if (again) again.focus(); setTimeout(() => { if (RV.del === id) { RV.del = ''; card.dataset.sig = ''; rvCard(); } }, 4000); return; }
+      // first tap: the button asks to be tapped again, right where it is (nothing closes or moves)
+      if (RV.del !== id) {
+        const label = x.textContent; RV.del = id; x.textContent = /Remove/.test(label) ? 'Tap again to remove' : 'Tap again to delete';
+        setTimeout(() => { if (RV.del === id) { RV.del = ''; if (x.isConnected) x.textContent = label; } }, 4000); return;
+      }
       x.disabled = true; rvDelete(id);
     });
+    // open sections stay open while you work in them
+    card.querySelectorAll('[data-rv-more]').forEach(d => d.ontoggle = () => { d.open ? RV.open.add(d.dataset.rvMore) : RV.open.delete(d.dataset.rvMore); });
     card.querySelectorAll('[data-rv-again]').forEach(x => x.onclick = () => { const row = x.closest('[data-rv-b]'), b = (S.bookings || []).find(y => y.id === row.dataset.rvB), r = L.find(y => y.id === row.dataset.rvId); b && r ? rvAsk(b, r) : toast('That show was removed, so there\'s nothing to remind them about.'); });
   }
   const _pgCardRV = pgCard;
