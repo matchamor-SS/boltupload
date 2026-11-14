@@ -8362,6 +8362,102 @@ function appExtras() {
   /* -- Photographers and videographers book "sessions" (not "appointments") and show a Portfolio. */
   const _flWordsPV = flWords;
   flWords = function () { const k = flArtist().kind; return k === 'photographer' || k === 'videographer' ? { show: 'session', set: 'session', epk: 'Portfolio' } : _flWordsPV.apply(this, arguments); };  
+/* -- Smarter "paste a message" and learned defaults, for every kind of work.
+     Paste box: reads lengths ("2-hour session", "3 hrs of coverage", "half day"), keeps a deposit apart from the fee
+     ("deposit $100" goes in Notes, not the fee), and picks your matching package ("headshots", "wedding package").
+     Learned defaults: picking a person you've booked before (a private client, or who you talk to) fills empty fields
+     from your last booking with them, the same way a venue or promoter already does. Only empty fields are filled. */
+  const SF_NUM = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, a: 1, an: 1 };
+  const _flParseInquirySF = flParseInquiry;
+  flParseInquiry = function (text) {
+    const out = _flParseInquirySF.apply(this, arguments), T = String(text || ''), low = T.toLowerCase();
+    try {
+      // how long: "2-hour session", "3 hrs", "90 minutes", "half day", "full day", "1.5 hours"
+      let m;
+      if (/\bhalf[\s-]?day\b/.test(low)) out.mins = 240;
+      else if (/\b(full|whole)[\s-]?day\b/.test(low)) out.mins = 480;
+      else if ((m = /\b(\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|an?)\s*[-\s]?\s*(?:hours?|hrs?|hr)\b/.exec(low))) { const n = SF_NUM[m[1]] || parseFloat(m[1]); if (n > 0 && n <= 24) out.mins = Math.round(n * 60); }
+      else if ((m = /\b(\d{2,3})\s*[-\s]?\s*(?:minutes?|mins?)\b/.exec(low))) { const n = +m[1]; if (n >= 15 && n <= 600) out.mins = n; }
+      // a deposit is its own amount, never the fee
+      const dep = /\bdeposit\b[^$\d\n]{0,25}\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?|\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?\s*(?:non[-\s]?refundable\s+)?deposit\b/i.exec(T);
+      if (dep) {
+        out.deposit = Number(String(dep[1] || dep[3]).replace(/,/g, '')) + ((dep[2] || dep[4]) ? +(dep[2] || dep[4]) / 100 : 0);
+        const amts = [...T.matchAll(/\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?/g)].map(x => ({ v: Number(x[1].replace(/,/g, '')) + (x[2] ? +x[2] / 100 : 0), i: x.index }))
+          .filter(x => !(x.i >= dep.index && x.i <= dep.index + dep[0].length));
+        if (out.fee === out.deposit) { const near = amts.find(x => /(fee|pay|paying|guarantee|offer|rate|budget|flat|total|price|cost)/i.test(T.slice(Math.max(0, x.i - 40), x.i + 30))); out.fee = near ? near.v : amts.length ? amts.slice().sort((a, b) => b.v - a.v)[0].v : undefined; }
+      }
+      // one of your packages, by name ("headshots", "event coverage", "wedding package")
+      let items = []; try { items = svItems(); } catch (_) {}
+      const words = s => String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !['package', 'session', 'the', 'and', 'with', 'for'].includes(w));
+      const score = p => { const w = words(p.name); if (!w.length) return 0; const hit = w.filter(x => new RegExp(`\\b${x.replace(/s$/, '')}s?\\b`).test(low)).length; return hit === w.length ? hit + 1 : 0; };
+      const best = items.map(p => [p, score(p)]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1])[0];
+      if (best) out.pkg = best[0];
+    } catch (e) { console.error(e); }
+    return out;
+  };
+  // after the paste box fills the form: the package, the length and the deposit
+  const _flAddShowSF = flAddShow;
+  flAddShow = function (root) {
+    const r0 = _flAddShowSF.apply(this, arguments);
+    try {
+      const go = root.querySelector('.ssx-as [data-as-go]'); if (!go || go.__sf) return r0; go.__sf = true;
+      go.addEventListener('click', () => setTimeout(() => {
+        const box = root.querySelector('.ssx-as'), txt = ((box && box.querySelector('#ssx-as-text')) || {}).value || ''; if (!txt.trim()) return;
+        const r = flParseInquiry(txt), got = [];
+        const pk = root.querySelector('#b-pkg');
+        if (r.pkg && pk && !pk.value && [...pk.options].some(o => o.value === r.pkg.id)) { pk.value = r.pkg.id; pk.dispatchEvent(new Event('change', { bubbles: true })); got.push(['Package', r.pkg.name]);
+          // the amount in their message stays as the fee (the package would put its own price there)
+          const fee = root.querySelector('#b-fee'); if (r.fee && fee && Number(fee.value) !== r.fee) { fee.value = r.fee; fee.dispatchEvent(new Event('input', { bubbles: true })); } }
+        let mins = r.mins || (r.pkg && Number(r.pkg.mins)) || 0;
+        try { const s = readTime(root, 'b-ts'), e = readTime(root, 'b-te'); if (s && !e && mins) { setTimeSel(root, 'b-te', fromMin((toMin(s) + mins) % 1440)); got.push(['Ends', fromMin((toMin(s) + mins) % 1440)]); } } catch (_) {}
+        if (r.mins) got.push(['Length', r.mins % 60 ? `${Math.floor(r.mins / 60) ? Math.floor(r.mins / 60) + ' hr ' : ''}${r.mins % 60} min` : `${r.mins / 60} hr`]);
+        if (r.deposit) {
+          got.push(['Deposit', '$' + r.deposit.toLocaleString('en-US')]);
+          const n = root.querySelector('#b-notes'); if (n && !/^Deposit: /m.test(n.value)) { n.value = `Deposit: $${r.deposit.toLocaleString('en-US')}\n${n.value}`; n.dispatchEvent(new Event('input', { bubbles: true })); }
+        }
+        const outBox = box && box.querySelector('.ssx-as-out'); if (!outBox || !got.length) return;
+        let g = outBox.querySelector('.ssx-as-got'); if (!g) { g = document.createElement('div'); g.className = 'ssx-as-got'; outBox.prepend(g); const empty = outBox.querySelector(':scope > p.note'); if (empty && /couldn't find/i.test(empty.textContent)) empty.remove(); }
+        g.insertAdjacentHTML('beforeend', got.map(([k, v]) => `<span><b>${esc(k)}</b> ${esc(v)}</span>`).join(''));
+        // the package filled the fee, so it wasn't missing after all
+        const fee = root.querySelector('#b-fee');
+        if (fee && fee.value) outBox.querySelectorAll('p.note').forEach(p => { if (/^Didn't find: /.test(p.textContent)) { const left = p.textContent.replace(/^Didn't find: /, '').replace(/\. Check those below\.$/, '').split(', ').filter(x => x !== 'fee'); left.length ? p.textContent = `Didn't find: ${left.join(', ')}. Check those below.` : p.remove(); } });
+      }, 220));
+    } catch (e) { console.error(e); }
+    return r0;
+  };
+  // learned defaults from a person: your last booking with this client or contact
+  const _flLearnSF = flLearn;
+  flLearn = function (root) {
+    const r0 = _flLearnSF.apply(this, arguments);
+    try {
+      const h = root.querySelector('h3'), talk = root.querySelector('#b-talk'), promo = root.querySelector('#b-promo');
+      if (!h || !/^new booking$/i.test(h.textContent.trim()) || root.__sfLearn || (!talk && !promo)) return r0; root.__sfLearn = true;
+      const blank = el => el && !String(el.value || '').trim();
+      const fillFrom = id => {
+        if (!id || /^__/.test(id)) return;
+        const c = contact(id); if (!c) return;
+        const last = bk().filter(x => stat(x) !== 'lost' && [x.contactPersonId, x.promoterId].includes(id)).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0]; if (!last) return;
+        const said = [], fee = root.querySelector('#b-fee'), feeWasBlank = blank(fee);
+        const pk = root.querySelector('#b-pkg'); if (last.packageId && pk && !pk.value && [...pk.options].some(o => o.value === last.packageId)) { pk.value = last.packageId; pk.dispatchEvent(new Event('change', { bubbles: true })); said.push('package'); }
+        // what they paid last time (the package would put its list price there)
+        if (+last.fee && feeWasBlank && fee) { fee.value = last.fee; fee.dispatchEvent(new Event('input', { bubbles: true })); said.push('fee'); }
+        try { if (last.setStart && !readTime(root, 'b-ts')) { setTimeSel(root, 'b-ts', last.setStart); if (last.setEnd) setTimeSel(root, 'b-te', last.setEnd); said.push('times'); } } catch (_) {}
+        const city = root.querySelector('#b-city'); if (last.city && blank(city)) { city.value = last.city; city.dispatchEvent(new Event('input', { bubbles: true })); said.push('city'); }
+        const it = root.querySelector('#b-inctype'); if (last.incomeType && it && it.selectedIndex === 0 && [...it.options].some(o => o.value === last.incomeType)) { it.value = last.incomeType; it.dispatchEvent(new Event('change', { bubbles: true })); said.push('income type'); }
+        if (!said.length) return;
+        let n = root.querySelector('.ssx-learn');
+        if (!n) { n = document.createElement('p'); n.className = 'note ssx-learn'; ((promo && (promo.closest('.frow') || promo)) || (talk.closest('.f') || talk)).after(n); }
+        n.hidden = false; n.textContent = `Filled in the ${said.join(', ')} from your last booking with ${cName(c)} (${niceDate(last.date)}). Change anything that's different.`;
+      };
+      // a person picked as who you talk to, or a person (not a venue or collective) picked as the client/promoter
+      root.addEventListener('change', e => {
+        const t = e.target; if (!t || !t.id) return;
+        if (t.id === 'b-talk') fillFrom(t.value);
+        else if (t.id === 'b-promo') { const c = contact(t.value); if (c && !isColl(c) && !bk().some(x => x.promoterId === t.value)) fillFrom(t.value); }
+      });
+    } catch (e) { console.error(e); }
+    return r0;
+  };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
