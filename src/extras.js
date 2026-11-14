@@ -8211,12 +8211,14 @@ function appExtras() {
     w.__nt = true; window.renderContacts = w;
   }
   setTimeout(() => { try { ntApply(); } catch (_) {} }, 0);  
-/* -- Client reviews. After a show, "Ask for a review" (in Wrap up, or from the Reviews card in Kit) makes a one-time link
-     and opens an email for you to check and send. When a review comes in it waits in the Reviews card: you choose
-     "Show on my page" (it appears in a Reviews section, marked "Verified booking", first name and last initial) or keep
-     it off. You can hide a shown review any time, but nobody can edit what the client wrote. */
-  const RV = { list: [], loaded: false, loading: false, at: 0, seenNew: null, pick: false };
+/* -- Client reviews. After a show, "Ask for a review" (in Wrap up, or from the Reviews card in Kit) opens an email with a
+     review link for you to check and send. Ask as many people as you like about the same show; each gets their own link,
+     and links never expire ("Remind" sends the same link again). New reviews show a red count on Kit, like new booking
+     requests. You choose "Show on my page" (marked "Verified booking", first name and last initial) or keep one off, and
+     you can hide or delete a review any time. Nobody can edit what a client wrote. */
+  const RV = { list: [], loaded: false, loading: false, at: 0, seenNew: null, pick: false, del: '' };
   const RV_STARS = n => '★'.repeat(n) + '☆'.repeat(5 - n);
+  const RV_IN = r => r.status === 'new' || r.status === 'shown' || r.status === 'hidden';
   async function rvLoad(force) {
     if (RV.loading || (!force && RV.loaded && Date.now() - RV.at < 120000)) return; RV.loading = true;
     try {
@@ -8226,41 +8228,64 @@ function appExtras() {
       if (RV.seenNew && nw.some(id => !RV.seenNew.has(id))) toast('New review in. See Kit → Reviews.');
       RV.seenNew = new Set(nw);
     } catch (e) { console.error(e); RV.loaded = true; RV.at = Date.now(); }
-    RV.loading = false; try { rvCard(); } catch (e) { console.error(e); }
+    RV.loading = false; try { rvBadge(); rvCard(); } catch (e) { console.error(e); }
   }
-  const rvFor = id => RV.list.find(r => r.booking === id) || null;
+  // a red count on Kit for reviews waiting for you (like new booking requests on Bookings)
+  function rvBadge() {
+    const n = RV.list.filter(r => r.status === 'new').length;
+    document.querySelectorAll('#tabs [data-tab="kit"], [data-goto="kit"]').forEach(btn => {
+      let bd = btn.querySelector('.ssx-badge.ssx-rv-bd');
+      if (!n) { if (bd) bd.remove(); return; }
+      if (!bd) { bd = document.createElement('span'); bd.className = 'ssx-badge ssx-rv-bd'; btn.appendChild(bd); }
+      if (bd.textContent !== String(n)) bd.textContent = String(n);
+      bd.setAttribute('aria-label', `${n} new review${n === 1 ? '' : 's'}`);
+    });
+  }
+  const rvOf = id => RV.list.filter(r => r.booking === id);
   const rvWho = b => { const ids = [b.contactPersonId, b.promoterId, b.venueId].filter(Boolean); return ids.map(person).find(c => c && c.email) || person(ids[0]) || null; };
   const rvShortName = n => { const p = String(n || '').trim().split(/\s+/).filter(Boolean); return p.length ? p[0][0].toUpperCase() + p[0].slice(1) + (p[1] ? ' ' + p[1][0].toUpperCase() + '.' : '') : ''; };
   const rvWhen = d => { try { return new Date(String(d).slice(0, 10) + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch (_) { return ''; } };
+  const rvSum = id => { const L = rvOf(id), got = L.filter(RV_IN).length, wait = L.filter(r => r.status === 'requested').length;
+    return got ? `${got} review${got === 1 ? '' : 's'} in${wait ? ` · ${wait} waiting` : ''}` : wait ? `Asked ${wait === 1 ? 'once' : wait + ' people'}, no answer yet` : ''; };
   // shows you can ask about: played or paid, in the last year
   const rvShows = () => { const t = todayStr(), from = addDays(t, -365); return (S.bookings || []).filter(b => ['played', 'paid'].includes(stat(b)) && b.date && b.date >= from && b.date <= t).sort((a, b) => b.date.localeCompare(a.date)); };
-  async function rvAsk(b) {
+  // again: the request being reminded (same link, same person); without it, a new link for someone new
+  async function rvAsk(b, again) {
     let tok = '';
-    try { const { data, error } = await sb.rpc('review_request', { p_booking: b.id }); if (error) throw error; tok = (data || {}).token || ''; }
+    try { const { data, error } = await sb.rpc('review_request', again ? { p_booking: b.id, p_again: again.id } : { p_booking: b.id }); if (error) throw error; tok = (data || {}).token || ''; }
     catch (e) { console.error(e); toast(/rate_limited/.test(String((e && e.message) || '')) ? "You've asked for a lot of reviews today. Try again tomorrow." : "Couldn't make the review link. Check your connection and try again."); return; }
     if (!tok) return;
-    const who = rvWho(b), first = who ? String(who.name || cName(who) || '').split(' ')[0] : '', link = `${/^https?:/.test(location.origin) ? location.origin : 'https://setnsettled.com'}/?review=${tok}`;
-    composeSheet({ booking: b.id, to: who ? who.id : '', title: 'Ask for a review', subject: `How was ${bName(b)}?`,
-      body: `Hi ${first || 'there'},\n\nThank you again for ${flArtist().group === 'service' || flArtist().group === 'other' ? 'booking me for' : 'having me at'} ${bName(b)}. If you have a minute, I'd really appreciate a short review. It helps other people know what it's like to work with me.\n\nLeave a review here (it takes about a minute): ${link}\n\nThe link is just for you and works for 60 days.\n\nThank you!\n${myName()}` });
+    const first = rvOf(b.id).length === 0 || (again && again.client), who = first ? rvWho(b) : null, nm = who ? String(who.name || cName(who) || '').split(' ')[0] : '';
+    const link = `${/^https?:/.test(location.origin) ? location.origin : 'https://setnsettled.com'}/?review=${tok}`, A = flArtist();
+    const thanks = `Thank you again for ${A.group === 'service' || A.group === 'other' ? 'booking me for' : 'having me at'} ${bName(b)}.`;
+    composeSheet(again
+      ? { booking: b.id, to: who ? who.id : '', title: 'Review reminder', subject: `Quick reminder: ${bName(b)}`, body: `Hi ${nm || 'there'},\n\nJust a friendly reminder in case my last email got buried. If you have a minute, I'd love a short review.\n\nLeave a review here (it takes about a minute): ${link}\n\nThank you!\n${myName()}` }
+      : { booking: b.id, to: who ? who.id : '', title: 'Ask for a review', subject: `How was ${bName(b)}?`, body: `Hi ${nm || 'there'},\n\n${thanks} If you have a minute, I'd really appreciate a short review. It helps other people know what it's like to work with me.\n\nLeave a review here (it takes about a minute): ${link}\n\nThe link is just for you.\n\nThank you!\n${myName()}` });
     rvLoad(true);
   }
   async function rvSet(id, status) {
     try { const { data, error } = await sb.rpc('review_set', { p_id: id, p_status: status }); if (error || !data) throw error || new Error('no');
-      toast(status === 'shown' ? 'Review added to your page' : 'Review hidden from your page'); }
+      toast(status === 'shown' ? 'Review added to your page' : 'Review kept off your page'); }
     catch (e) { console.error(e); toast("Couldn't update the review. Try again."); }
     rvLoad(true);
   }
-  // in Wrap up: "Ask for a review"
+  async function rvDelete(id) {
+    try { const { data, error } = await sb.rpc('review_delete', { p_id: id }); if (error || !data) throw error || new Error('no'); toast('Review deleted'); }
+    catch (e) { console.error(e); toast("Couldn't delete the review. Try again."); }
+    RV.del = ''; rvLoad(true);
+  }
+  const rvGoCard = () => { try { close(); } catch (_) {} goTab('kit'); setTimeout(() => { const el = document.getElementById('ssx-reviews'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 250); };
+  // in Wrap up: "Ask for a review"; once one is in, the step is done (you can still ask others)
   const _nmStepsRV = nmSteps;
   nmSteps = function (b) {
     const out = _nmStepsRV.apply(this, arguments);
     try {
-      rvLoad(); const r = rvFor(b.id), c = apCfg(), old = b.date && daysBetween(b.date, todayStr()) > 21;
-      if (!['played', 'paid'].includes(stat(b)) || (old && !r)) return out;
-      const done = !!r, note = !r ? '' : r.status === 'requested' ? `Asked ${rvWhen(r.asked)}, no answer yet` : r.status === 'shown' ? 'On your page' : r.status === 'new' ? 'Review in. Choose whether to show it.' : 'Review in';
-      const step = { k: 'review', icon: '⭐', label: 'Ask for a review', done, note, btn: done ? (r.status === 'requested' ? 'Ask again' : 'See it') : 'Ask', keep: true,
-        go: () => { if (r && r.status !== 'requested') { try { close(); } catch (_) {} goTab('kit'); setTimeout(() => { const el = document.getElementById('ssx-reviews'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 250); } else rvAsk(b); } };
-      step.skipped = !done && !!c.dismissed['review:' + b.id];
+      rvLoad(); const L = rvOf(b.id), got = L.filter(RV_IN), c = apCfg(), old = b.date && daysBetween(b.date, todayStr()) > 21;
+      if (!['played', 'paid'].includes(stat(b)) || (old && !L.length)) return out;
+      const step = got.length
+        ? { k: 'review', icon: '⭐', label: 'Review in ✓ All set, no need to ask more', done: true, note: rvSum(b.id), btn: 'See reviews', keep: true, go: rvGoCard }
+        : { k: 'review', icon: '⭐', label: 'Ask for a review', done: false, note: rvSum(b.id), btn: L.length ? 'Ask someone else' : 'Ask', keep: true, go: () => rvAsk(b) };
+      step.skipped = !step.done && !!c.dismissed['review:' + b.id];
       const i = out.findIndex(x => x.k === 'thanks'); out.splice(i >= 0 ? i + 1 : out.length, 0, step);
     } catch (e) { console.error(e); }
     return out;
@@ -8269,31 +8294,36 @@ function appExtras() {
   function rvCard() {
     const sec = document.querySelector('section[data-view="kit"]'); if (!sec || !st.db) return;
     if (!RV.loaded) { rvLoad(); return; }
-    const L = RV.list, by = s => L.filter(r => r.status === s), shows = rvShows(), asked = new Set(L.map(r => r.booking));
-    const sig = JSON.stringify([L.map(r => [r.id, r.status, r.asked]), RV.pick, shows.length]); let card = document.getElementById('ssx-reviews');
+    const L = RV.list, by = s => L.filter(r => r.status === s), shows = rvShows();
+    const sig = JSON.stringify([L.map(r => [r.id, r.status, r.asked]), RV.pick, RV.del, shows.length]); let card = document.getElementById('ssx-reviews');
     if (card && card.dataset.sig === sig) return;
     if (!card) { card = document.createElement('div'); card.id = 'ssx-reviews'; card.className = 'card ssx'; const pg = document.getElementById('ssx-page'), hd = sec.querySelector(':scope > .head'); pg ? pg.after(card) : hd ? hd.after(card) : sec.prepend(card); }
     card.dataset.sig = sig;
-    const item = (r, acts) => `<div class="ssx-rv" data-rv-id="${esc(r.id)}"><div class="ssx-rv-top"><span class="ssx-rv-stars" aria-label="${r.rating} out of 5 stars">${RV_STARS(r.rating || 0)}</span><span class="note">${esc(rvShortName(r.name))}${r.show ? ' · ' + esc(r.show) : ''}${r.date ? ' · ' + esc(rvWhen(r.date)) : ''}</span></div>
-      <p class="ssx-rv-body">${esc(r.body || '')}</p><div class="ssx-row">${acts}</div></div>`;
-    const nw = by('new'), shown = by('shown'), hid = by('hidden'), wait = by('requested'), t = new Date().toISOString();
-    const pickable = shows.filter(b => !asked.has(b.id));
+    const delBtn = r => `<button type="button" class="btn small ghost" data-rv-del>${RV.del === r.id ? 'Tap again to delete' : 'Delete'}</button>`;
+    const item = (r, acts) => `<div class="ssx-rv${r.status === 'new' ? ' is-new' : ''}" data-rv-id="${esc(r.id)}"><div class="ssx-rv-top"><span class="ssx-rv-stars" aria-label="${r.rating} out of 5 stars">${RV_STARS(r.rating || 0)}</span><span class="note">${esc(rvShortName(r.name))}${r.show ? ' · ' + esc(r.show) : ''}${r.date ? ' · ' + esc(rvWhen(r.date)) : ''}</span></div>
+      <p class="ssx-rv-body">${esc(r.body || '')}</p><div class="ssx-row">${acts}${delBtn(r)}</div></div>`;
+    const nw = by('new'), shown = by('shown'), hid = by('hidden'), wait = by('requested');
     card.innerHTML = `<div class="ssx-head"><div><h3>Reviews${nw.length ? ` <span class="ssx-pill on">${nw.length} new</span>` : ''}</h3>
-        <p class="note">Ask clients after a show. You choose which reviews show on your page, marked "Verified booking". You can hide a review any time, but nobody can change what a client wrote.</p></div>
+        <p class="note">Ask clients after a show, as many as you like. You choose which reviews show on your page, marked "Verified booking". You can hide or delete a review any time, but nobody can change what a client wrote.</p></div>
         <button type="button" class="btn small primary" data-rv-ask aria-expanded="${RV.pick}">Ask for a review</button></div>
-      ${RV.pick ? `<div class="ssx-rv-pick"><p class="note">Pick the show you'd like a review for.</p>${pickable.length ? pickable.slice(0, 20).map(b => `<button type="button" class="btn small" data-rv-show="${esc(b.id)}">${esc(bName(b))} · ${esc(rvWhen(b.date))}</button>`).join('') : '<p class="note">No played shows from the last year left to ask about. Once you mark a show Played, it shows up here.</p>'}</div>` : ''}
+      ${RV.pick ? `<div class="ssx-rv-pick"><p class="note">Pick the show you'd like a review for. Each email gets its own link.</p>${shows.length ? shows.slice(0, 20).map(b => { const sm = rvSum(b.id), got = rvOf(b.id).some(RV_IN); return `<button type="button" class="btn small${got ? ' ssx-rv-got' : ''}" data-rv-show="${esc(b.id)}">${got ? '✓ ' : ''}${esc(bName(b))} · ${esc(rvWhen(b.date))}${sm ? `<span class="ssx-rv-sm">${esc(sm)}</span>` : ''}</button>`; }).join('') : '<p class="note">No played shows from the last year yet. Once you mark a show Played, it shows up here.</p>'}</div>` : ''}
       ${nw.length ? `<h4>Waiting for you</h4>${nw.map(r => item(r, '<button type="button" class="btn small primary" data-rv-do="shown">Show on my page</button><button type="button" class="btn small" data-rv-do="hidden">Keep it off</button>')).join('')}` : ''}
       ${shown.length ? `<h4>On your page</h4>${shown.map(r => item(r, '<button type="button" class="btn small" data-rv-do="hidden">Hide</button>')).join('')}` : ''}
       ${hid.length ? `<details class="ssx-rv-more"><summary>Not on your page (${hid.length})</summary>${hid.map(r => item(r, '<button type="button" class="btn small" data-rv-do="shown">Show on my page</button>')).join('')}</details>` : ''}
-      ${wait.length ? `<details class="ssx-rv-more"><summary>Asked, no answer yet (${wait.length})</summary>${wait.map(r => `<div class="ssx-rv" data-rv-b="${esc(r.booking)}"><div class="ssx-rv-top"><b>${esc(r.client || 'Client')}</b><span class="note">${esc(r.show || 'Show')} · asked ${esc(rvWhen(r.asked))}${r.expires < t ? ' · link expired' : ''}</span></div><div class="ssx-row"><button type="button" class="btn small" data-rv-again>${r.expires < t ? 'Send a new link' : 'Ask again'}</button></div></div>`).join('')}</details>` : ''}
+      ${wait.length ? `<details class="ssx-rv-more"><summary>Asked, no answer yet (${wait.length})</summary>${wait.map(r => `<div class="ssx-rv" data-rv-id="${esc(r.id)}" data-rv-b="${esc(r.booking)}"><div class="ssx-rv-top"><b>${esc(r.client || 'Someone you emailed')}</b><span class="note">${esc(r.show || 'Show')} · asked ${esc(rvWhen(r.asked))}</span></div><div class="ssx-row"><button type="button" class="btn small" data-rv-again>Remind</button>${RV.del === r.id ? '<button type="button" class="btn small ghost" data-rv-del>Tap again to remove</button>' : '<button type="button" class="btn small ghost" data-rv-del>Remove</button>'}</div></div>`).join('')}<p class="note">Remind sends the same link again, so it always works. Remove turns that link off.</p></details>` : ''}
       ${!L.length && !RV.pick ? '<p class="note">No reviews yet. Tap <b>Ask for a review</b> after a show, or use the step in Wrap up.</p>' : ''}`;
     card.querySelector('[data-rv-ask]').onclick = () => { RV.pick = !RV.pick; card.dataset.sig = ''; rvCard(); const f = card.querySelector('[data-rv-show], [data-rv-ask]'); if (f) f.focus(); };
     card.querySelectorAll('[data-rv-show]').forEach(x => x.onclick = () => { const b = (S.bookings || []).find(y => y.id === x.dataset.rvShow); if (b) { RV.pick = false; rvAsk(b); } });
     card.querySelectorAll('[data-rv-do]').forEach(x => x.onclick = () => { x.disabled = true; rvSet(x.closest('[data-rv-id]').dataset.rvId, x.dataset.rvDo); });
-    card.querySelectorAll('[data-rv-again]').forEach(x => x.onclick = () => { const b = (S.bookings || []).find(y => y.id === x.closest('[data-rv-b]').dataset.rvB); b ? rvAsk(b) : toast('That show was removed, so it can\'t be asked about again.'); });
+    card.querySelectorAll('[data-rv-del]').forEach(x => x.onclick = () => {
+      const id = x.closest('[data-rv-id]').dataset.rvId;
+      if (RV.del !== id) { RV.del = id; card.dataset.sig = ''; rvCard(); const again = card.querySelector(`[data-rv-id="${CSS.escape(id)}"] [data-rv-del]`); if (again) again.focus(); setTimeout(() => { if (RV.del === id) { RV.del = ''; card.dataset.sig = ''; rvCard(); } }, 4000); return; }
+      x.disabled = true; rvDelete(id);
+    });
+    card.querySelectorAll('[data-rv-again]').forEach(x => x.onclick = () => { const row = x.closest('[data-rv-b]'), b = (S.bookings || []).find(y => y.id === row.dataset.rvB), r = L.find(y => y.id === row.dataset.rvId); b && r ? rvAsk(b, r) : toast('That show was removed, so there\'s nothing to remind them about.'); });
   }
   const _pgCardRV = pgCard;
-  pgCard = function () { const r = _pgCardRV.apply(this, arguments); try { rvCard(); } catch (e) { console.error(e); } return r; };
+  pgCard = function () { const r = _pgCardRV.apply(this, arguments); try { rvCard(); rvBadge(); } catch (e) { console.error(e); } return r; };
   // My page: a Reviews section (in the designer's section list, with a live preview of the reviews you've chosen to show)
   if (!PD_ORDER.includes('reviews')) PD_ORDER.splice(Math.max(0, PD_ORDER.indexOf('bio')) + 1, 0, 'reviews');
   PD_TITLE.reviews = 'Reviews'; PD_ICON0.reviews = 'star';
@@ -8303,8 +8333,10 @@ function appExtras() {
     try { rvLoad(); d.reviews = RV.list.filter(r => r.status === 'shown').slice(0, 12).map(r => ({ r: r.rating, t: r.body, n: rvShortName(r.name), d: String(r.date || r.at || '').slice(0, 7) })); } catch (_) {}
     return d;
   };
-  // check for new reviews now and then while the app is open
-  setInterval(() => { try { if (st.db && document.visibilityState === 'visible') rvLoad(); } catch (_) {} }, 300000); 
+  // check for new reviews when the app opens and every few minutes while it's open, and keep the red count on Kit
+  setTimeout(() => { try { if (st.db) rvLoad(true); } catch (_) {} }, 4000);
+  setInterval(() => { try { if (st.db && document.visibilityState === 'visible') rvLoad(); else rvBadge(); } catch (_) {} }, 120000);
+  document.addEventListener('visibilitychange', () => { try { if (document.visibilityState === 'visible' && st.db) rvLoad(); } catch (_) {} });
   /* -- Photographers and videographers book "sessions" (not "appointments") and show a Portfolio. */
   const _flWordsPV = flWords;
   flWords = function () { const k = flArtist().kind; return k === 'photographer' || k === 'videographer' ? { show: 'session', set: 'session', epk: 'Portfolio' } : _flWordsPV.apply(this, arguments); };  
@@ -9164,7 +9196,7 @@ if (/[?&]book=/.test(location.search)) {
   document.addEventListener('submit', bkpSubmit, true);
 }
 /* ============================================================== review page (setnsettled.com/?review=…)
-   The link a client gets when you ask for a review. Works once and for 60 days. Shows only your name and the show:
+   The link a client gets when you ask for a review. It never expires; once they send a review it says thank you. Shows only your name and the show:
    no client details. Their review waits for you; it appears on your My page only if you choose to show it. */
 async function reviewPage(rawTok) {
   const tok = String(rawTok || '').toLowerCase().replace(/[^0-9a-f]/g, '').slice(0, 48);
@@ -9176,13 +9208,18 @@ async function reviewPage(rawTok) {
   const shell = inner => { root.innerHTML = `<div class="bk-wrap">${brand}${inner}<footer class="bk-foot">Reviews by <b>Set &amp; Settled</b> · <a href="/privacy-policy/" target="_blank" rel="noopener">Privacy</a> · <a href="/terms-of-service/" target="_blank" rel="noopener">Terms</a></footer></div>`; };
   const note = (h, p) => shell(`<div class="bk-card bk-center"><h1>${h}</h1><p class="bk-muted">${p}</p></div>`);
   root.innerHTML = '<div class="bk-wrap"><p class="bk-muted">Loading…</p></div>';
-  let R = null;
-  try { if (tok.length === 48) { const { data, error } = await sb.rpc('review_get', { p_token: tok }); if (!error) R = data; } } catch (_) {}
-  if (!R) { document.title = 'Review · Set & Settled'; return note('This review link isn\'t working', 'Check the link in the email you got, or ask the performer for a new one.'); }
+  let R = null, down = false;
+  // a slow or dropped connection tries again on its own before saying anything
+  for (let i = 0; i < 3 && !R && tok.length === 48; i++) {
+    try { const { data, error } = await sb.rpc('review_get', { p_token: tok }); if (error) { down = true; } else { R = data; down = false; if (!R) break; } } catch (_) { down = true; }
+    if (!R && down) await new Promise(r => setTimeout(r, 1200 * (i + 1)));
+  }
+  document.title = 'Review · Set & Settled';
+  if (!R && down) return note('Almost there', 'We couldn\'t load this page just now. Check your connection, then refresh to leave your review.');
+  if (!R) return note('We couldn\'t find this review request', 'Make sure you opened the whole link from the email. If it still doesn\'t open, reply to the email and ask for the link again.');
   const who = esc(R.artist || 'your performer');
   document.title = `Review ${R.artist || 'a performer'} · Set & Settled`;
   if (R.done) return note('Thank you!', `Your review for ${who} is in. There's nothing else to do.`);
-  if (R.expired) return note('This review link has expired', `Links work for 60 days. Ask ${who} to send you a new one.`);
   const when = R.date ? (() => { try { return new Date(R.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }); } catch (_) { return ''; } })() : '';
   const show = [R.show, when].filter(Boolean).map(esc).join(' · ');
   const W = ['', 'Poor', 'Fair', 'Good', 'Great', 'Amazing'], st = { r: 0 };
@@ -9213,8 +9250,8 @@ async function reviewPage(rawTok) {
     try {
       const { error } = await sb.rpc('review_submit', { p_token: tok, p_rating: st.r, p_body: text, p_name: name });
       if (!error) { note('Thank you!', `Your review is on its way to ${who}.`); window.scrollTo(0, 0); return; }
-      err.textContent = /not_found/.test(error.message || '') ? 'This link has already been used or has expired.' : 'Couldn\'t send your review. Please try again.';
-    } catch (_) { err.textContent = 'Couldn\'t send your review. Check your connection and try again.'; }
+      err.textContent = 'Couldn\'t send your review just now. Your writing is still here. Please tap Send review again.';
+    } catch (_) { err.textContent = 'Couldn\'t send your review. Check your connection, then tap Send review again. Your writing is still here.'; }
     btn.disabled = false; btn.textContent = 'Send review';
   };
 }

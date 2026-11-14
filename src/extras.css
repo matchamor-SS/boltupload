@@ -1491,3 +1491,7 @@ html body .ssx-rv-pick { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 
 html body .ssx-rv-pick .note { flex-basis: 100%; margin: 0; }
 html body .ssx-rv-more { margin-top: 12px; }
 html body .ssx-rv-more summary { cursor: pointer; min-height: 40px; display: flex; align-items: center; }
+html body .ssx-rv.is-new { border-left: 3px solid var(--accent, #D4B26E); padding-left: 10px; }
+html body .ssx-rv-pick .btn { display: inline-flex; flex-direction: column; align-items: flex-start; text-align: left; height: auto; min-height: 40px; }
+html body .ssx-rv-pick .ssx-rv-got { border-color: var(--accent, #D4B26E); }
+html body .ssx-rv-sm { font-size: 11.5px; opacity: .75; font-weight: 400; }
