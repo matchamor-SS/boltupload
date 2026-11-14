@@ -8132,6 +8132,83 @@ function appExtras() {
     try { if (SV.pendR && patch && Array.isArray(patch.items)) { const pr = SV.pendR; SV.pendR = null; patch = { ...patch, items: patch.items.map(it => it.name === pr.name ? { ...it, rprice: pr.v } : it) }; } } catch (_) {}
     return _svSaveRC.call(this, patch, msg);
   };  
+/* -- People: "Haven't been in touch". One tap shows only the people you haven't been in touch with for as long as you
+     choose (any number of days, weeks, months or years), longest first. Each shows when you were last in touch and how
+     (an email, a logged DM or call, a show, a payment), with an Email button to reach out. Works with the type chips.
+     "In touch" counts what the app knows: emails sent from here, reach-outs you log, shows, requests, invoices and payments. */
+  const NT = { on: false, n: 6, unit: 'months', never: true };
+  try { Object.assign(NT, JSON.parse(localStorage.getItem('ssx-nt') || '{}')); } catch (_) {}
+  const ntSave = () => { try { localStorage.setItem('ssx-nt', JSON.stringify(NT)); } catch (_) {} };
+  const NT_UNITS = [['days', 'days'], ['weeks', 'weeks'], ['months', 'months'], ['years', 'years']];
+  function ntCut() {
+    const d = new Date(todayStr() + 'T12:00:00'), n = Math.max(1, Math.min(999, parseInt(NT.n, 10) || 1));
+    if (NT.unit === 'days') d.setDate(d.getDate() - n); else if (NT.unit === 'weeks') d.setDate(d.getDate() - n * 7);
+    else if (NT.unit === 'years') d.setFullYear(d.getFullYear() - n); else d.setMonth(d.getMonth() - n);
+    return d.toISOString().slice(0, 10);
+  }
+  // the last time you were in touch with this person, and how
+  function ntLast(c) {
+    const t = todayStr(); let best = null;
+    const take = (at, what) => { const d = String(at || '').slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d > t) return; if (!best || d > best.at) best = { at: d, what }; };
+    try { tlForContact(c).forEach(e => { if (e.k === 'new' || e.future) return; take(e.at, String(e.text || '').replace(/ · .*$/, '')); }); } catch (_) {}
+    try { (S.bookings || []).filter(b => [b.venueId, b.promoterId, b.contactPersonId, b.mediaId, b.bookingContactId].includes(c.id) && ['played', 'paid'].includes(flKind(b.status))).forEach(b => take(b.date, 'Played a show')); } catch (_) {}
+    return best;
+  }
+  const ntAgo = d => { const days = Math.round((new Date(todayStr() + 'T12:00:00') - new Date(d + 'T12:00:00')) / 864e5); if (days < 14) return days <= 1 ? (days ? 'yesterday' : 'today') : days + ' days ago'; if (days < 60) return Math.round(days / 7) + ' weeks ago'; const m = Math.round(days / 30.4); return m < 24 ? m + ' months ago' : Math.floor(m / 12) + ' years ago'; };
+  const ntDate = d => { try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch (_) { return d; } };
+  function ntBar() {
+    const sec = document.querySelector('section[data-view="contacts"]'), chips = sec && sec.querySelector('#contactFilter'); if (!chips) return null;
+    let bar = sec.querySelector('.ssx-nt');
+    if (!bar) {
+      bar = document.createElement('div'); bar.className = 'ssx-nt'; chips.after(bar);
+      bar.innerHTML = `<button type="button" class="chip" data-nt-on aria-pressed="false">Haven't been in touch</button>
+        <div class="ssx-nt-opts" hidden><label for="ssx-nt-n">For at least</label><input id="ssx-nt-n" type="number" min="1" max="999" step="1" inputmode="numeric">
+        <select id="ssx-nt-u" aria-label="Days, weeks, months or years">${NT_UNITS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
+        <label class="ssx-nt-nv"><input type="checkbox" id="ssx-nt-nv"> Include people with nothing logged</label></div>
+        <p class="note ssx-nt-sum" hidden></p>`;
+      const n = bar.querySelector('#ssx-nt-n'), u = bar.querySelector('#ssx-nt-u'), nv = bar.querySelector('#ssx-nt-nv');
+      bar.querySelector('[data-nt-on]').onclick = () => { NT.on = !NT.on; ntSave(); ntApply(); if (NT.on) n.focus(); };
+      n.oninput = () => { const v = parseInt(n.value, 10); if (v >= 1 && v <= 999) { NT.n = v; ntSave(); ntApply(); } };
+      n.onblur = () => { if (!(parseInt(n.value, 10) >= 1)) n.value = NT.n; };
+      u.onchange = () => { NT.unit = u.value; ntSave(); ntApply(); };
+      nv.onchange = () => { NT.never = nv.checked; ntSave(); ntApply(); };
+    }
+    const n = bar.querySelector('#ssx-nt-n'); if (document.activeElement !== n) n.value = NT.n;
+    bar.querySelector('#ssx-nt-u').value = NT.unit; bar.querySelector('#ssx-nt-nv').checked = !!NT.never;
+    bar.querySelector('[data-nt-on]').setAttribute('aria-pressed', String(!!NT.on)); bar.querySelector('.ssx-nt-opts').hidden = !NT.on;
+    return bar;
+  }
+  function ntApply() {
+    const bar = ntBar(), list = document.getElementById('contactList'); if (!bar || !list) return;
+    const rows = [...list.querySelectorAll(':scope > .row')], sum = bar.querySelector('.ssx-nt-sum');
+    if (!NT.on) {
+      rows.forEach(r => { r.classList.remove('ssx-nt-off'); r.querySelectorAll('.ssx-nt-last, [data-nt-mail]').forEach(x => x.remove()); });
+      const orig = rows.slice().sort((a, b) => (+a.dataset.ntI || 0) - (+b.dataset.ntI || 0)); if (rows.some(r => r.dataset.ntI)) orig.forEach(r => list.appendChild(r));
+      sum.hidden = true; return;
+    }
+    const cut = ntCut(), keep = [];
+    rows.forEach((r, i) => {
+      if (r.dataset.ntI == null) r.dataset.ntI = String(i);
+      const b = r.querySelector('[data-open-contact]'), c = b && contact(b.dataset.openContact); if (!c) return;
+      const last = ntLast(c), on = last ? last.at < cut : !!NT.never;
+      r.classList.toggle('ssx-nt-off', !on); if (on) keep.push([r, last ? last.at : '']);
+      const main = b.querySelector('.main'); let ln = r.querySelector('.ssx-nt-last');
+      if (main) { if (!ln) { ln = document.createElement('span'); ln.className = 'ssx-nt-last'; main.appendChild(ln); } const t = last ? `Last in touch ${ntDate(last.at)} (${ntAgo(last.at)}) · ${last.what}` : 'Nothing logged yet'; if (ln.textContent !== t) ln.textContent = t; }
+      let m = r.querySelector('[data-nt-mail]');
+      if (c.email && !m) { m = document.createElement('button'); m.type = 'button'; m.className = 'btn small'; m.dataset.ntMail = c.id; m.textContent = 'Email'; m.setAttribute('aria-label', `Email ${cName(c)}`);
+        m.onclick = e => { e.stopPropagation(); const first = String(c.name || cName(c) || '').split(' ')[0]; composeSheet({ to: c.id, title: 'Check in', subject: 'Checking in', body: `Hi ${first || 'there'},\n\n` }); };
+        b.after(m); }
+    });
+    keep.sort((a, b) => a[1].localeCompare(b[1])).forEach(([r]) => list.appendChild(r)); // longest ago first, nothing logged at the top
+    const unit = NT.n === 1 ? NT.unit.replace(/s$/, '') : NT.unit;
+    const txt = keep.length ? `${keep.length} ${keep.length === 1 ? 'person' : 'people'} not in touch for ${NT.n} ${unit} or more, longest first.` : `Everyone here has been in touch in the last ${NT.n} ${unit}.`;
+    if (sum.textContent !== txt) sum.textContent = txt; sum.hidden = false;
+  }
+  if (typeof window.renderContacts === 'function' && !window.renderContacts.__nt) {
+    const o = window.renderContacts, w = function () { const r = o.apply(this, arguments); try { ntApply(); } catch (e) { console.error(e); } return r; };
+    w.__nt = true; window.renderContacts = w;
+  }
+  setTimeout(() => { try { ntApply(); } catch (_) {} }, 0);  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;

@@ -1458,3 +1458,15 @@ html body .ssx-bkp-ad { display: inline-flex; align-items: center; gap: 8px; min
 html body .ssx-bkp-total { margin: 10px 0 0; }
 html body .ssx-reqtop .ssx-rc, html body .ssx-reqbar .ssx-rc { margin-left: 8px; vertical-align: middle; }
 html body .ssx-rcline { margin: 4px 0 10px; }
+/* People: haven't been in touch */
+html body .ssx-nt { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 8px 0 12px; }
+html body .ssx-nt-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+html body .ssx-nt-opts[hidden] { display: none; }
+html body .ssx-nt-opts > label[for] { font-size: 14px; }
+html body .ssx-nt-opts input[type="number"] { width: 72px; min-height: 40px; }
+html body .ssx-nt-opts select { width: auto; min-height: 40px; }
+html body .ssx-nt-nv { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; min-height: 40px; }
+html body .ssx-nt-sum { flex-basis: 100%; margin: 0; }
+html body .ssx-nt-last { display: block; font-size: 12px; opacity: .75; margin-top: 2px; }
+html body #contactList > .row.ssx-nt-off { display: none !important; }
+html body #contactList [data-nt-mail] { align-self: center; }
