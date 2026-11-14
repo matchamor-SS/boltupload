@@ -7720,7 +7720,126 @@ function appExtras() {
     }, 0);
   }, true);
   const _pgCardP1 = pgCard;
-  pgCard = function () { const r = _pgCardP1.apply(this, arguments); try { bkWire(); tlWire(); } catch (e) { console.error(e); } return r; };  
+  pgCard = function () { const r = _pgCardP1.apply(this, arguments); try { bkWire(); tlWire(); } catch (e) { console.error(e); } return r; };
+/* -- Links on My page, easy to find and edit. Designer: a Links section (show or hide, page order, edit, delete, add).
+     Page details: a button into it. Kit: an "On my page" switch on each link. Links typed without https:// now show
+     (with the address fixed) instead of quietly missing. Show/hide and order publish with your design; adding, editing
+     or deleting a link changes it everywhere (Kit, EPK, emails) right away. */
+  ['linkOff', 'linkOrder'].forEach(k => { if (!PW_KEYS.includes(k)) PW_KEYS.push(k); });
+  const PL = { edit: '', armed: '', t: 0 };
+  const plUrl = v => { try { return tlUrl(v); } catch (_) { const s = String(v || '').trim(); return /^https?:\/\//i.test(s) ? s : (/\.[a-z]{2,}/i.test(s) ? 'https://' + s : s); } };
+  const plHost = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (_) { return ''; } };
+  const PL_NAMES = [['instagram.com', 'Instagram'], ['soundcloud.com', 'SoundCloud'], ['open.spotify.com', 'Spotify'], ['spotify.com', 'Spotify'], ['music.apple.com', 'Apple Music'], ['youtube.com', 'YouTube'], ['youtu.be', 'YouTube'], ['tiktok.com', 'TikTok'], ['mixcloud.com', 'Mixcloud'], ['bandcamp.com', 'Bandcamp'], ['beatport.com', 'Beatport'], ['facebook.com', 'Facebook'], ['x.com', 'X'], ['twitter.com', 'X'], ['ra.co', 'Resident Advisor'], ['linktr.ee', 'Linktree'], ['vimeo.com', 'Vimeo'], ['threads.net', 'Threads'], ['drive.google.com', 'Google Drive'], ['dropbox.com', 'Dropbox']];
+  const plGuess = u => { const h = plHost(plUrl(u)); const n = PL_NAMES.find(([d]) => h === d || h.endsWith('.' + d)); return n ? n[1] : (h ? 'Website' : ''); };
+  const plOrder = (list, order) => { const pos = new Map((order || []).map((k, i) => [k, i])); return list.slice().sort((a, b) => (pos.has(pgLinkKey(a)) ? pos.get(pgLinkKey(a)) : 999 + list.indexOf(a)) - (pos.has(pgLinkKey(b)) ? pos.get(pgLinkKey(b)) : 999 + list.indexOf(b))); };
+  // every link with a usable address (fixing ones typed without https://), in the page's own order
+  pgAllLinks = function () {
+    let L = []; try { L = typeof sortedLinks === 'function' ? sortedLinks() : (S.links || []); } catch (_) {}
+    L = L.filter(l => l && l.url).map(l => ({ ...l, url: plUrl(l.url) })).filter(l => /^https?:\/\//i.test(l.url));
+    return plOrder(L, (PGE.doc || {}).linkOrder);
+  };
+  // the designer's preview follows the unpublished order and show/hide
+  const _pwDataL = pwData;
+  pwData = function () {
+    const d = _pwDataL.apply(this, arguments);
+    try { const D = PW.draft || {}, off = new Set(D.linkOff || []); d.links = plOrder(pgAllLinks(), D.linkOrder).filter(l => !off.has(pgLinkKey(l))).map(l => ({ label: String(l.label || l.url).slice(0, 60), url: l.url })).slice(0, 24); } catch (e) { console.error(e); }
+    return d;
+  };
+  const plKitSave = async (id, data, msg) => { try { const ok = await window.save('links', id || null, data); if (ok) { toast(msg); return ok; } } catch (e) { console.error(e); } toast("Couldn't save that link. Check your connection and try again."); return null; };
+  function plEditor(box) {
+    const D = PW.draft || {}, off = new Set(D.linkOff || []), list = plOrder(pgAllLinks(), D.linkOrder), shown = list.filter(l => !off.has(pgLinkKey(l))).length;
+    const det = document.createElement('details'); det.className = 'ssx-pd'; det.dataset.pd = 'links'; if (PW.open.has('links')) det.open = true;
+    det.innerHTML = `<summary>Links <span class="note">${shown} of ${list.length} showing</span></summary>
+      <p class="note">Tick the ones to show and use the arrows to order them. Edits to a link update it everywhere (Kit, EPK and emails) right away; showing, hiding and order go live when you Publish.</p>
+      ${list.length ? `<ol class="ssx-pl">${list.map((l, i) => { const k = pgLinkKey(l), ed = PL.edit === k; return `<li data-k="${esc(k)}"${off.has(k) ? ' class="off"' : ''}>
+        <div class="ssx-pl-row"><label class="ssx-check"><input type="checkbox" data-pl-on${off.has(k) ? '' : ' checked'} aria-label="Show ${esc(l.label || l.url)} on your page"></label>
+          <span class="tx"><b>${esc(l.label || plGuess(l.url) || 'Link')}</b><small>${esc(plHost(l.url))}</small></span>
+          <span class="mv"><button type="button" class="btn small" data-pl-up aria-label="Move ${esc(l.label)} up"${i ? '' : ' disabled'}>↑</button><button type="button" class="btn small" data-pl-dn aria-label="Move ${esc(l.label)} down"${i < list.length - 1 ? '' : ' disabled'}>↓</button><button type="button" class="btn small" data-pl-ed aria-expanded="${ed}">Edit</button></span></div>
+        ${ed ? `<div class="ssx-pl-form"><input type="text" data-pl-lbl maxlength="60" value="${esc(l.label || '')}" placeholder="Label, e.g. SoundCloud" aria-label="Label"><input type="url" inputmode="url" data-pl-url value="${esc(l.url)}" placeholder="https://" aria-label="Address">
+          <div class="ssx-row"><button type="button" class="btn small primary" data-pl-save>Save</button><button type="button" class="btn small" data-pl-cancel>Cancel</button><button type="button" class="btn small ssx-pl-del" data-pl-del>${PL.armed === k ? 'Tap again to delete everywhere' : 'Delete link'}</button></div></div>` : ''}</li>`; }).join('')}</ol>` : '<p class="note">No links yet. Add your Instagram, music, videos or website below.</p>'}
+      <div class="ssx-pl-add"><input type="url" inputmode="url" data-pl-new placeholder="Paste a link, e.g. soundcloud.com/you" aria-label="New link address"><input type="text" data-pl-newlbl maxlength="60" placeholder="Label (fills in for you)" aria-label="New link label"><button type="button" class="btn small primary" data-pl-add>+ Add link</button></div>`;
+    const look = box.querySelector('details[data-pd="look"]'); look ? look.after(det) : box.prepend(det);
+    det.ontoggle = () => { det.open ? PW.open.add('links') : PW.open.delete('links'); };
+    const orderKeys = () => plOrder(pgAllLinks(), (PW.draft || {}).linkOrder).map(pgLinkKey);
+    det.querySelectorAll('.ssx-pl > li').forEach(li => {
+      const k = li.dataset.k, f = s => `.ssx-pl > li[data-k="${k.replace(/"/g, '\\"')}"] ${s}`, l = list.find(x => pgLinkKey(x) === k);
+      li.querySelector('[data-pl-on]').onchange = e => { const s = new Set((PW.draft || {}).linkOff || []); e.target.checked ? s.delete(k) : s.add(k); pwSet({ linkOff: [...s] }, f('[data-pl-on]')); };
+      const mv = dir => { const o = orderKeys(), i = o.indexOf(k), j = i + dir; if (i < 0 || j < 0 || j >= o.length) return; [o[i], o[j]] = [o[j], o[i]]; pwSet({ linkOrder: o }, f(dir < 0 ? '[data-pl-up]' : '[data-pl-dn]')); };
+      li.querySelector('[data-pl-up]').onclick = () => mv(-1); li.querySelector('[data-pl-dn]').onclick = () => mv(1);
+      li.querySelector('[data-pl-ed]').onclick = () => { PL.edit = PL.edit === k ? '' : k; PL.armed = ''; pwControls(PL.edit ? f('[data-pl-lbl]') : f('[data-pl-ed]')); };
+      const sv = li.querySelector('[data-pl-save]'); if (sv) sv.onclick = async () => {
+        const label = li.querySelector('[data-pl-lbl]').value.trim(), url = plUrl(li.querySelector('[data-pl-url]').value);
+        if (!/^https?:\/\/\S+\.\S+/i.test(url)) { toast('That address doesn\'t look right. Try something like soundcloud.com/you'); return; }
+        if (!l || !l.id) return; sv.disabled = true;
+        const cur = (S.links || []).find(x => x.id === l.id) || {}; const { id: _i, ...rest } = cur;
+        if (await plKitSave(l.id, { ...rest, label: label || plGuess(url), url }, 'Link saved everywhere')) { PL.edit = ''; setTimeout(() => { pwControls(f('[data-pl-ed]')); pwPreview(); }, 400); } else sv.disabled = false;
+      };
+      const cc = li.querySelector('[data-pl-cancel]'); if (cc) cc.onclick = () => { PL.edit = ''; PL.armed = ''; pwControls(f('[data-pl-ed]')); };
+      const dl = li.querySelector('[data-pl-del]'); if (dl) dl.onclick = async () => {
+        if (PL.armed !== k) { PL.armed = k; dl.textContent = 'Tap again to delete everywhere'; clearTimeout(PL.t); PL.t = setTimeout(() => { PL.armed = ''; if (dl.isConnected) dl.textContent = 'Delete link'; }, 4000); return; }
+        PL.armed = ''; if (!l || !l.id) return;
+        try { await window.remove('links', l.id); toast('Link deleted'); } catch (_) { toast("Couldn't delete that link. Try again."); return; }
+        PL.edit = ''; setTimeout(() => { pwControls('[data-pl-new]'); pwPreview(); }, 400);
+      };
+    });
+    const nu = det.querySelector('[data-pl-new]'), nl = det.querySelector('[data-pl-newlbl]');
+    nu.addEventListener('input', () => { if (!nl.dataset.typed) nl.value = nu.value.trim() ? plGuess(nu.value) : ''; });
+    nl.addEventListener('input', () => { nl.dataset.typed = nl.value ? '1' : ''; });
+    const add = async () => {
+      const url = plUrl(nu.value); if (!/^https?:\/\/\S+\.\S+/i.test(url)) { toast('Paste a link, like soundcloud.com/you'); nu.focus(); return; }
+      if (pgAllLinks().some(x => x.url.replace(/\/$/, '') === url.replace(/\/$/, ''))) { toast('That link is already in your list'); return; }
+      const label = nl.value.trim() || plGuess(url), maxO = Math.max(0, ...(S.links || []).map(x => Number(x.order) || 0));
+      const b = det.querySelector('[data-pl-add]'); b.disabled = true;
+      const id = await plKitSave(null, { label, url, group: 'links', order: maxO + 1 }, `${label} added`);
+      b.disabled = false; if (!id) return;
+      PW.open.add('links'); setTimeout(() => { pwControls('[data-pl-new]'); pwPreview(); }, 500);
+    };
+    det.querySelector('[data-pl-add]').onclick = add; [nu, nl].forEach(x => x.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }));
+  }
+  const _pwControlsL = pwControls;
+  pwControls = function (focus) {
+    const r = _pwControlsL.apply(this, arguments);
+    try { const box = PW.el && PW.el.querySelector('.ssx-pw-opts'); if (box && !box.querySelector('details[data-pd="links"]')) { plEditor(box); if (focus) { const b = box.querySelector(focus); if (b && document.activeElement !== b) b.focus(); } } } catch (e) { console.error(e); }
+    return r;
+  };
+  async function plOpenDesigner() { await pwOpen(); PW.open.add('links'); pwControls(); const d = PW.el && PW.el.querySelector('details[data-pd="links"]'); if (d) { d.scrollIntoView({ block: 'start' }); const x = d.querySelector('[data-pl-new]'); if (x) x.focus(); } }
+  window.ssEditPageLinks = plOpenDesigner;
+  // My page's Design card: "Edit links" next to "Add photos"
+  const _pdDrawL = pdDraw;
+  pdDraw = function (el) {
+    const r = _pdDrawL.apply(this, arguments);
+    try { const row = el.querySelector('.ssx-row'); if (row && !row.querySelector('[data-pl-card]')) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.dataset.plCard = '1'; b.textContent = 'Edit links'; b.onclick = plOpenDesigner; row.prepend(b); } } catch (_) {}
+    return r;
+  };
+  // Page details: a way in, right under the link ticks
+  const _pgFormL = pgForm;
+  pgForm = function (form) {
+    const r = _pgFormL.apply(this, arguments);
+    try { const any = form.querySelector('[data-pg-link]'), f = any ? any.closest('.f') : [...form.querySelectorAll('.f > label')].find(x => x.textContent.trim() === 'Links'); const host = f && (f.classList.contains('f') ? f : f.parentElement);
+      if (host && !host.querySelector('[data-pl-open]')) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn small'; b.dataset.plOpen = '1'; b.textContent = 'Edit, add or reorder links'; b.onclick = plOpenDesigner; host.appendChild(b); } } catch (e) { console.error(e); }
+    return r;
+  };
+  // Kit: "On my page" on each link (changes the live page, and the designer's unpublished copy)
+  async function plToggle(k) {
+    await pgLoad(); const cur = new Set((PGE.doc || {}).linkOff || []), on = cur.has(k); on ? cur.delete(k) : cur.add(k);
+    if (!(await pgSave({ linkOff: [...cur] }))) return;
+    if (PW.draft) { const s = new Set(PW.draft.linkOff || []); on ? s.delete(k) : s.add(k); PW.draft.linkOff = [...s]; }
+    try { await pgSync(true); } catch (_) {}
+    toast(on ? ((PGE.doc || {}).on ? 'Shown on your page' : 'Will show once your page is public') : 'Hidden from your page'); plKitRows();
+  }
+  function plKitRows() {
+    const box = document.getElementById('linkList'); if (!box || !pgSlug() || !PGE.loaded) { if (!PGE.loaded) pgLoad(); return; }
+    const off = new Set((PGE.doc || {}).linkOff || []);
+    box.querySelectorAll('[data-open-link]').forEach(btn => {
+      const id = btn.dataset.openLink, l = (S.links || []).find(x => x.id === id); if (!l) return;
+      const k = pgLinkKey(l), row = btn.parentElement; let t = row.querySelector('[data-pl-kit]');
+      if (!t) { t = document.createElement('button'); t.type = 'button'; t.className = 'btn small ssx-pm-on-k'; t.dataset.plKit = k; t.onclick = () => plToggle(k); btn.before(t); }
+      const on = !off.has(k); t.setAttribute('aria-pressed', String(on)); t.textContent = on ? '✓ On my page' : '+ My page';
+    });
+  }
+  if (typeof window.renderKit === 'function' && !window.renderKit.__pl) { const o = window.renderKit, w = function () { const r = o.apply(this, arguments); try { plKitRows(); } catch (e) { console.error(e); } return r; }; w.__pl = true; window.renderKit = w; }
+  const _pgCardPL = pgCard;
+  pgCard = function () { const r = _pgCardPL.apply(this, arguments); try { if (typeof window.renderKit === 'function' && !window.renderKit.__pl) { const o = window.renderKit, w = function () { const r2 = o.apply(this, arguments); try { plKitRows(); } catch (e) { console.error(e); } return r2; }; w.__pl = true; window.renderKit = w; } plKitRows(); } catch (e) { console.error(e); } return r; };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;

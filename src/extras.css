@@ -1397,3 +1397,26 @@ html body #ssx-ack .ssx-row { display: flex; flex-wrap: wrap; gap: 8px; margin-t
 html body .ssx-ak-prev { margin-top: 8px; }
 html body .ssx-ak-prev summary { cursor: pointer; min-height: 40px; display: flex; align-items: center; color: var(--accent); }
 html body .ssx-ak-prev pre { white-space: pre-wrap; font: inherit; margin: 6px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); }
+/* My page links: designer section and Kit switches */
+html body .ssx-pl { list-style: none; margin: 8px 0 10px; padding: 0; display: grid; gap: 6px; }
+html body .ssx-pl > li { border: 1px solid var(--line); border-radius: 12px; padding: 6px 8px; }
+html body .ssx-pl > li.off .tx { opacity: .55; }
+html body .ssx-pl-row { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+html body .ssx-pl-row .ssx-check { margin: 0; display: inline-flex; align-items: center; min-width: 28px; min-height: 40px; }
+html body .ssx-pl-row .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+html body .ssx-pl-row .tx b, html body .ssx-pl-row .tx small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html body .ssx-pl-row .tx small { color: var(--muted); font-size: 12px; }
+html body .ssx-pl-row .mv { display: flex; gap: 6px; flex: none; }
+html body .ssx-pl-row .mv .btn { min-width: 40px; min-height: 38px; padding: 0 10px; }
+html body .ssx-pl-row .mv .btn:disabled { opacity: .35; }
+html body .ssx-pl-form, html body .ssx-pl-add { display: grid; gap: 8px; margin: 8px 0 4px; }
+html body .ssx-pl-form input, html body .ssx-pl-add input { width: 100%; box-sizing: border-box; margin: 0; font: inherit; }
+html body .ssx-pl-form .ssx-row { display: flex; flex-wrap: wrap; gap: 8px; }
+html body .ssx-pl-del { margin-left: auto; color: var(--bad, #EC8686); }
+html body .ssx-pl-add { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) auto; align-items: center; }
+html body .ssx-pm-on-k[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink, #141711); }
+html body [data-pl-open] { margin-top: 8px; }
+@media (max-width: 600px) {
+  html body .ssx-pl-add { grid-template-columns: 1fr; }
+  html body .ssx-pl-row .mv .btn { min-width: 36px; padding: 0 8px; }
+}
