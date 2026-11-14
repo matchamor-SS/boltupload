@@ -8458,6 +8458,235 @@ function appExtras() {
     } catch (e) { console.error(e); }
     return r0;
   };  
+/* -- Receipts and taxes, simple but complete.
+     Snap a receipt: one tap from ＋, Financials or a reminder. Take a photo, type the amount; it's logged as an expense and
+     filed in Business / <year> / Receipts. The date is today, and the category and business purpose come from your last
+     expense at the same place (or a good guess from the name, by your kind of work).
+     The Taxes card shows your year at a glance (income, receipts still needed, 1099s, estimated payments, mileage), with one
+     tap to fix what's missing, add a tax document (1099s, payment confirmations, W-9s, last year's return) to
+     Business / <year> / Tax documents, open the year's folder, or get the tax report and packet.
+     The tax report links every expense to its receipt, every payment to its invoice and every 1099 to its document, and the
+     tax packet includes your tax documents. Next moves reminds you about receipts for expenses of $75 or more. */
+  const TX = { docs: [], loaded: false, file: null, year: 0 };
+  const TX_KINDS = [['1099-NEC', '1099-NEC (from a client or venue)'], ['1099-K', '1099-K (from a payment app)'], ['1099-MISC', '1099-MISC'], ['estimate', 'Estimated payment confirmation'], ['w9', 'W-9 you sent'], ['return', "Last year's tax return"], ['other', 'Other tax document']];
+  const txKind = k => ((TX_KINDS.find(x => x[0] === k) || [k, 'Tax document'])[1]).replace(/ \(.*\)$/, '');
+  const txUrl = id => `https://drive.google.com/file/d/${id}/view`;
+  const txYearNow = () => { const t = todayStr(), y = +t.slice(0, 4); return +t.slice(5, 7) <= 4 ? y - 1 : y; }; // January to April: last year's taxes
+  function txLoad() {
+    if (TX.loaded || !st.db) return; TX.loaded = true;
+    st.db.collection('taxdocs').onSnapshot(s => { TX.docs = s.docs.map(d => ({ id: d.id, ...d.data() })); try { renderFinCards(); } catch (_) {} }, () => {});
+  }
+  // a file picker that works with the camera on phones
+  const txPick = accept => new Promise(res => { const i = document.createElement('input'); i.type = 'file'; i.accept = accept; i.style.display = 'none'; document.body.appendChild(i); i.onchange = () => { const f = i.files && i.files[0]; i.remove(); res(f || null); }; window.addEventListener('focus', () => setTimeout(() => { if (i.isConnected && !(i.files && i.files.length)) { i.remove(); res(null); } }, 800), { once: true }); i.click(); });
+  const txTooBig = f => { if (f && f.size > 15e6) { toast('That file is over 15 MB. Try a photo or a smaller PDF.'); return true; } return false; };
+
+  // ---------------------------------------------------------------- Snap a receipt
+  // a good first guess for the category, from the name, for your kind of work
+  function rcGuessCat(desc) {
+    const s = String(desc || '').toLowerCase(), has = k => ECATS.some(c => c[0] === k);
+    const pick = [[/uber|lyft|parking|park\b|gas\b|fuel|shell|chevron|arco|exxon|76\b|toll|car ?wash|valero|mobil/, 'Car'], [/hotel|airbnb|marriott|hilton|hyatt|airline|delta|united|southwest|alaska air|jetblue|american air|amtrak|greyhound|expedia/, 'Travel'],
+      [/restaurant|cafe|coffee|starbucks|pizza|taco|burger|grill|bar\b|diner|kitchen|doordash|ubereats|grubhub/, 'Meals'], [/beatport|bandcamp|traxsource|juno|itunes|spotify|tidal|soundcloud|splice/, 'Music'],
+      [/adobe|rekordbox|serato|ableton|canva|dropbox|google|apple\.com|icloud|microsoft|lightroom|squarespace|wix|godaddy|capcut|notion/, 'Software'], [/meta|facebook|instagram ads|ads\b|print|flyer|vistaprint|sticker/, 'Promo'],
+      [/paypal fee|stripe|square fee|venmo fee|commission|agent/, 'Fees'], [/guitar center|sweetwater|b ?& ?h|adorama|best buy|amazon|apple store|music store|supply|supplies|sally|ulta|cosmoprof|needle|ink\b|camera/, 'Gear']];
+    for (const [rx, k] of pick) if (rx.test(s) && has(k)) return k;
+    let g = ''; try { g = flArtist().group; } catch (_) {}
+    return g === 'service' && has('Gear') ? 'Gear' : has('Other') ? 'Other' : (ECATS[0] || [])[0];
+  }
+  // your last expense at the same place
+  const rcLast = desc => { const d = String(desc || '').trim().toLowerCase(); if (d.length < 2) return null; return (S.expenses || []).filter(x => String(x.desc || '').trim().toLowerCase() === d).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0] || null; };
+  async function rcSnap(attachTo) {
+    const file = await txPick('image/*,application/pdf'); if (!file || txTooBig(file)) return;
+    // adding the receipt to an expense you already logged
+    if (attachTo) { uploadReceipt(attachTo.id, attachTo, file); return; }
+    TX.file = file; const url = /^image\//.test(file.type) ? URL.createObjectURL(file) : '';
+    const t = todayStr(), places = [...new Set((S.expenses || []).map(x => String(x.desc || '').trim()).filter(Boolean))].slice(0, 200);
+    const shows = (S.bookings || []).filter(b => b.date && Math.abs(daysBetween(b.date, t)) <= 3 && stat(b) !== 'lost');
+    sheet(`<h3>Snap a receipt</h3>
+      <div class="ssx-rcs-top">${url ? `<img src="${esc(url)}" alt="Your receipt" class="ssx-rcs-img">` : `<span class="ssx-pill on">📎 ${esc(file.name || 'Receipt')}</span>`}
+        <div class="ssx-rcs-f"><div class="f"><label for="rcs-amt">Amount ($)</label><input id="rcs-amt" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00"></div>
+        <div class="f"><label for="rcs-desc">Where</label><input id="rcs-desc" list="rcs-places" maxlength="120" placeholder="e.g. Guitar Center"><datalist id="rcs-places">${places.map(p => `<option value="${esc(p)}">`).join('')}</datalist></div></div></div>
+      <details class="ssx-det ssx-rcs-more"><summary>Date, type and purpose <span class="note" data-rcs-sum></span></summary>
+        <div class="frow"><div class="f"><label for="rcs-date">Date</label><input id="rcs-date" type="date" value="${esc(t)}"></div>
+          <div class="f"><label for="rcs-cat">Type</label><select id="rcs-cat">${ECATS.map(c => `<option value="${esc(c[0])}">${esc(c[1])}</option>`).join('')}</select></div></div>
+        ${shows.length ? `<div class="f"><label for="rcs-b">For a show (optional)</label><select id="rcs-b"><option value="">None</option>${shows.map(b => `<option value="${esc(b.id)}">${esc(bName(b))} · ${esc(niceDate(b.date))}</option>`).join('')}</select></div>` : ''}
+        <div class="f"><label for="rcs-purpose">Business purpose (for taxes)</label><input id="rcs-purpose" maxlength="200" placeholder="e.g. Cables for the weekend shows"></div></details>
+      <p class="note" style="margin:0">Filed in Business / <span data-rcs-yr>${esc(t.slice(0, 4))}</span> / Receipts and logged as an expense.</p>
+      <div class="actions"><button class="btn" data-cancel>Cancel</button><button class="btn primary" data-rcs-save>Save receipt</button></div>`, root => {
+      const q = s => root.querySelector(s), cat = q('#rcs-cat'), desc = q('#rcs-desc'), pur = q('#rcs-purpose');
+      let touched = { cat: false, pur: false };
+      const guess = () => {
+        const last = rcLast(desc.value);
+        if (!touched.cat) cat.value = last && ECATS.some(c => c[0] === last.category) ? last.category : rcGuessCat(desc.value);
+        if (!touched.pur) { const v = last && last.purpose ? last.purpose : ''; if (pur.value !== v && (v || pur.dataset.auto === '1')) pur.value = v; pur.dataset.auto = v ? '1' : ''; }
+        q('[data-rcs-sum]').textContent = `· ${catLabel(cat.value)}${pur.value ? ' · ' + pur.value.slice(0, 40) : ''}`;
+      };
+      cat.onchange = () => { touched.cat = true; guess(); }; pur.oninput = () => { touched.pur = true; guess(); };
+      desc.addEventListener('input', guess); desc.addEventListener('change', guess); guess();
+      q('#rcs-date').onchange = e => { q('[data-rcs-yr]').textContent = String(e.target.value || t).slice(0, 4); };
+      q('[data-cancel]').onclick = () => { TX.file = null; if (url) URL.revokeObjectURL(url); close(); };
+      q('[data-rcs-save]').onclick = async e => {
+        const amount = Math.round(Number(q('#rcs-amt').value) * 100) / 100; if (!(amount > 0)) { toast('Enter the amount'); q('#rcs-amt').focus(); return; }
+        const btn = e.currentTarget; btn.disabled = true;
+        const data = { desc: desc.value.trim() || 'Receipt', amount, date: q('#rcs-date').value || t, category: cat.value, purpose: pur.value.trim(), bookingId: (q('#rcs-b') || {}).value || '', createdAt: new Date().toISOString() };
+        const last = rcLast(data.desc); if (last && last.payMethod) data.payMethod = last.payMethod;
+        const f = TX.file; TX.file = null;
+        const id = await window.save('expenses', null, data);
+        if (!id) { btn.disabled = false; TX.file = f; return; }
+        close(); if (url) URL.revokeObjectURL(url); toast(`Logged ${money2(amount)}${data.desc !== 'Receipt' ? ' at ' + data.desc : ''}`);
+        if (f) uploadReceipt(id, data, f);
+      };
+      setTimeout(() => q('#rcs-amt').focus(), 60);
+    });
+  }
+  // ＋ menu: "Receipt", right after Expense
+  try {
+    if (!QA_ITEMS.some(i => i[0] === 'receipt')) { const i = QA_ITEMS.findIndex(x => x[0] === 'expense'); QA_ITEMS.splice(i >= 0 ? i + 1 : QA_ITEMS.length, 0, ['receipt', 'Receipt', 'Snap a photo, type the amount', () => rcSnap(), ['money']]); }
+    if (!QA_ICON.receipt) QA_ICON.receipt = '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>';
+  } catch (_) {}
+
+  // ---------------------------------------------------------------- tax documents
+  async function txDocFolder(mcp, yr) {
+    const base = await receiptsFolder(mcp, yr), dc = { ...((S.drive || {}).taxdocs || {}) }; let id = dc[yr];
+    if (!id || !(await folderAlive(mcp, id))) { id = (await findOrMakeFolder(mcp, 'Tax documents', base.yearId)).id; dc[yr] = id; S.drive = { ...S.drive, taxdocs: dc }; await window.save('settings', 'drive', S.drive); }
+    return { id, yearId: base.yearId };
+  }
+  function txDocSheet(pre = {}) {
+    const yr = pre.year || TX.year || txYearNow(), nec = yr >= 2026 ? 2000 : 600;
+    let payers = []; try { payers = window.taxData(yearR(yr)).byPayer.map(([n, v]) => [n, v.amt]); } catch (_) {}
+    sheet(`<h3>Add a tax document</h3>
+      <div class="frow"><div class="f"><label for="txd-k">What is it?</label><select id="txd-k">${TX_KINDS.map(([k, l]) => `<option value="${k}"${pre.kind === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+        <div class="f"><label for="txd-y">Tax year</label><select id="txd-y">${[yr + 1, yr, yr - 1, yr - 2].map(y => `<option${y === yr ? ' selected' : ''}>${y}</option>`).join('')}</select></div></div>
+      <div class="frow" data-txd-1099><div class="f"><label for="txd-p">From</label><input id="txd-p" list="txd-pl" maxlength="120" value="${esc(pre.payer || '')}" placeholder="Who sent it"><datalist id="txd-pl">${payers.map(([n]) => `<option value="${esc(n)}">`).join('')}</datalist></div>
+        <div class="f"><label for="txd-a">Amount on the form ($)</label><input id="txd-a" type="number" inputmode="decimal" min="0" step="0.01"></div></div>
+      <p class="note" data-txd-cmp style="margin:0"></p>
+      <div class="ssx-row"><button type="button" class="btn small primary" data-txd-pick>📎 Choose the file or take a photo</button><span class="note" data-txd-file></span></div>
+      <p class="note" style="margin:0">Filed in Business / <span data-txd-yr>${yr}</span> / Tax documents, and included in your tax packet.</p>
+      <div class="actions"><button class="btn" data-cancel>Cancel</button><button class="btn primary" data-txd-save>Save</button></div>`, root => {
+      const q = s => root.querySelector(s); let file = null;
+      const sync = () => {
+        const k = q('#txd-k').value, is1099 = /^1099/.test(k); q('[data-txd-1099]').hidden = !(is1099 || k === 'estimate' || k === 'w9'); q('[data-txd-yr]').textContent = q('#txd-y').value;
+        q('label[for="txd-p"]').textContent = k === 'estimate' ? 'Paid to' : k === 'w9' ? 'Sent to' : 'From';
+        const p = payers.find(([n]) => n.toLowerCase() === q('#txd-p').value.trim().toLowerCase()), a = Number(q('#txd-a').value);
+        q('[data-txd-cmp]').textContent = is1099 && p ? (a > 0 ? (Math.abs(a - p[1]) < 1 ? `Matches the ${money2(p[1])} the app shows from them.` : `The app shows ${money2(p[1])} from them, ${money2(Math.abs(a - p[1]))} ${a > p[1] ? 'less' : 'more'} than this form. Check for a missing or extra payment.`) : `The app shows ${money2(p[1])} from them in ${q('#txd-y').value}.`) : '';
+      };
+      ['#txd-k', '#txd-y', '#txd-p', '#txd-a'].forEach(s => { q(s).addEventListener('input', sync); q(s).addEventListener('change', sync); }); sync();
+      q('[data-txd-pick]').onclick = async () => { const f = await txPick('image/*,application/pdf'); if (!f || txTooBig(f)) return; file = f; q('[data-txd-file]').textContent = '📎 ' + (f.name || 'File'); };
+      q('[data-cancel]').onclick = close;
+      q('[data-txd-save]').onclick = async e => {
+        if (!file) { toast('Choose the file first'); q('[data-txd-pick]').focus(); return; }
+        const btn = e.currentTarget, k = q('#txd-k').value, y = q('#txd-y').value, payer = q('#txd-p').value.trim().slice(0, 120), amount = Number(q('#txd-a').value) || 0;
+        let mcp = null; try { mcp = await driveReady(); } catch (_) {}
+        if (!mcp) { toast('Connect Google Drive in Settings first, then add it here.'); return; }
+        btn.disabled = true; btn.textContent = 'Saving…';
+        try {
+          const folder = await txDocFolder(mcp, y), blob = /^image\//.test(file.type) ? await shrink(file) : file;
+          const name = `${y} · ${txKind(k)}${payer ? ' · ' + safeName(payer) : ''}${amount ? ' · ' + money2(amount) : ''}.${extOf(blob)}`;
+          const f = await driveUpload(mcp, folder.id, name, blob.type || 'application/octet-stream', await b64of(blob));
+          await st.db.collection('taxdocs').add({ year: +y, kind: k, payer, amount, file: { id: f.id, url: f.viewUrl || txUrl(f.id), name }, at: new Date().toISOString() });
+          if (/^1099/.test(k) && payer) { const p = payers.find(([n]) => n.toLowerCase() === payer.toLowerCase()); if (p) apMark('got1099', `${y}|${p[0]}`, true); }
+          close(); toast(`Saved to Business / ${y} / Tax documents`);
+        } catch (err) { btn.disabled = false; btn.textContent = 'Save'; if (!err || err.code !== 'quiet') { try { driveErr(err); } catch (_) { toast("Couldn't save it. Try again."); } } }
+      };
+    });
+  }
+
+  // ---------------------------------------------------------------- the Taxes card: your year at a glance
+  function txGlance() {
+    const card = document.getElementById('ssx-tax'); if (!card) return; txLoad();
+    const y = TX.year || txYearNow(), R = yearR(y), nec = y >= 2026 ? 2000 : 600; let d = null; try { d = window.taxData(R); } catch (_) { return; }
+    const c = apCfg(), miss = (d.missing || []).map(t => expOf(t.ref && t.ref.expense)).filter(Boolean), docs = TX.docs.filter(x => +x.year === y);
+    const payers = d.byPayer.filter(([, v]) => v.amt >= nec).map(([n, v]) => [n, v.amt]), got = payers.filter(([n]) => (c.got1099 || {})[`${y}|${n}`] || docs.some(x => /^1099/.test(x.kind) && String(x.payer || '').toLowerCase() === n.toLowerCase()));
+    const ests = (c.estPayments || []).filter(p => +p.year === y || String(p.date || '').startsWith(String(y))).length, tn = taxNumbers(y), miles = tn.miles;
+    const fid = ((S.drive || {}).years_biz || {})[String(y)], ok = s => `<span class="ssx-tg-ic ok" aria-hidden="true">✓</span>`, todo = `<span class="ssx-tg-ic" aria-hidden="true">•</span>`;
+    const rows = [
+      [d.gross > 0, `Income recorded: <b>${money2(d.gross)}</b>${d.byPayer.length ? ` from ${d.byPayer.length} payer${d.byPayer.length === 1 ? '' : 's'}` : ''}`],
+      [!miss.length, d.ex.length ? (miss.length ? `<b>${miss.length} expense${miss.length === 1 ? '' : 's'}</b> still need${miss.length === 1 ? 's' : ''} a receipt` : `All ${d.ex.length} expenses have receipts`) : 'No expenses logged yet', miss.length ? `<button type="button" class="btn small" data-tg-miss aria-expanded="false">Add them</button>` : ''],
+      payers.length ? [got.length === payers.length, `1099s: <b>${got.length} of ${payers.length}</b> in`, `<button type="button" class="btn small" data-tg-doc="1099-NEC">Add a 1099</button>`] : null,
+      [ests > 0 || tn.setAside < 1, ests ? `${ests} estimated payment${ests === 1 ? '' : 's'} logged` : tn.setAside >= 1 ? 'No estimated payments logged yet' : 'No estimated payments needed so far'],
+      [miles > 0, miles > 0 ? `${Math.round(miles).toLocaleString('en-US')} business miles logged` : 'No business miles logged'],
+    ].filter(Boolean);
+    const sig = JSON.stringify([y, rows.map(r => r[1]), docs.map(x => x.id), fid, TX.open]);
+    let box = card.querySelector('.ssx-tg');
+    if (box && box.dataset.sig === sig) return;
+    if (!box) { box = document.createElement('div'); box.className = 'ssx-tg'; const hd = card.querySelector('.ssx-head'); hd ? hd.after(box) : card.prepend(box); }
+    box.dataset.sig = sig;
+    const t = todayStr(), ty = +t.slice(0, 4);
+    box.innerHTML = `<div class="ssx-tg-top"><b>Your ${y} taxes at a glance</b><span class="ssx-tg-yrs">${[ty - 1, ty].map(v => `<button type="button" class="chip" data-tg-y="${v}" aria-pressed="${v === y}">${v}</button>`).join('')}</span></div>
+      <ul class="ssx-tg-list">${rows.map(([done, txt, act]) => `<li>${done ? ok() : todo}<span>${txt}</span>${act || ''}</li>`).join('')}</ul>
+      ${miss.length ? `<div class="ssx-tg-miss" ${TX.open ? '' : 'hidden'}>${miss.slice(0, 30).map(x => `<div class="ssx-tg-mrow"><span>${esc(niceDate(x.date))} · ${esc(x.desc || 'Expense')} · <b>${esc(money2(x.amount))}</b>${+x.amount >= 75 ? ' <span class="ssx-pill">$75+</span>' : ''}</span><button type="button" class="btn small" data-tg-snap="${esc(x.id)}">📎 Add receipt</button></div>`).join('')}${miss.length > 30 ? `<p class="note">Showing 30 of ${miss.length}. The tax report lists the rest.</p>` : ''}</div>` : ''}
+      ${docs.length ? `<details class="ssx-det"><summary>Tax documents for ${y} (${docs.length})</summary><div class="ssx-mini">${docs.sort((a, b) => String(a.at).localeCompare(String(b.at))).map(x => `<div><a href="${esc((x.file || {}).url || '#')}" target="_blank" rel="noopener">${esc(txKind(x.kind))}${x.payer ? ' · ' + esc(x.payer) : ''}</a><b class="num">${x.amount ? esc(money2(x.amount)) : ''}</b><button type="button" class="ssx-upx" data-tg-del="${esc(x.id)}" aria-label="Remove ${esc(txKind(x.kind))} from this list">×</button></div>`).join('')}</div><p class="note" style="margin:0">Removing one here takes it off this list; the file stays in your Drive.</p></details>` : ''}
+      <div class="ssx-row ssx-tg-act"><button type="button" class="btn small primary" data-tg-rc>📸 Snap a receipt</button><button type="button" class="btn small" data-tg-doc="">Add a tax document</button>${fid ? `<a class="btn small" href="https://drive.google.com/drive/folders/${esc(fid)}" target="_blank" rel="noopener">Open the ${y} folder</a>` : ''}<button type="button" class="btn small" data-tg-pack>Tax report &amp; packet</button></div>`;
+    const q = s => box.querySelector(s);
+    box.querySelectorAll('[data-tg-y]').forEach(b => b.onclick = () => { TX.year = +b.dataset.tgY; TX.open = false; txGlance(); });
+    const mb = q('[data-tg-miss]'); if (mb) { mb.setAttribute('aria-expanded', String(!!TX.open)); mb.onclick = () => { TX.open = !TX.open; box.dataset.sig = ''; txGlance(); }; }
+    box.querySelectorAll('[data-tg-snap]').forEach(b => b.onclick = () => { const x = expOf(b.dataset.tgSnap); if (x) rcSnap(x); });
+    box.querySelectorAll('[data-tg-doc]').forEach(b => b.onclick = () => txDocSheet({ year: y, kind: b.dataset.tgDoc || undefined }));
+    box.querySelectorAll('[data-tg-del]').forEach(b => b.onclick = () => { st.db.collection('taxdocs').doc(b.dataset.tgDel).delete().then(() => toast('Removed from the list. The file is still in your Drive.')).catch(() => toast("Couldn't remove it. Try again.")); });
+    q('[data-tg-rc]').onclick = () => rcSnap();
+    q('[data-tg-pack]').onclick = () => { try { FP.preset = 'year:' + y; renderMoney(); } catch (_) {} try { taxSheet(); } catch (_) {} };
+  }
+  const _renderFinCardsTX = renderFinCards;
+  renderFinCards = function () { const r = _renderFinCardsTX.apply(this, arguments); try { txGlance(); } catch (e) { console.error(e); } return r; };
+  // Financials header: Snap a receipt next to + Log expense
+  function txHeadBtn() {
+    const hd = document.querySelector('section[data-view="money"] > .head .chips'); if (!hd || hd.querySelector('[data-tx-snap]')) return;
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.dataset.txSnap = '1'; b.textContent = '📸 Receipt'; b.title = 'Snap a receipt'; b.onclick = () => rcSnap();
+    const le = hd.querySelector('[data-new="expense"]'); le ? le.before(b) : hd.appendChild(b);
+  }
+  const _rmTX = window.renderMoney;
+  if (typeof _rmTX === 'function' && !_rmTX.__tx) { const w = function () { const r = _rmTX.apply(this, arguments); try { txHeadBtn(); } catch (_) {} return r; }; w.__tx = true; window.renderMoney = w; }
+
+  // ---------------------------------------------------------------- the tax report and packet link to every file
+  const _taxBodyTX = window.taxBody;
+  if (typeof _taxBodyTX === 'function' && !_taxBodyTX.__tx) {
+    const w = function (d) {
+      const out = _taxBodyTX.apply(this, arguments);
+      try {
+        const y = d.R && d.R.year, docs = TX.docs.filter(x => !y || +x.year === y), a = (u, t) => u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>` : '';
+        const exps = d.ex.map(t => ({ t, x: expOf(t.ref && t.ref.expense) || {} })).sort((p, q) => String(p.t.date).localeCompare(String(q.t.date)));
+        const incs = d.inc.filter(t => t.received).map(t => ({ t, b: t.ref && t.ref.booking ? (S.bookings || []).find(b => b.id === t.ref.booking) || {} : {} })).sort((p, q) => String(p.t.date).localeCompare(String(q.t.date)));
+        const invUrl = b => { const v = b.invoice || {}; return v.fileUrl || (v.fileId ? txUrl(v.fileId) : ''); };
+        const doc1099 = n => docs.find(x => /^1099/.test(x.kind) && String(x.payer || '').toLowerCase() === String(n).toLowerCase());
+        const row = (cells) => `<tr>${cells.map((c, i) => `<td${i === cells.length - 1 ? ' class="r"' : ''}>${c}</td>`).join('')}</tr>`;
+        const tbl = (h, rows) => `<div class="tw"><table><thead><tr>${h.map((x, i) => `<th class="${i === h.length - 1 ? 'r' : ''}">${x}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+        const missN = exps.filter(o => !o.x.receipt).length;
+        const html = `<div><h3 style="font-size:16px;margin-bottom:6px">Records behind these numbers</h3><div class="note">Every receipt, invoice and tax document, linked. Open any of them in your Drive.</div>
+          ${exps.length ? `<details><summary>Expenses and receipts (${exps.length}${missN ? `, ${missN} without a receipt` : ''})</summary>${tbl(['Date', 'What', 'Receipt', 'Amount'], exps.map(({ t, x }) => row([esc(fmtD(t.date)), esc(t.title), x.receipt ? a(x.receipt.url, 'View receipt') : '<span class="pill">no receipt</span>', money2(t.amount)])))}</details>` : ''}
+          ${incs.length ? `<details><summary>Income and invoices (${incs.length})</summary>${tbl(['Date', 'From', 'Invoice', 'Amount'], incs.map(({ t, b }) => row([esc(fmtD(t.date)), esc(t.payer || t.title), invUrl(b) ? a(invUrl(b), 'View invoice') : '<span class="note">none</span>', money2(t.amount)])))}</details>` : ''}
+          ${d.byPayer.length || docs.length ? `<details><summary>1099s and tax documents (${docs.length})</summary>${tbl(['Document', 'From / to', 'File', 'Amount'], [
+            ...d.byPayer.filter(([, v]) => y && v.amt >= (y >= 2026 ? 2000 : 600)).map(([n, v]) => { const x = doc1099(n); return row(['1099 expected', esc(n) + ` <span class="note">(app shows ${money2(v.amt)})</span>`, x ? a(x.file && x.file.url, 'View 1099') : '<span class="pill">not in yet</span>', x && x.amount ? money2(x.amount) : '']); }),
+            ...docs.filter(x => !(/^1099/.test(x.kind) && d.byPayer.some(([n, v]) => v.amt >= (y >= 2026 ? 2000 : 600) && n.toLowerCase() === String(x.payer || '').toLowerCase()))).map(x => row([esc(txKind(x.kind)), esc(x.payer || ''), a(x.file && x.file.url, 'View'), x.amount ? money2(x.amount) : '']))])}</details>` : ''}</div>`;
+        return out + html;
+      } catch (e) { console.error(e); return out; }
+    };
+    w.__tx = true; window.taxBody = w;
+  }
+  // the tax packet includes your tax documents too
+  const _packetZipTX = packetZip;
+  packetZip = async function (status) {
+    const P = packetParts(), y = P.R.year, docs = TX.docs.filter(x => (!y || +x.year === y) && x.file && x.file.id);
+    if (!docs.length) return _packetZipTX.apply(this, arguments);
+    // the original packet, with tax documents added as extra files under "Tax documents/"
+    const realMake = makeZip;
+    let token = ''; try { const mcp = await driveReady(); if (mcp) token = ((await mcp.callTool(GD, 'picker_token', {})).payload || {}).token || ''; } catch (_) {}
+    const extra = [];
+    for (let i = 0; i < docs.length && token; i++) { status(`Getting your tax documents… ${i + 1} of ${docs.length}`); try { extra.push({ name: `Tax packet ${P.slug}/Tax documents/${safeName(docs[i].file.name) || docs[i].id}`, data: await driveBytes(token, docs[i].file.id) }); } catch (_) {} }
+    token = '';
+    makeZip = files => { const used = new Set(files.map(f => f.name)); return realMake([...files, ...extra.filter(f => !used.has(f.name))]); };
+    try { return await _packetZipTX.apply(this, arguments); } finally { makeZip = realMake; }
+  };
+
+  // ---------------------------------------------------------------- reminders: receipts for expenses of $75 or more
+  const _upNextTX = upNext;
+  upNext = function () {
+    const out = _upNextTX.apply(this, arguments);
+    try {
+      const c = apCfg(), t = todayStr(), skip = k => c.dismissed[k] || c.done[k] || (c.snooze[k] && c.snooze[k] > t);
+      (S.expenses || []).filter(x => !String(x.id).startsWith('rec-') && !x.receipt && +x.amount >= 75 && x.date && daysBetween(x.date, t) >= 0 && daysBetween(x.date, t) <= 60 && !skip('rcpt:' + x.id)).slice(0, 5).forEach(x =>
+        out.push({ k: 'rcpt:' + x.id, at: x.date, icon: '📎', text: `Add the receipt for <b>${esc(x.desc || 'an expense')}</b>, ${esc(money2(x.amount))} (${esc(niceDate(x.date))}).`, btn: 'Snap it', go: () => rcSnap(x) }));
+    } catch (e) { console.error(e); }
+    return out.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  };  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
