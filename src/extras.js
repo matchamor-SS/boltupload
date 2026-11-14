@@ -7547,6 +7547,110 @@ function appExtras() {
   });
   const _pgCardSS = pgCard;
   pgCard = function () { const r = _pgCardSS.apply(this, arguments); try { ssBox(); } catch (e) { console.error(e); } return r; };  
+/* -- "Got your request" reply. When someone books you through your link, a friendly reply is written for them right
+     away from your own template. It never sends by itself (the app only sends what you check and send): it waits on the
+     request and in Next moves, and one tap opens it in "Check it, then send". Settings → Bookings → Reply to new requests. */
+  const AK = { doc: null, loaded: false };
+  const AK_DEF = {
+    on: true, days: 2,
+    subject: 'Got your booking request for {date}',
+    body: 'Hi {first},\n\nThanks for reaching out about {show} on {date}{time}. I\'ve got your request and I\'ll get back to you within {days}.\n\nTalk soon,\n{name}'
+  };
+  const akCfg = () => ({ ...AK_DEF, ...(AK.doc || {}) });
+  async function akLoad() { if (AK.loaded || !st.db) return; AK.loaded = true; try { const s = await st.db.doc('settings/ackreply').get(); AK.doc = s.exists ? s.data() : {}; } catch (_) { AK.doc = null; AK.loaded = false; } }
+  const akSave = async patch => { AK.doc = { ...akCfg(), ...patch }; try { await st.db.doc('settings/ackreply').set(AK.doc); return true; } catch (_) { toast("Couldn't save. " + OFFLINE); return false; } };
+  const akWho = b => b.contactPersonId || b.promoterId || b.venueId || '';
+  // requests that still deserve a "got it": from your link, not answered, nothing emailed about them yet, and recent
+  function akPending() {
+    if (!akCfg().on) return [];
+    const t = todayStr(), sent = new Set((S.sentLog || []).map(x => x.bookingId).filter(Boolean));
+    return (S.bookings || []).filter(b => b.source === 'booking-link' && !b.requestStatus && flKind(b.status) === 'lead' && akWho(b) && !sent.has(b.id) && !b.ackSkip
+      && b.createdAt && String(b.createdAt).slice(0, 10) >= addDays(t, -14));
+  }
+  function akFill(tpl, b, cfg, asFirst) {
+    const who = contact(akWho(b)), first = asFirst || (who ? String(cName(who) || '').split(' ')[0] : ''), p = S.profile || {};
+    const d = Number((cfg || akCfg()).days) || 2, tm = b.setStart ? ' at ' + time12(b.setStart) : '';
+    const map = { first: first || 'there', show: bName(b) || 'your event', date: b.date ? niceDate(b.date) : 'the date you picked', time: tm, days: `${d} day${d === 1 ? '' : 's'}`, name: p.djName || p.myName || '' };
+    return String(tpl || '').replace(/\{(first|show|date|time|days|name)\}/g, (_, k) => map[k]).replace(/\n{3,}/g, '\n\n').trim();
+  }
+  function akOpen(b) {
+    const c = akCfg();
+    composeSheet({ booking: b.id, to: akWho(b), title: 'Request received', subject: akFill(c.subject, b), body: akFill(c.body, b) });
+  }
+  // on each waiting request: "Send 'Got your request'"
+  const _renderRequestsAK = renderRequests;
+  renderRequests = function () {
+    _renderRequestsAK.apply(this, arguments);
+    try {
+      akLoad(); const pend = new Set(akPending().map(b => b.id));
+      document.querySelectorAll('#ssx-requests [data-req]').forEach(item => {
+        const id = item.dataset.req, row = item.querySelector('.ssx-row'); let btn = item.querySelector('[data-ak]');
+        if (!pend.has(id)) { if (btn) btn.remove(); return; }
+        if (!btn && row) { btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn small'; btn.dataset.ak = id; btn.textContent = 'Send "Got your request"'; btn.onclick = () => { const b = (S.bookings || []).find(x => x.id === id); if (b) akOpen(b); }; row.appendChild(btn); }
+      });
+    } catch (e) { console.error(e); }
+  };
+  // in Next moves: one row per waiting request
+  const _nmItemsAK = nmItems;
+  nmItems = function () {
+    const out = _nmItemsAK.apply(this, arguments);
+    try {
+      akLoad(); const c = apCfg(), t = todayStr();
+      for (const b of akPending()) {
+        const k = 'ack:' + b.id; if ((c.dismissed || {})[k] || ((c.snooze || {})[k] && c.snooze[k] > t)) continue;
+        const who = contact(akWho(b));
+        out.push({ type: 'ack', k, at: String(b.createdAt).slice(0, 10), icon: '💬', text: `Let <b>${esc(who ? cName(who) : 'them')}</b> know you got their request`, sub: `${esc(bName(b))}${b.date ? ' · ' + esc(niceDate(b.date)) : ''} · reply is written, you check and send`, btn: 'Review reply', go: () => akOpen(b) });
+      }
+      out.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+    } catch (e) { console.error(e); }
+    return out;
+  };
+  // Settings → Bookings: turn it on or off, how soon you promise to answer, and the wording
+  function akCard() {
+    const grp = document.querySelector('section[data-view="settings"] > .ssg[data-ssg="bookings"]'); if (!grp || !st.db) return;
+    if (!AK.loaded) { akLoad().then(akCard); return; } if (!AK.doc) return;
+    let el = document.getElementById('ssx-ack');
+    if (!el) { el = document.createElement('div'); el.id = 'ssx-ack'; el.className = 'card ssx'; const link = document.getElementById('ssx-host-link'); link && link.parentElement === grp ? link.after(el) : grp.appendChild(el); }
+    const c = akCfg(), sig = JSON.stringify(c); if (el.dataset.sig === sig || el.contains(document.activeElement) && document.activeElement.tagName !== 'BUTTON' && document.activeElement.type !== 'checkbox') return; el.dataset.sig = sig;
+    const sample = { date: addDays(todayStr(), 21), setStart: '22:00', title: 'Friday night', source: 'booking-link' };
+    el.innerHTML = `<div class="ssx-head"><div><h3>Reply to new requests</h3><p class="note">When someone books you through your link, a "got your request" reply is written for them right away. It never sends by itself: it waits on the request and in Next moves, and you check it and send in one tap.</p></div></div>
+      <label class="ssx-check"><input type="checkbox" data-ak-on${c.on ? ' checked' : ''}> Write a reply for every new request</label>
+      ${c.on ? `<div class="f"><label for="ssx-ak-days">I promise to answer within</label><select id="ssx-ak-days">${[1, 2, 3, 5, 7].map(n => `<option value="${n}"${Number(c.days) === n ? ' selected' : ''}>${n} day${n === 1 ? '' : 's'}</option>`).join('')}</select></div>
+      <div class="f"><label for="ssx-ak-subj">Subject</label><input id="ssx-ak-subj" maxlength="120" value="${esc(c.subject)}"></div>
+      <div class="f"><label for="ssx-ak-body">Message</label><textarea id="ssx-ak-body" rows="7" maxlength="2000">${esc(c.body)}</textarea>
+        <span class="note">These fill in for you: {first} their first name, {show} the event, {date}, {time}, {days} how soon you'll answer, {name} your name.</span></div>
+      <details class="ssx-ak-prev"><summary>Preview</summary><pre></pre></details>
+      <div class="ssx-row"><button type="button" class="btn small primary" data-ak-save>Save wording</button><button type="button" class="btn small" data-ak-reset>Use the default wording</button></div>` : ''}`;
+    const q = s => el.querySelector(s);
+    // the preview always shows what's in the boxes right now, for a made-up request from "Sam"
+    const pv = q('.ssx-ak-prev'); if (pv) { const draw = () => { const live = { ...akCfg(), days: Number((q('#ssx-ak-days') || {}).value) || akCfg().days }; pv.querySelector('pre').textContent = `${akFill(q('#ssx-ak-subj').value || AK_DEF.subject, sample, live, 'Sam')}\n\n${akFill(q('#ssx-ak-body').value || AK_DEF.body, sample, live, 'Sam')}`; };
+      pv.ontoggle = () => { if (pv.open) draw(); }; ['#ssx-ak-subj', '#ssx-ak-body', '#ssx-ak-days'].forEach(s2 => { const x = q(s2); if (x) x.addEventListener(s2 === '#ssx-ak-days' ? 'change' : 'input', () => { if (pv.open) draw(); }); }); }
+    q('[data-ak-on]').onchange = async e => { if (await akSave({ on: e.target.checked })) { toast(e.target.checked ? 'Replies will be ready for new requests' : 'Replies to new requests turned off'); el.dataset.sig = ''; akCard(); const cb = q('[data-ak-on]'); if (cb) cb.focus(); } };
+    const ds = q('#ssx-ak-days'); if (ds) ds.onchange = () => akSave({ days: Number(ds.value) }).then(ok => ok && toast('Saved'));
+    const sv = q('[data-ak-save]'); if (sv) sv.onclick = async () => { const subject = q('#ssx-ak-subj').value.trim() || AK_DEF.subject, body = q('#ssx-ak-body').value.trim() || AK_DEF.body; if (await akSave({ subject, body })) { toast('Reply wording saved'); el.dataset.sig = ''; akCard(); } };
+    const rs = q('[data-ak-reset]'); if (rs) rs.onclick = async () => { if (await akSave({ subject: AK_DEF.subject, body: AK_DEF.body })) { toast('Back to the default wording'); el.dataset.sig = ''; akCard(); } };
+  }
+  const _pgCardAK = pgCard;
+  pgCard = function () { const r = _pgCardAK.apply(this, arguments); try { akCard(); } catch (e) { console.error(e); } return r; };
+/* -- The tour, rewritten for everything built this month. About 3 minutes, 14 stops. Each stop shows one thing and,
+     where it helps, offers a button to do it right then, so learning and setting up happen together. */
+  const FL_TOUR2 = [
+    { title: 'Welcome to Set & Settled', body: 'Your home base as an artist: shows, people, money, email, media, your EPK and your own page. About 3 minutes. Most stops have a button to set that part up right now, or tap Next to keep looking.' },
+    { tab: 'settings', group: 'profile', target: '#ssx-fl-art, #ssx-profile', title: 'Start with you', body: 'Pick what kind of artist you are, then add your name, photo and socials. They fill in your EPK, emails, invoices, booking link and page, so you only type them once.' },
+    { tab: 'settings', group: 'google', target: '#ss-google', title: 'Connect your calendar and email', body: 'Google lets you send emails and invoices from your own address and see your other plans next to your shows. On an iPhone or Mac, the Apple Calendar card below puts your shows in the Calendar app too.' },
+    { tab: 'calendar', target: '#availEdit', title: 'When are you available?', body: 'Pick your days and times and block any date off. One simple rule: you\'re open unless something is already on your calendar or you blocked it. Your booking link follows this automatically.', action: ['Set my availability', () => { const b = document.getElementById('availEdit'); if (b) b.click(); }] },
+    { tab: 'bookings', target: '#ssx-bklink, #ssx-requests', title: 'Let people book you', body: 'Share your booking link and people pick an open date and time. Each request shows how it fits your calendar, and a friendly "got your request" reply is already written for you to check and send.', action: ['Copy my booking link', () => { try { const u = window.ssBookingLink && window.ssBookingLink(); if (!u) { window.ssShowSettings('bookings', 'ssx-host-link'); return; } (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => toast('Booking link copied'), () => toast(u)); } catch (_) {} }] },
+    { tab: 'home', target: '#quickAdd, #ssx-qa-fab', title: 'Add anything from anywhere', body: 'Tap + Add for a show, contact, task, invoice, expense, income, email, photos, link or blocked dates. It puts what fits the page you\'re on first. On a computer, press N.', action: ['Add a show', () => { try { window.bookingForm(); } catch (_) {} }] },
+    { tab: 'home', target: '#ssx-upnext, #ssx-setup', title: 'Home keeps watch', body: 'Next moves lists what needs you, soonest first: tasks, follow-ups, invoices and wrap-ups after a show. Below it, Connections shows at a glance that Google, your booking link, your page and reminders are working.' },
+    { tab: 'bookings', target: '[data-new="booking"]', title: 'Every show tells its story', body: 'Move a show from Lead to Confirmed, Played and Paid, and each stage brings its checklist. Add a ticket link, choose whether it shows on your page, and scroll down for its Activity: every email, invoice and change in order.' },
+    { tab: 'contacts', target: '[data-new="contact"]', title: 'Your people', body: 'Venues, promoters and collectives, each with one profile. Email, DM, text or call from it, log reach-outs with a follow-up date, and see your whole history together under Activity.' },
+    { tab: 'money', target: '[data-new="expense"]', title: 'Your money, organized', body: 'Fees, income and expenses in one place, with invoices, receipts and mileage. At tax time it shows what to set aside and builds your tax packet. It keeps your records organized; it isn\'t tax advice.' },
+    { tab: 'mypage', target: '#ssx-pgdesign, #ssx-page', title: 'Your EPK and your own page', body: 'Your EPK is the press kit you send venues. My page is for fans: setnsettled.com/you with your shows, photos, music players and news, searchable on Google. Design it with a live preview and publish when it feels like you.', action: ['Open the designer', () => { try { window.goTab('mypage'); setTimeout(() => { if (window.ssOpenPageDesigner) window.ssOpenPageDesigner(); }, 250); } catch (_) {} }] },
+    { tab: 'media', target: '#ssx-fl-mhost, #ssx-fl-hub, section[data-view="media"] .head', title: 'Media and your history', body: 'Photos, videos and links, sorted by show. Switch any of them on to show them on your page. Under Kit you can also add the shows you played before Set & Settled, so your EPK starts full.', action: ['Add photos', () => { try { flAddPhotos('', ids => toast(ids && ids.length > 1 ? `${ids.length} photos added` : 'Photo added')); } catch (_) {} }] },
+    { tab: 'settings', group: 'reminders', target: '#ssx-notify', title: 'Never miss a step', body: 'Turn on phone alerts, a morning email, or both. They come from your checklists, follow-ups and unpaid shows, so nothing slips.' },
+    { title: "You're all set", body: 'Three shortcuts: + Add (or N) adds anything, Settings has a search box (press /), and the Get set up card on Home shows what\'s left. Retake this tour anytime from Settings, under Account. Have a great season!' }
+  ];
+  try { FL_TOUR.splice(0, FL_TOUR.length, ...FL_TOUR2); if (FL.tour && typeof TOUR !== 'undefined') TOUR.splice(0, TOUR.length, ...FL_TOUR2); } catch (e) { console.error(e); }  
   function flScan() {
     try { flMediaAuto(); flFoundSweep(); flFoundCard(); invTplWrap(); invTplCard(); pgCard(); pgSync(); } catch (e) { console.error(e); }
     FL.raf = 0;
